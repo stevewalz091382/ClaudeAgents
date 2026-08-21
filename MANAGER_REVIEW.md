@@ -1,5 +1,178 @@
 # MANAGER_REVIEW.md — Resource Optimization Engine (ROE)
 
+---
+
+# ROUND 2 REVIEW (fix loop 2 verification) — 2026-08-21
+
+Reviewed: `BUILD_PLAN.md` §9, `MANAGER_REVIEW.md` round-1 (preserved below), `TEST_REPORT.md`
+(rounds 1 + 2), and `index.html` at commit `47cad26`. Every finding below was independently
+reproduced by me in a real Chromium against `file:///home/user/ClaudeAgents/index.html`. I did not
+take the Tester's or the Coder's characterization on report — I re-ran the committed suite myself
+(**90 passed / 2 failed**, matching the Tester exactly) and wrote seven of my own probes.
+
+## Verdict: **GO WITH FIXES** — conditional, with one mandatory blocking fix
+
+The fix is **not optional and cannot be documented away.** See "Why not a documented limitation"
+below. If the final loop does not close it, the fallback is to **remove the session-only toggle from
+the UI entirely** rather than ship it in its current state.
+
+Everything outside `ROE.store`'s ~150-line persistence region is verified healthy: 90/90 committed
+tests pass, all three round-1 blockers are genuinely fixed under my own adversarial re-runs, and the
+calc/score/alerts/mentor engines are untouched since round 1. The blast radius is now a **single
+region of a single module**, and the fix is a handful of lines. That is why this is GO WITH FIXES
+and not another NO GO — there is no structural doubt left, only one unfinished feature.
+
+---
+
+## Key issues, ranked
+
+### 1. BLOCKING — Session-only mode has **three** failure modes, not one. Two of them destroy data. (Owner: **Coder** to implement; **Architect** owns the root cause)
+
+The Tester found one of these (over-persistence) and rated it HIGH on the reasoning that "nothing is
+being destroyed this time." **That severity reasoning is wrong.** I found two additional flows in the
+same code path that do destroy data. All three share one root cause: after fix loop 2 there are now
+**two independent booleans — `state.settings.sessionOnly` and `hydrated` — that are allowed to
+disagree**, and neither the save path nor the UI badge reconciles them.
+
+`setSessionOnly()` (`index.html:2352-2360`) writes the preference and calls `scheduleSave()` but
+**never touches `hydrated`**. `hydrated` is only ever assigned inside `load()` and `clearAll()`. So:
+
+**(a) Over-persistence — the Tester's finding. Confirmed.** Boot normally (`hydrated = true`), check
+session-only, add a record, uncheck. Both guards in `scheduleSave()` pass and the "private" record is
+written to disk after the 400ms debounce, with no reload. My repro:
+
+```
+MGR-1 {"before":40,"sessionOnlyFlag":true,"duringOn":40,"after":41,"leaked":true}
+```
+
+This directly falsifies UI copy the Coder wrote in this very commit (`index.html:3316`): *"nothing is
+written to IndexedDB until you reload the page."* Reproduces identically from a blank slate.
+
+**(b) NOT FOUND BY ANYONE — deletions made during the "nothing is being saved" window are committed
+to disk on toggle-off.** Same mechanism, opposite data. The user turns on a mode that promises
+nothing will be saved — which is exactly why people turn such a mode on: to experiment destructively
+in safety — deletes 20 of 40 employees, then unchecks the box. `persist()` calls
+`DB.replaceAll("employees", state.employees)` with the 20-record array. The 20 deleted records are
+**gone from disk permanently**:
+
+```
+MGR-5 {"before":40,"duringOn":40,"afterToggleOff":20,"afterReload":20}
+```
+
+This is the same class of defect as round 1's CRITICAL — silent, unrecoverable destruction of records
+the user never explicitly deleted from storage — merely reached by a different door. The Tester's
+"nothing is being destroyed this time" conclusion does not survive contact with a destructive edit.
+
+**(c) NOT FOUND BY ANYONE — the "Session only — nothing is being saved" badge lies in the dangerous
+direction, and a full session of work is silently lost.** After a session-only reload, `hydrated` is
+`false`. Uncheck the box: `updateSessionBadge()` (`index.html:2520-2524`) binds visibility to
+`settings.sessionOnly` only, so **the badge disappears** — the app's one global persistence indicator
+now says "your work is being saved." It is not: `hydrated` is still `false`, so every write silently
+no-ops until a reload. My repro — 41 records of work, badge hidden, nothing on disk, everything gone
+after reload:
+
+```
+MGR-7 {"badgeVisible":false,"badgeText":"Session only - nothing is being saved",
+       "memCount":41,"idbHasWork":false,"workSurvivesReload":false}
+```
+
+The settings-panel hint text does explain the reload requirement, but a paragraph in a settings panel
+does not substitute for the global indicator that is actively contradicting it.
+
+**Root cause is architectural, and it is the Architect's.** `BUILD_PLAN.md` §2.6 still says only
+*"when on, all writes are skipped"* — unamended after three loops. It has never specified what
+happens when the toggle goes **off**, which is where every one of these bugs lives. This is the third
+consecutive loop in which a defect has been generated by that one unspecified sentence. Amend §2.6
+before the Coder touches this again, or loop four will produce a fourth variant.
+
+**Proportionate fix (one small edit, closes all three at once):** make the checkbox reload-gated —
+on change, write the preference and reload the page (or block the change behind an explicit "Reload
+to apply" action). `sessionOnly` and `hydrated` then can never diverge within a session, the
+already-written UI copy becomes true, and (a), (b), and (c) all disappear. Do not patch the three
+symptoms individually.
+
+### 2. Tester severity-analysis miss. (Owner: **Tester**)
+
+The finding itself is excellent work — correctly located, correctly root-caused, reproduced from a
+blank slate, and honest about what the sandbox blocks. But the severity call drove a
+"GO WITH FIXES, nothing is destroyed" recommendation that two of my probes falsify in under five
+minutes each. The gap is method, not diligence: the Tester tested **additions** during the
+session-only window and generalized to "over-persistence, non-destructive," without testing
+**deletions** or **the state of the badge after toggle-off**. When a guard flag is found to be
+reachable in an unintended state, the next question is what *else* rides on that flag — here, the
+global "nothing is being saved" indicator did, and it fails unsafely.
+
+### 3. Confirmed genuinely fixed — I re-verified all three, independently.
+
+Round-1 CRITICAL (toggle-off after reload wiping IndexedDB), the Clear-all leftover preference
+record, and the horizon month-range validation are all real fixes, not test-shaped ones. The
+committed suite runs 90/90 minus the Tester's own two new failing probes, and `git diff 95e9df5
+47cad26 -- index.html` is empty, confirming the Tester changed no production code. No regressions
+anywhere in calc, score, alerts, mentor, io, api, a11y, or perf. I also re-checked N-4 directly: an
+API token set via `ROE.api.setToken` appears nowhere in any object store after a forced save.
+
+---
+
+## Why not a documented limitation
+
+The option of shipping this as a known limitation with a one-line mitigation ("reload after
+unchecking") was considered and is **rejected**. A release note does not help a user who finds 20 of
+their 40 records gone (b), and it cannot be read by a user whose badge told them saving was on (c).
+Documented limitations are appropriate for *inconvenience*; they are not appropriate for **silent,
+unrecoverable data loss with a misleading indicator**. The UI-change variant of the mitigation — make
+the toggle require a reload — is not a mitigation at all, it *is* the fix, and it is small. Spend the
+final loop on it.
+
+---
+
+## Loose ends
+
+- **Deferred MEDIUMs re-verified as unchanged, correctly characterized, and correctly out of scope**
+  for this pipeline's remaining budget. I confirmed each in the current file rather than assuming:
+  Assignment CRUD absent (`source:"manual"` still unreachable; assignments only born from
+  optimizer/import/api), Skill CRUD absent (`newSkill` called only by the importer and seeder), CSV
+  import absent (the app's own text at `index.html:3295` says so), `STORE.subscribe`/`notify` still
+  has **zero** callers, and `window.XLSX`/`window.Chart` remain unexecuted in this sandbox. None are
+  new; none are regressions. They need an explicit **Architect** ruling on F-3/F-11 in a v2 pass, not
+  a silent pass here.
+- **"Monitor" action still absent** from optimizer candidate cards — zero occurrences of the string
+  in the file, against §7's "Commit / Monitor / Review." Unchanged since round 1. Architect should
+  strike it from §7 or schedule it.
+- **`horizonStart` still hardcoded `"2026-01"`** (`index.html:172`). Correct by luck today; wrong on
+  1 Jan 2027. §2.4 says "current calendar year." Owner: **Coder**, cheap, still open.
+- **Clear-all now silently resets the session-only preference to OFF** and resumes persistence. This
+  is a deliberate round-2 decision to satisfy the literal §9 wording, and `clearAllFlow` does call
+  `renderAll()` so the checkbox and badge do update — acceptable, but it means a privacy toggle can
+  be turned off by an action the user took for an unrelated reason. Worth one line in the About text.
+- **The unverified live-CDN / XLSX / Chart.js path is unchanged and still the only material coverage
+  hole** outside issue 1. One manual pass in a network-enabled browser (real xlsx export → clear →
+  re-import, plus both `new Chart(...)` call sites) is still required before final sign-off,
+  regardless of what the last code loop does.
+- **Harness portability still unfixed.** `tests/playwright.config.js` as committed cannot launch a
+  browser here; `tests/pw.local.config.js` remains uncommitted. I had to use it too. Owner:
+  **Tester** — third loop this has been logged.
+
+---
+
+## Chain assessment (round 2)
+
+- **Architect:** the plan remains strong, but §2.6 has now generated three consecutive loops of
+  defects by never specifying toggle-off semantics, and it still has not been amended. That is the
+  single highest-leverage document change left in this build.
+- **Coder:** the round-2 fixes are real, well-commented, and the `hydrated` guard is the right idea —
+  it just was not carried through to the two other places that depend on the same state. Work quality
+  is good; the recurring pattern is fixing the reported instance rather than the state machine that
+  produced it.
+- **Tester:** the strongest link in the chain three rounds running — found a defect the Coder's own
+  tests structurally could not, reproduced it from a blank slate, and was explicit about
+  environmental limits. The one miss is severity analysis (see issue 2), and it mattered, because it
+  fed a "not destructive" recommendation that is not accurate.
+
+---
+---
+
+# ROUND 1 REVIEW (preserved, unchanged)
+
 Reviewed: `BUILD_PLAN.md` (architect), `index.html` (coder, 3,446 lines), `TEST_REPORT.md` +
 `tests/specs/*` (tester). All findings below were independently reproduced by me in a real Chromium
 against `file:///home/user/ClaudeAgents/index.html`, not taken on report.
