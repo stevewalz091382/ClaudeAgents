@@ -3,11 +3,13 @@ const { test, expect } = require("@playwright/test");
 const { loadApp, loadDemoData } = require("../helpers/loadApp");
 const { BASE_URL, mockSuccess, mockCorsFailure, mock401 } = require("../helpers/mockApi");
 
+// A UI-driven equivalent of this exists below ("enabling an entity via the real Enabled
+// checkbox..."). This console-forced version is kept for the engine-behavior tests further down
+// that are not specifically testing the settings UI itself (diff/push/CORS/etc.), to keep those
+// tests focused on the thing they're actually asserting.
 async function configureApi(page, baseUrl) {
   await page.evaluate((base) => {
     const s = window.ROE.store.getState().settings;
-    // Enable the "employees" entity by construction, since (see the dedicated test below) there is
-    // no UI control to do this - this is what a fully-wired UI would have set.
     const api = JSON.parse(JSON.stringify(s.api));
     api.baseUrl = base;
     api.entities.employees.enabled = true;
@@ -15,8 +17,27 @@ async function configureApi(page, baseUrl) {
   }, baseUrl);
 }
 
-test.describe("API connector CRITICAL GAP (§9 API, F-12, §7 Data & Settings)", () => {
-  test("CRITICAL: there is no UI control anywhere to enable an entity for pull/push, so the API connector is non-functional out of the box", async ({ page }) => {
+test.describe("API connector configuration UI (§9 API, F-12, §7 Data & Settings) - FIXED", () => {
+  test("a per-entity Enabled checkbox, per-entity path inputs, and a field-mapping UI exist for all 5 entities", async ({ page }) => {
+    await loadApp(page);
+    await loadDemoData(page);
+    await page.evaluate(() => { location.hash = "#settings"; });
+    await page.waitForTimeout(300);
+
+    const settingsHtml = await page.locator("#panel-settings").innerHTML();
+    const hasFieldMappingUi = /field.?mapping/i.test(settingsHtml);
+    expect(hasFieldMappingUi, "F-12 requires a field-mapping UI").toBe(true);
+
+    for (const entity of ["employees", "projects", "demands", "assignments", "skills"]) {
+      await expect(page.locator(`.api-ent-enabled[data-entity="${entity}"]`), `${entity} enabled checkbox`).toHaveCount(1);
+      await expect(page.locator(`.api-ent-pullPath[data-entity="${entity}"]`), `${entity} pullPath input`).toHaveCount(1);
+      await expect(page.locator(`.api-ent-pushPath[data-entity="${entity}"]`), `${entity} pushPath input`).toHaveCount(1);
+      await expect(page.locator(`#api-pull-${entity}`), `${entity} pull button`).toHaveCount(1);
+      await expect(page.locator(`#api-push-${entity}`), `${entity} push button`).toHaveCount(1);
+    }
+  });
+
+  test("with default settings (no entity enabled), clicking Pull for employees fails with a clear 'not enabled' message", async ({ page }) => {
     await mockSuccess(page);
     await loadApp(page);
     await loadDemoData(page);
@@ -25,34 +46,83 @@ test.describe("API connector CRITICAL GAP (§9 API, F-12, §7 Data & Settings)",
     }, BASE_URL);
     await page.evaluate(() => { location.hash = "#settings"; });
     await page.waitForTimeout(300);
-
-    const settingsHtml = await page.locator("#panel-settings").innerHTML();
-    const hasEntityToggle = /enabled/i.test(settingsHtml) && /entit/i.test(settingsHtml);
-    const hasFieldMappingUi = /field.?mapping/i.test(settingsHtml);
-    const hasPerEntityPathInputs = /pullPath|pushPath|api-entity/i.test(settingsHtml);
-
-    await page.click("#api-pull");
+    await page.click("#api-pull-employees");
     await page.waitForTimeout(300);
     const toastText = (await page.locator("#toast-region .toast").allTextContents()).join(" | ");
-
-    expect(hasEntityToggle, "no checkbox/control exists to set settings.api.entities.<name>.enabled").toBe(false);
-    expect(hasFieldMappingUi, "F-12 requires a field-mapping UI; none is rendered").toBe(false);
-    expect(hasPerEntityPathInputs, "F-12 requires configurable per-entity paths; none are rendered").toBe(false);
-    expect(toastText, "with default settings, clicking Pull always fails because no entity can ever be enabled through the UI").toContain("is not enabled");
+    expect(toastText).toContain("is not enabled");
   });
 
-  test("only the 'employees' entity has any pull/push wiring at all - projects/demands/assignments/skills are entirely unreachable from the UI", async ({ page }) => {
+  test("enabling an entity via the real Enabled checkbox and setting its pull path via the real input makes Pull succeed against the mock", async ({ page }) => {
+    await mockSuccess(page);
+    await loadApp(page);
+    await loadDemoData(page);
+    const before = await page.evaluate(() => window.ROE.store.getState().employees.length);
+
+    await page.evaluate((base) => {
+      window.ROE.store.setSettings({ api: Object.assign({}, window.ROE.store.getState().settings.api, { baseUrl: base }) });
+    }, BASE_URL);
+    await page.evaluate(() => { location.hash = "#settings"; });
+    await page.waitForTimeout(300);
+
+    // Drive it entirely through the real UI: check the box, set the pull path, add a field mapping.
+    await page.locator('.api-ent-enabled[data-entity="employees"]').check();
+    await page.locator('.api-ent-pullPath[data-entity="employees"]').fill("/employees");
+    await page.locator('.api-ent-pullPath[data-entity="employees"]').dispatchEvent("change");
+    await page.locator('.map-field-new[data-entity="employees"]').fill("name");
+    await page.locator('.map-path-new[data-entity="employees"]').fill("full_name");
+    await page.click('.map-add[data-entity="employees"]');
+    await page.waitForTimeout(150);
+
+    const enabledNow = await page.evaluate(() => window.ROE.store.getState().settings.api.entities.employees.enabled);
+    expect(enabledNow, "checking the real checkbox must set settings.api.entities.employees.enabled").toBe(true);
+    const mappingNow = await page.evaluate(() => window.ROE.store.getState().settings.api.fieldMappings.employees);
+    expect(mappingNow).toEqual({ name: "full_name" });
+
+    await page.click("#api-pull-employees");
+    await page.waitForTimeout(400);
+    const previewText = await page.locator("#api-preview").innerText();
+    expect(previewText).toMatch(/add|update/i);
+
+    await page.click("#api-apply-pull");
+    await page.waitForTimeout(300);
+    const state = await page.evaluate(() => window.ROE.store.getState());
+    expect(state.employees.length).toBeGreaterThan(before);
+    // The field mapping (name <- full_name) should have actually been applied.
+    const pulled = state.employees.find((e) => e.name === "Remote One" || e.name === "Remote Two");
+    expect(pulled, "field mapping should map full_name -> name on the applied records").toBeTruthy();
+  });
+
+  test("Pull/Push buttons operate independently per entity - enabling projects does not make employees' buttons work and vice versa", async ({ page }) => {
     await loadApp(page);
     await page.evaluate(() => { location.hash = "#settings"; });
     await page.waitForTimeout(300);
-    const settingsHtml = await page.locator("#panel-settings").innerHTML();
-    // Only one pull/push button pair exists, hardcoded to "employees".
-    const pullButtons = await page.locator("#panel-settings button", { hasText: /pull/i }).count();
-    const pushButtons = await page.locator("#panel-settings button", { hasText: /push/i }).count();
-    expect(pullButtons).toBe(1);
-    expect(pushButtons).toBe(1);
-    expect(settingsHtml).toContain("Pull employees");
-    expect(settingsHtml).not.toMatch(/pull projects|pull demands|pull assignments|pull skills/i);
+    await page.click("#api-pull-projects");
+    await page.waitForTimeout(300);
+    const toastText = (await page.locator("#toast-region .toast").allTextContents()).join(" | ");
+    expect(toastText).toContain("Entity 'projects' is not enabled");
+  });
+});
+
+test.describe("HIGH #2 fix: sequential API field edits no longer clobber each other", () => {
+  test("setting baseUrl, then authMode, then the token, leaves baseUrl intact (no stale-closure wipe)", async ({ page }) => {
+    await loadApp(page);
+    await page.evaluate(() => { location.hash = "#settings"; });
+    await page.waitForTimeout(200);
+
+    await page.locator("#api-baseUrl").fill("https://api.example.com/v1");
+    await page.locator("#api-baseUrl").dispatchEvent("change");
+    await page.waitForTimeout(100);
+
+    await page.selectOption("#api-authMode", "bearer");
+    await page.waitForTimeout(100);
+
+    await page.locator("#api-token").fill("some-secret-token");
+    await page.locator("#api-token").dispatchEvent("change");
+    await page.waitForTimeout(100);
+
+    const api = await page.evaluate(() => window.ROE.store.getState().settings.api);
+    expect(api.baseUrl, "baseUrl must survive subsequent authMode/token edits").toBe("https://api.example.com/v1");
+    expect(api.authMode).toBe("bearer");
   });
 });
 
@@ -66,7 +136,7 @@ test.describe("API connector behavior once an entity is force-enabled (§9 API)"
     await page.waitForTimeout(200);
     const before = await page.evaluate(() => window.ROE.store.getState().employees.length);
 
-    await page.click("#api-pull");
+    await page.click("#api-pull-employees");
     await page.waitForTimeout(400);
     const previewText = await page.locator("#api-preview").innerText();
     expect(previewText).toMatch(/add|update/i);
@@ -88,7 +158,7 @@ test.describe("API connector behavior once an entity is force-enabled (§9 API)"
     await configureApi(page, BASE_URL);
     await page.evaluate(() => { location.hash = "#settings"; });
     await page.waitForTimeout(200);
-    await page.click("#api-pull");
+    await page.click("#api-pull-employees");
     await page.waitForTimeout(400);
     const applyBtn = page.locator("#api-apply-pull");
     await expect(applyBtn).toBeVisible();
@@ -142,7 +212,7 @@ test.describe("API connector behavior once an entity is force-enabled (§9 API)"
     await page.waitForTimeout(500);
     expect(pushCalled, "push must never fire without an explicit button press").toBe(false);
 
-    await page.click("#api-push");
+    await page.click("#api-push-employees");
     await page.waitForTimeout(300);
     expect(pushCalled, "clicking Push (preview) alone should only show a preview, not send yet").toBe(false);
 
@@ -160,7 +230,7 @@ test.describe("API connector behavior once an entity is force-enabled (§9 API)"
     await configureApi(page, BASE_URL);
     await page.evaluate(() => { location.hash = "#settings"; });
     await page.waitForTimeout(200);
-    await page.click("#api-pull");
+    await page.click("#api-pull-employees");
     await page.waitForTimeout(500);
     const toastText = (await page.locator("#toast-region .toast").allTextContents()).join(" | ");
     expect(toastText.toLowerCase()).toContain("cors");
@@ -174,7 +244,7 @@ test.describe("API connector behavior once an entity is force-enabled (§9 API)"
     await configureApi(page, BASE_URL);
     await page.evaluate(() => { location.hash = "#settings"; });
     await page.waitForTimeout(200);
-    await page.click("#api-pull");
+    await page.click("#api-pull-employees");
     await page.waitForTimeout(500);
     const toastText = (await page.locator("#toast-region .toast").allTextContents()).join(" | ");
     expect(toastText).toContain("401");

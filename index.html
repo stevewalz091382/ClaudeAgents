@@ -2168,11 +2168,20 @@ ROE.db = (function(){
     });
   }
 
+  // Dedicated preference write, deliberately NOT gated by the sessionOnly check (that check lives
+  // in ROE.store.scheduleSave/persist, not here). Stored under its own key ("prefs") in the same
+  // out-of-line-keyed "settings" store used for the full settings record ("app"), so no schema
+  // version bump is needed. Only ever holds {sessionOnly, theme} - nothing else - per the resolved
+  // design decision: this is the one write path that must survive flipping session-only ON.
+  function savePreference(prefs){ return putRecord("settings", prefs, "prefs"); }
+  function loadPreference(){ return getRecord("settings", "prefs"); }
+
   return {
     STORE_DEFS: STORE_DEFS, isAvailable: isAvailable, open: open,
     readAll: readAll, getRecord: getRecord, putRecord: putRecord,
     replaceAll: replaceAll, replaceAllKeyed: replaceAllKeyed,
-    clearAll: clearAll, deleteDatabase: deleteDatabase
+    clearAll: clearAll, deleteDatabase: deleteDatabase,
+    savePreference: savePreference, loadPreference: loadPreference
   };
 })();
 
@@ -2243,20 +2252,42 @@ ROE.store = (function(){
       markDirty(); notify();
       return Promise.resolve({ fellBackToSessionOnly: true, empty: true });
     }
-    return Promise.all([
-      DB.readAll("employees"), DB.readAll("projects"), DB.readAll("demands"),
-      DB.readAll("assignments"), DB.readAll("mentorships"), DB.readAll("skills"),
-      DB.readAll("employeeSkills"), DB.getRecord("settings", "app"), DB.getRecord("meta", "schemaVersion")
-    ]).then(function(results){
-      var employees=results[0], projects=results[1], demands=results[2], assignments=results[3],
-          mentorships=results[4], skills=results[5], employeeSkills=results[6], settingsRec=results[7];
-      var empty = employees.length === 0 && projects.length === 0 && !settingsRec;
-      state.employees = employees; state.projects = projects; state.demands = demands;
-      state.assignments = assignments; state.mentorships = mentorships; state.skills = skills;
-      state.employeeSkills = employeeSkills;
-      state.settings = settingsRec ? Object.assign(U.clone(C.DEFAULT_SETTINGS), settingsRec) : U.clone(C.DEFAULT_SETTINGS);
-      markDirty(); notify();
-      return { empty: empty };
+    // Read the dedicated, out-of-band preference flag FIRST. It is written on every sessionOnly
+    // toggle (on or off) regardless of the sessionOnly value at the time, so it is the source of
+    // truth for boot - not the main "app" settings record, which stops being written the moment
+    // sessionOnly turns on.
+    return DB.loadPreference().then(function(pref){
+      var sessionOnlyPref = !!(pref && pref.sessionOnly === true);
+      if (sessionOnlyPref){
+        // Session-only was left ON: start every collection empty in memory. Do NOT read employees/
+        // projects/demands/assignments/mentorships/skills from IndexedDB, and do NOT touch or wipe
+        // whatever is already sitting there - no silent destructive purge, just don't load it.
+        state.employees = []; state.projects = []; state.demands = [];
+        state.assignments = []; state.mentorships = []; state.skills = [];
+        state.employeeSkills = [];
+        state.settings = U.clone(C.DEFAULT_SETTINGS);
+        state.settings.sessionOnly = true;
+        if (pref.theme) state.settings.theme = pref.theme;
+        markDirty(); notify();
+        return { empty: true, sessionOnly: true };
+      }
+      return Promise.all([
+        DB.readAll("employees"), DB.readAll("projects"), DB.readAll("demands"),
+        DB.readAll("assignments"), DB.readAll("mentorships"), DB.readAll("skills"),
+        DB.readAll("employeeSkills"), DB.getRecord("settings", "app"), DB.getRecord("meta", "schemaVersion")
+      ]).then(function(results){
+        var employees=results[0], projects=results[1], demands=results[2], assignments=results[3],
+            mentorships=results[4], skills=results[5], employeeSkills=results[6], settingsRec=results[7];
+        var empty = employees.length === 0 && projects.length === 0 && !settingsRec;
+        state.employees = employees; state.projects = projects; state.demands = demands;
+        state.assignments = assignments; state.mentorships = mentorships; state.skills = skills;
+        state.employeeSkills = employeeSkills;
+        state.settings = settingsRec ? Object.assign(U.clone(C.DEFAULT_SETTINGS), settingsRec) : U.clone(C.DEFAULT_SETTINGS);
+        state.settings.sessionOnly = false;
+        if (pref && pref.theme) state.settings.theme = pref.theme;
+        markDirty(); notify();
+        return { empty: empty };
+      });
     }).catch(function(err){
       console.error("ROE.store load failed, falling back to session-only mode", err);
       state.settings.sessionOnly = true;
@@ -2290,13 +2321,26 @@ ROE.store = (function(){
     state.settings.sessionOnly = sessionOnly;
     lastPulledSnapshots = {};
     markDirty(); notify();
-    if (DB.isAvailable()) return DB.clearAll();
+    if (DB.isAvailable()){
+      return DB.clearAll().then(function(){
+        // Re-establish the out-of-band preference record so the user's sessionOnly choice survives
+        // a "Clear all data" the same way it survives a normal reload.
+        return DB.savePreference({ sessionOnly: sessionOnly, theme: state.settings.theme });
+      });
+    }
     return Promise.resolve();
   }
 
+  // Writes {sessionOnly, theme} through the dedicated out-of-band preference path (see
+  // ROE.db.savePreference) - NOT gated by the sessionOnly check itself, so this is the one write
+  // that reliably survives regardless of which way the flag is being flipped.
   function setSessionOnly(on){
     state.settings.sessionOnly = !!on;
     markDirty(); notify();
+    if (DB.isAvailable()){
+      DB.savePreference({ sessionOnly: state.settings.sessionOnly, theme: state.settings.theme })
+        .catch(function(err){ console.error("ROE.store: failed to save session-only preference", err); });
+    }
     if (!on) scheduleSave();
   }
 
@@ -2351,9 +2395,25 @@ ROE.store = (function(){
 /* ===================== BLOCK 12: ROE.ui ===================== */
 /* Impure: render functions per panel, event wiring, bootstrap. The only block allowed to touch document/window UI APIs. */
 ROE.ui = (function(){
-  var C = ROE.const, U = ROE.util, STORE = ROE.store, CALC = ROE.calc, SCORE = ROE.score, ALERTS = ROE.alerts, MENTOR = ROE.mentor, IO = ROE.io, API = ROE.api;
+  var C = ROE.const, U = ROE.util, STORE = ROE.store, CALC = ROE.calc, SCORE = ROE.score, ALERTS = ROE.alerts, MENTOR = ROE.mentor, IO = ROE.io, API = ROE.api, MODEL = ROE.model;
 
   var PANELS = ["overview","skills","projects","optimizer","mentorship","timeline","alerts","settings"];
+
+  // API connector: the 5 entities exposed in settings.api.entities (§6), their display labels, the
+  // record factory used to normalize a freshly-pulled remote record on Apply, and a short list of
+  // canonical field names offered as suggestions in the field-mapping editor.
+  var API_ENTITIES = [
+    { name:"employees",   label:"Employees",   factory:function(p){ return MODEL.newEmployee(p); },
+      fields:["name","email","level","discipline","office","businessGroup","targetUtil","mentorRole","active","notes"] },
+    { name:"projects",    label:"Projects",    factory:function(p){ return MODEL.newProject(p); },
+      fields:["name","client","market","discipline","phase","budget","bimLevel","teamMin","teamMax","priority","status","notes"] },
+    { name:"demands",     label:"Demands",     factory:function(p){ return MODEL.newDemand(p); },
+      fields:["projectId","title","discipline","minLevel","openings"] },
+    { name:"assignments", label:"Assignments", factory:function(p){ return MODEL.newAssignment(p); },
+      fields:["projectId","employeeId","demandId","status","source"] },
+    { name:"skills",      label:"Skills",      factory:function(p){ return MODEL.newSkill(p); },
+      fields:["code","name","category"] }
+  ];
 
   var uiState = {
     panel: "overview",
@@ -2860,13 +2920,16 @@ ROE.ui = (function(){
       $("#w-"+k, root).oninput = function(){ os.weights[k] = parseInt(this.value,10); updateNormalizedLabel(); renderOptimizerResults(); };
     });
     $("#opt-preset", root).onchange = function(){
-      var p = state.settings.presets.find(function(x){return x.name===this.value;}.bind(this));
-      if (p){ os.weights = { skill: Math.round(p.weights.skill*100), availability: Math.round(p.weights.availability*100), seniority: Math.round(p.weights.seniority*100), discipline: Math.round(p.weights.discipline*100) }; renderOptimizer(); }
+      var p = STORE.getState().settings.presets.find(function(x){return x.name===this.value;}.bind(this));
+      // Presets store the raw, unrestricted slider integers exactly as saved (see setWeightPreset
+      // below) - normalization happens only at scoring time, never at storage/restore time. This
+      // is what makes 10/10/10/10 restore as 10/10/10/10 rather than a renormalized 25/25/25/25.
+      if (p){ os.weights = { skill: p.weights.skill, availability: p.weights.availability, seniority: p.weights.seniority, discipline: p.weights.discipline }; renderOptimizer(); }
     };
     $("#opt-save-preset", root).onclick = function(){
       var name = prompt("Preset name?");
       if (!name) return;
-      STORE.setWeightPreset(name, SCORE.normalizeWeights(os.weights));
+      STORE.setWeightPreset(name, { skill: os.weights.skill, availability: os.weights.availability, seniority: os.weights.seniority, discipline: os.weights.discipline });
       renderOptimizer(); toast("Preset saved");
     };
     $("#opt-autostaff", root).onclick = function(){ runAutoStaff(); };
@@ -3219,13 +3282,14 @@ ROE.ui = (function(){
       '</div>' +
       '<div class="card"><h2>Export</h2>' +
         '<button type="button" id="btn-export-xlsx" '+(v.xlsx?'':'disabled')+'>Export .xlsx</button> ' +
-        '<button type="button" id="btn-export-csv" '+(v.xlsx?'':'disabled')+'>Export CSV (per sheet)</button> ' +
+        '<button type="button" id="btn-export-csv">Export CSV (per sheet)</button> ' +
         '<button type="button" id="btn-export-template" '+(v.xlsx?'':'disabled')+'>Download blank template</button>' +
+        (v.xlsx ? '' : '<p class="hint">SheetJS did not load from the CDN, so .xlsx export/import and the template download are disabled. CSV export does not use SheetJS and stays available.</p>') +
       '</div>' +
       '<div class="card"><h2>Horizon</h2><div class="row">' +
         '<label>Horizon start<input type="text" id="set-horizonStart" value="'+esc(s.horizonStart)+'" placeholder="YYYY-MM"></label>' +
         '<label>Horizon months<input type="number" id="set-horizonMonths" min="6" max="36" value="'+s.horizonMonths+'"></label>' +
-      '</div></div>' +
+      '</div><p class="hint" id="horizonStart-error" style="display:none;color:var(--critical);">Horizon start must match YYYY-MM (e.g. 2026-01).</p></div>' +
       '<div class="card"><h2>Context-switch tax</h2><div class="row">' +
         '<label>Per extra project ('+s.ctxTaxPerExtraProject+')<input type="range" id="set-ctxRate" min="5" max="15" value="'+s.ctxTaxPerExtraProject+'"></label>' +
         '<label>Cap %<input type="number" id="set-ctxCapPct" value="'+s.ctxTaxCapPct+'"></label>' +
@@ -3233,7 +3297,8 @@ ROE.ui = (function(){
       '</div><label><input type="checkbox" id="set-requireMin" '+(s.requireMinSkillLevels?'checked':'')+'> Require minimum skill levels (disqualify below-minimum candidates)</label></div>' +
       '<div class="card"><h2>Session &amp; privacy</h2>' +
         '<label><input type="checkbox" id="set-sessionOnly" '+(s.sessionOnly?'checked':'')+'> Session only - do not persist to IndexedDB</label>' +
-        '<p class="hint">'+ (ROE.db.isAvailable() ? "IndexedDB is available." : "IndexedDB is not available in this context; session-only mode is forced.") +'</p>' +
+        '<p class="hint">'+ (ROE.db.isAvailable() ? "IndexedDB is available." : "IndexedDB is not available in this context; session-only mode is forced.") +
+        ' Turning this ON takes effect immediately for new writes. Turning it OFF resumes loading from IndexedDB on the next reload - reload the page to fully switch modes.</p>' +
         '<button type="button" id="btn-clear-all-2" class="danger">Clear all data</button>' +
       '</div>' +
       '<div class="card"><h2>API connector</h2>' +
@@ -3245,12 +3310,22 @@ ROE.ui = (function(){
         '</div>' +
         '<p class="hint">Calls are made directly from your browser. The target API must return <code>Access-Control-Allow-Origin</code> (and allow your auth header via <code>Access-Control-Allow-Headers</code>) or the browser will block the request. There is no proxy - this app has no server component.'+
         (location.protocol === "file:" ? ' Note: this page is open via file:// - the API connector requires serving over http(s) to work.' : '')+'</p>' +
-        '<div class="toolbar"><button type="button" id="api-pull">Pull employees (preview)</button><button type="button" id="api-push">Push employees (preview)</button></div>' +
+        API_ENTITIES.map(function(e){ return renderApiEntityBlock(e, s.api); }).join("") +
         '<div id="api-preview"></div>' +
       '</div>' +
       '<div class="card"><h2>About</h2><p>ROE is a single-file, client-only staffing optimizer. No backend, no accounts. Charts by Chart.js, workbook I/O by SheetJS, both loaded from a CDN; if either fails to load this app disables the corresponding feature and keeps working. No cost/PTO/location data is used in scoring. API tokens live in memory for the session only.</p></div>';
 
-    $("#set-horizonStart", root).onchange = function(){ STORE.setSettings({ horizonStart: this.value }); };
+    $("#set-horizonStart", root).onchange = function(){
+      var val = this.value;
+      var errEl = $("#horizonStart-error", root);
+      if (!/^\d{4}-\d{2}$/.test(val)){
+        errEl.style.display = "block";
+        this.value = STORE.getState().settings.horizonStart; // revert to the last valid value
+        return;
+      }
+      errEl.style.display = "none";
+      STORE.setSettings({ horizonStart: val });
+    };
     $("#set-horizonMonths", root).onchange = function(){ STORE.setSettings({ horizonMonths: U.clamp(parseInt(this.value,10)||12,6,36) }); };
     $("#set-ctxRate", root).oninput = function(){ STORE.setSettings({ ctxTaxPerExtraProject: parseInt(this.value,10) }); renderSettings(); };
     $("#set-ctxCapPct", root).onchange = function(){ STORE.setSettings({ ctxTaxCapPct: parseInt(this.value,10) }); };
@@ -3265,12 +3340,126 @@ ROE.ui = (function(){
       Object.keys(sheets).forEach(function(name){ downloadText("roe-" + name + ".csv", IO.buildCsvForSheet(sheets[name]), "text/csv"); });
     };
     $("#import-file", root).onchange = function(e){ handleImportFile(e.target.files[0]); };
-    $("#api-authMode", root).onchange = function(){ STORE.setSettings({ api: Object.assign({}, s.api, { authMode: this.value }) }); };
-    $("#api-baseUrl", root).onchange = function(){ STORE.setSettings({ api: Object.assign({}, s.api, { baseUrl: this.value }) }); };
-    $("#api-authHeader", root).onchange = function(){ STORE.setSettings({ api: Object.assign({}, s.api, { authHeaderName: this.value }) }); };
+    // Each handler reads the CURRENT live settings.api (not the `s` captured when renderSettings()
+    // ran) before spreading and applying its single-field change. The panel is not re-rendered
+    // between edits, so a stale-captured `s` would silently clobber sibling fields set since the
+    // last render (this was HIGH #2: baseUrl -> authMode -> token used to wipe baseUrl).
+    $("#api-authMode", root).onchange = function(){ updateApiField({ authMode: this.value }); };
+    $("#api-baseUrl", root).onchange = function(){ updateApiField({ baseUrl: this.value }); };
+    $("#api-authHeader", root).onchange = function(){ updateApiField({ authHeaderName: this.value }); };
     $("#api-token", root).onchange = function(){ API.setToken(this.value); toast("Token set for this session only"); };
-    $("#api-pull", root).onclick = function(){ apiPullPreview(); };
-    $("#api-push", root).onclick = function(){ apiPushPreview(); };
+    API_ENTITIES.forEach(function(e){ wireApiEntity(root, e); });
+  }
+
+  // ---------- API connector: per-entity settings helpers (live-read, never a stale closure) ----------
+  function updateApiField(patch){
+    var live = STORE.getState().settings.api;
+    STORE.setSettings({ api: Object.assign({}, live, patch) });
+  }
+  function updateApiEntity(entityName, patch){
+    var live = STORE.getState().settings.api;
+    var entities = Object.assign({}, live.entities);
+    entities[entityName] = Object.assign({}, entities[entityName], patch);
+    STORE.setSettings({ api: Object.assign({}, live, { entities: entities }) });
+  }
+  function setApiFieldMapping(entityName, mapping){
+    var live = STORE.getState().settings.api;
+    var fieldMappings = Object.assign({}, live.fieldMappings);
+    fieldMappings[entityName] = mapping;
+    STORE.setSettings({ api: Object.assign({}, live, { fieldMappings: fieldMappings }) });
+  }
+
+  // ---------- API connector: per-entity UI block (enable, paths, mapping editor, pull/push) ----------
+  function renderApiEntityBlock(entityDef, apiSettings){
+    var name = entityDef.name;
+    var cfg = apiSettings.entities[name] || {};
+    var mapping = apiSettings.fieldMappings[name] || {};
+    var mappingRows = Object.keys(mapping).map(function(field){
+      return '<div class="row" data-map-row="'+esc(field)+'">' +
+        '<label>Field<input type="text" class="map-field" data-entity="'+name+'" data-orig="'+esc(field)+'" value="'+esc(field)+'"></label>' +
+        '<label>Remote path<input type="text" class="map-path" data-entity="'+name+'" data-orig="'+esc(field)+'" value="'+esc(mapping[field])+'"></label>' +
+        '<button type="button" class="map-remove" data-entity="'+name+'" data-field="'+esc(field)+'">Remove</button>' +
+      '</div>';
+    }).join("");
+    var fieldOptions = entityDef.fields.map(function(f){ return '<option value="'+esc(f)+'">'; }).join("");
+    return (
+      '<fieldset><legend>'+esc(entityDef.label)+'</legend>' +
+      '<label><input type="checkbox" class="api-ent-enabled" data-entity="'+name+'" '+(cfg.enabled?'checked':'')+'> Enabled</label>' +
+      '<div class="row">' +
+        '<label>Pull path<input type="text" class="api-ent-pullPath" data-entity="'+name+'" value="'+esc(cfg.pullPath||"")+'"></label>' +
+        '<label>Push path<input type="text" class="api-ent-pushPath" data-entity="'+name+'" value="'+esc(cfg.pushPath||"")+'"></label>' +
+        '<label>Response root (dot path, blank = array at root)<input type="text" class="api-ent-responseRoot" data-entity="'+name+'" value="'+esc(cfg.responseRoot||"")+'"></label>' +
+        '<label>ID field<input type="text" class="api-ent-idField" data-entity="'+name+'" value="'+esc(cfg.idField||"id")+'"></label>' +
+        fieldSelect("api-ent-pushMethod-"+name, "Push method", ["POST","PUT"], cfg.pushMethod||"POST").replace('id="api-ent-pushMethod-'+name+'"', 'id="api-ent-pushMethod-'+name+'" class="api-ent-pushMethod" data-entity="'+name+'"') +
+        fieldSelect("api-ent-pushMode-"+name, "Push mode", ["bulk","perRecord"], cfg.pushMode||"bulk").replace('id="api-ent-pushMode-'+name+'"', 'id="api-ent-pushMode-'+name+'" class="api-ent-pushMode" data-entity="'+name+'"') +
+      '</div>' +
+      '<div class="hint">Field mapping (canonical field -> dot-path on the remote record). Fields left unmapped pass through untouched.</div>' +
+      '<datalist id="api-fields-'+name+'">'+fieldOptions+'</datalist>' +
+      '<div class="mapping-rows" data-entity="'+name+'">' + mappingRows + '</div>' +
+      '<div class="row">' +
+        '<label>New field<input type="text" class="map-field-new" list="api-fields-'+name+'" data-entity="'+name+'" placeholder="canonical field"></label>' +
+        '<label>Remote path<input type="text" class="map-path-new" data-entity="'+name+'" placeholder="dot.path.on.remote"></label>' +
+        '<button type="button" class="map-add" data-entity="'+name+'">Add mapping row</button>' +
+      '</div>' +
+      '<div class="toolbar"><button type="button" class="api-pull" id="api-pull-'+name+'" data-entity="'+name+'">Pull '+esc(entityDef.label)+' (preview)</button>' +
+      '<button type="button" class="api-push" id="api-push-'+name+'" data-entity="'+name+'">Push '+esc(entityDef.label)+' (preview)</button></div>' +
+      '</fieldset>'
+    );
+  }
+
+  function wireApiEntity(root, entityDef){
+    var name = entityDef.name;
+    $(".api-ent-enabled[data-entity='"+name+"']", root).onchange = function(){ updateApiEntity(name, { enabled: this.checked }); };
+    $(".api-ent-pullPath[data-entity='"+name+"']", root).onchange = function(){ updateApiEntity(name, { pullPath: this.value }); };
+    $(".api-ent-pushPath[data-entity='"+name+"']", root).onchange = function(){ updateApiEntity(name, { pushPath: this.value }); };
+    $(".api-ent-responseRoot[data-entity='"+name+"']", root).onchange = function(){ updateApiEntity(name, { responseRoot: this.value }); };
+    $(".api-ent-idField[data-entity='"+name+"']", root).onchange = function(){ updateApiEntity(name, { idField: this.value || "id" }); };
+    $("#api-ent-pushMethod-"+name, root).onchange = function(){ updateApiEntity(name, { pushMethod: this.value }); };
+    $("#api-ent-pushMode-"+name, root).onchange = function(){ updateApiEntity(name, { pushMode: this.value }); };
+
+    $all(".map-field[data-entity='"+name+"']", root).forEach(function(inp){
+      inp.onchange = function(){
+        var orig = this.dataset.orig;
+        var newField = this.value.trim();
+        var mapping = Object.assign({}, STORE.getState().settings.api.fieldMappings[name] || {});
+        var path = mapping[orig];
+        delete mapping[orig];
+        if (newField) mapping[newField] = path || "";
+        setApiFieldMapping(name, mapping);
+        renderSettings();
+      };
+    });
+    $all(".map-path[data-entity='"+name+"']", root).forEach(function(inp){
+      inp.onchange = function(){
+        var field = this.dataset.orig;
+        var mapping = Object.assign({}, STORE.getState().settings.api.fieldMappings[name] || {});
+        mapping[field] = this.value;
+        setApiFieldMapping(name, mapping);
+      };
+    });
+    $all(".map-remove[data-entity='"+name+"']", root).forEach(function(btn){
+      btn.onclick = function(){
+        var field = this.dataset.field;
+        var mapping = Object.assign({}, STORE.getState().settings.api.fieldMappings[name] || {});
+        delete mapping[field];
+        setApiFieldMapping(name, mapping);
+        renderSettings();
+      };
+    });
+    var newFieldInput = $(".map-field-new[data-entity='"+name+"']", root);
+    var newPathInput = $(".map-path-new[data-entity='"+name+"']", root);
+    $(".map-add[data-entity='"+name+"']", root).onclick = function(){
+      var field = (newFieldInput.value||"").trim();
+      var path = (newPathInput.value||"").trim();
+      if (!field){ toast("Enter a canonical field name"); return; }
+      var mapping = Object.assign({}, STORE.getState().settings.api.fieldMappings[name] || {});
+      mapping[field] = path;
+      setApiFieldMapping(name, mapping);
+      renderSettings();
+    };
+
+    $("#api-pull-"+name, root).onclick = function(){ apiPullPreview(name, entityDef); };
+    $("#api-push-"+name, root).onclick = function(){ apiPushPreview(name, entityDef); };
   }
 
   function clearAllFlow(){
@@ -3353,26 +3542,29 @@ ROE.ui = (function(){
     toast("Import applied");
   }
 
-  function apiPullPreview(){
+  // Generic pull preview, operates on whichever entity's Pull button was clicked - not hardcoded
+  // to employees. Works for any of the 5 entities in API_ENTITIES as long as it is enabled.
+  function apiPullPreview(entityName, entityDef){
     var state = STORE.getState();
     var s = state.settings;
-    API.pull(s.api, "employees", s.api.fieldMappings.employees || {}).then(function(remote){
-      var snap = STORE.getLastPulledSnapshot("employees");
-      var diff = API.diffPull(state.employees, remote, snap, "id");
+    var idField = (s.api.entities[entityName] || {}).idField || "id";
+    API.pull(s.api, entityName, s.api.fieldMappings[entityName] || {}).then(function(remote){
+      var snap = STORE.getLastPulledSnapshot(entityName);
+      var diff = API.diffPull(state[entityName], remote, snap, idField);
       var root = $("#api-preview");
-      root.innerHTML = '<div class="card"><h3>Pull preview - employees</h3>' +
+      root.innerHTML = '<div class="card"><h3>Pull preview - '+esc(entityDef.label)+'</h3>' +
         '<p>'+diff.adds.length+' add(s), '+diff.updates.length+' update(s), '+diff.unchanged.length+' unchanged.</p>' +
         '<button type="button" id="api-apply-pull" class="primary">Apply</button> <button type="button" id="api-cancel-pull">Cancel</button></div>';
       $("#api-cancel-pull", root).onclick = function(){ root.innerHTML = ""; toast("Pull cancelled - nothing changed"); };
       $("#api-apply-pull", root).onclick = function(){
-        diff.adds.forEach(function(a){ STORE.upsert("employees", ROE.model.newEmployee(Object.assign({ id:a.id }, a.remote))); });
+        diff.adds.forEach(function(a){ STORE.upsert(entityName, entityDef.factory(Object.assign({ id:a.id }, a.remote))); });
         diff.updates.filter(function(u){ return u.applyRemote; }).forEach(function(u){
-          var emp = state.employees.find(function(e){return e.id===u.id;});
+          var rec = STORE.getState()[entityName].find(function(r){return r.id===u.id;});
           var patch = {}; u.fields.forEach(function(f){ patch[f.field] = f.after; });
-          STORE.upsert("employees", Object.assign({}, emp, patch, { id: u.id }));
+          STORE.upsert(entityName, Object.assign({}, rec, patch, { id: u.id }));
         });
         var byId = {}; remote.forEach(function(r){ byId[r.id] = r; });
-        STORE.setLastPulledSnapshot("employees", byId);
+        STORE.setLastPulledSnapshot(entityName, byId);
         root.innerHTML = "";
         renderAll();
         toast("Pull applied");
@@ -3382,16 +3574,18 @@ ROE.ui = (function(){
     });
   }
 
-  function apiPushPreview(){
+  // Generic push preview, same idea as apiPullPreview above but for Push.
+  function apiPushPreview(entityName, entityDef){
     var state = STORE.getState();
     var s = state.settings;
-    var snap = STORE.getLastPulledSnapshot("employees");
-    var diff = API.diffPush(state.employees, snap, "id");
+    var idField = (s.api.entities[entityName] || {}).idField || "id";
+    var snap = STORE.getLastPulledSnapshot(entityName);
+    var diff = API.diffPush(state[entityName], snap, idField);
     var root = $("#api-preview");
-    root.innerHTML = '<div class="card"><h3>Push preview - employees</h3><p>'+diff.toCreate.length+' to create, '+diff.toUpdate.length+' to update.</p>'+
+    root.innerHTML = '<div class="card"><h3>Push preview - '+esc(entityDef.label)+'</h3><p>'+diff.toCreate.length+' to create, '+diff.toUpdate.length+' to update.</p>'+
       '<button type="button" id="api-send-push" class="primary">Send</button></div>';
     $("#api-send-push", root).onclick = function(){
-      API.push(s.api, "employees", diff.toCreate.concat(diff.toUpdate)).then(function(){
+      API.push(s.api, entityName, diff.toCreate.concat(diff.toUpdate)).then(function(){
         toast("Push complete"); root.innerHTML = "";
       }).catch(function(err){ toast((err && err.isCors ? "CORS error: " : "Push failed: ") + (err.message||err)); });
     };

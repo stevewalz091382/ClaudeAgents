@@ -204,16 +204,14 @@ test.describe("Vendor degradation for import/export (§9 Global)", () => {
     expect(errors).toEqual([]);
   });
 
-  test("NOTE: CSV per-sheet export is disabled whenever XLSX fails to load, even though buildCsvForSheet has no dependency on window.XLSX", async ({ page }) => {
+  test("FIXED: CSV per-sheet export stays enabled even when XLSX fails to load, since buildCsvForSheet has no dependency on window.XLSX", async ({ page }) => {
     await loadApp(page);
+    await loadDemoData(page);
     await page.evaluate(() => { location.hash = "#settings"; });
     await page.waitForTimeout(300);
     const xlsxAvailable = await page.evaluate(() => !!window.XLSX);
-    expect(xlsxAvailable).toBe(false);
+    expect(xlsxAvailable, "this test assumes the CDN is actually blocked in this environment").toBe(false);
     const csvDisabled = await page.locator("#btn-export-csv").isDisabled();
-    // This matches the letter of §9 ("charts and import/export are disabled"), so it is not scored
-    // as a failure, but it is a missed opportunity: CSV export/downloadText never touches
-    // window.XLSX at all and could remain available during a CDN outage.
-    expect(csvDisabled).toBe(true);
+    expect(csvDisabled, "CSV export does not use SheetJS and should remain available during a CDN outage").toBe(false);
   });
 });

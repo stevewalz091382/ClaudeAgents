@@ -29,7 +29,7 @@ test.describe("Optimizer weight sliders & presets (§9 Optimizer)", () => {
     expect(orderDisciplineOnly).not.toEqual(orderDefault);
   });
 
-  test("BUG: a saved preset does NOT restore the exact raw slider weights after reload when they don't already sum to 100 (they are silently renormalized)", async ({ page }) => {
+  test("FIXED: a saved preset restores the exact raw slider weights after reload, even when they don't already sum to 100", async ({ page }) => {
     await loadApp(page);
     await loadDemoData(page);
     await page.evaluate(() => { location.hash = "#optimizer"; });
@@ -57,10 +57,8 @@ test.describe("Optimizer weight sliders & presets (§9 Optimizer)", () => {
     for (const k of ["skill", "availability", "seniority", "discipline"]) {
       restored[k] = await page.locator("#w-" + k).inputValue();
     }
-    // What the acceptance criterion requires: the exact original raw weights (10/10/10/10).
-    // What actually happens: setWeightPreset() stores SCORE.normalizeWeights(os.weights) (i.e.
-    // 0.25/0.25/0.25/0.25), and the preset-select handler converts that normalized fraction back
-    // into a 0-100 slider value (25/25/25/25) - the original 10/10/10/10 raw input is unrecoverable.
+    // setWeightPreset() now stores the raw slider integers as-is (10/10/10/10); normalization
+    // happens only at scoring time (SCORE.normalizeWeights), never at storage/restore time.
     expect(restored, "preset should restore the exact original slider weights (10/10/10/10), not a renormalized value").toEqual({
       skill: "10", availability: "10", seniority: "10", discipline: "10",
     });

@@ -32,10 +32,12 @@ test.describe("Persistence (§9 Persistence, Task 4)", () => {
     expect(after).toBe(0);
   });
 
-  test("BUG: toggling session-only ON, via the real settings checkbox, *after* data was already persisted does NOT lose it on reload", async ({ page }) => {
+  test("FIXED: toggling session-only ON, via the real settings checkbox, *after* data was already persisted does NOT resurrect it on reload, and the toggle itself survives reload", async ({ page }) => {
     // Realistic sequence: load demo data (auto-persists per the 400ms debounce), THEN flip the
     // real "Session only" checkbox in Data & Settings. Per §9: "Session-only mode ON -> reload
-    // loses everything and the badge was visible the whole time."
+    // loses everything and the badge was visible the whole time." The sessionOnly flag itself is
+    // now written through a dedicated, non-gated preference path (ROE.db.savePreference), so it
+    // reliably survives reload even though the main debounced settings save is skipped.
     await loadApp(page);
     await loadDemoData(page);
     await page.waitForTimeout(600); // demo data is now persisted to IndexedDB
@@ -50,14 +52,43 @@ test.describe("Persistence (§9 Persistence, Task 4)", () => {
     await page.reload({ waitUntil: "load" });
     await page.waitForFunction(() => !!(window.ROE && window.ROE.store));
     await page.waitForTimeout(500);
+
     const employeesAfter = await page.evaluate(() => window.ROE.store.getState().employees.length);
-    // This is the acceptance criterion: reload must lose everything. It does not - the previously
-    // persisted 40 demo employees come back, because setSessionOnly() only prevents *future*
-    // writes; it never clears data already sitting in IndexedDB from before the toggle, and
-    // load() unconditionally reads from IndexedDB on boot regardless of the in-memory sessionOnly
-    // flag at the moment of toggling (the persisted settings record itself is also never updated
-    // to sessionOnly:true, since scheduleSave() is skipped once sessionOnly is true).
-    expect(employeesAfter, "session-only reload must lose everything per §9, but stale pre-toggle IndexedDB data reappears").toBe(0);
+    const sessionOnlyAfter = await page.evaluate(() => window.ROE.store.getState().settings.sessionOnly);
+    const badgeVisibleAfterReload = await page.locator("#session-badge").evaluate((el) => el.classList.contains("visible"));
+
+    // The old (pre-toggle) demo data must NOT resurface: session-only means the in-memory store
+    // starts empty on boot rather than reading employees/etc. from IndexedDB.
+    expect(employeesAfter, "session-only reload must not resurrect the pre-toggle IndexedDB data").toBe(0);
+    // The toggle itself must survive - this was the worse half of the original bug: the flag
+    // silently reverted to false on reload, resuming persistence without telling the user.
+    expect(sessionOnlyAfter, "settings.sessionOnly must still be true after reload").toBe(true);
+    expect(badgeVisibleAfterReload, "the session-only badge must still be visible after reload").toBe(true);
+
+    // The stale data must still be sitting untouched in IndexedDB (no silent destructive wipe) -
+    // only the in-memory store skips loading it.
+    const idbEmployeeCount = await page.evaluate(async () => (await window.ROE.db.readAll("employees")).length);
+    expect(idbEmployeeCount, "session-only must not delete pre-existing IndexedDB data, only avoid loading it").toBeGreaterThan(0);
+  });
+
+  test("turning session-only OFF again resumes loading from IndexedDB and resumes writes on the next boot", async ({ page }) => {
+    await loadApp(page);
+    await loadDemoData(page);
+    await page.waitForTimeout(600);
+    await page.evaluate(() => { location.hash = "#settings"; });
+    await page.waitForTimeout(150);
+    await page.locator("#set-sessionOnly").check();
+    await page.waitForTimeout(200);
+    await page.locator("#set-sessionOnly").uncheck();
+    await page.waitForTimeout(600); // scheduleSave() debounce fires now that sessionOnly is off again
+
+    await page.reload({ waitUntil: "load" });
+    await page.waitForFunction(() => !!(window.ROE && window.ROE.store));
+    await page.waitForTimeout(500);
+
+    const state = await page.evaluate(() => window.ROE.store.getState());
+    expect(state.settings.sessionOnly, "sessionOnly must read back false after being turned off and reloaded").toBe(false);
+    expect(state.employees.length, "turning session-only back off should resume loading from IndexedDB on the next boot").toBeGreaterThan(0);
   });
 
   test("Clear all data: wrong confirmation text does not clear; 'CLEAR' clears every IndexedDB object store", async ({ page }) => {
