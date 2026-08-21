@@ -1,5 +1,224 @@
 # TEST_REPORT.md — Resource Optimization Engine (ROE)
 
+## Re-test pass ROUND 3 (Fix loop 3 verification — FINAL LOOP) — 2026-08-21
+
+This is the **final adversarial pass** of this pipeline (fix loop 3 of a maximum of 3; no further
+loop is available regardless of outcome). Under test: `index.html` at commit `3d4aa9b` ("Fix loop 3
+(final): reload-gate the session-only toggle"), against `MANAGER_REVIEW.md` round-2's one mandatory
+blocking finding (three failure modes, labeled (a)/(b)/(c) there) and my own round-2 HIGH finding
+(preserved below). I did not take the Coder's "95/95, structurally closes all three at once" summary
+on report: I re-ran the full suite fresh myself, then re-implemented the Manager's exact three repro
+scenarios independently (own spec file, not the Coder's rewritten one), then went looking for new
+failure modes in the same region a third time (toggle races, rapid flip-flops, the plain/default
+non-session-only path, and a genuinely first-ever boot).
+
+**Result: I could not break it. All three of the Manager's round-2 failure modes are now closed, the
+plain/default persistence path is unaffected, and I found no new CRITICAL/HIGH/MEDIUM issues in this
+region on this pass.** The session-only saga is closed as of this loop, with one caveat below.
+
+**Environment note (unchanged across all three rounds):** same sandboxed-proxy constraint, same
+local, uncommitted `tests/pw.local.config.js` override pointing at
+`/opt/pw-browsers/chromium-1194/chrome-linux/chrome`. The committed `tests/playwright.config.js`
+still cannot launch a browser here; out of scope, already logged three times now.
+
+**What I ran:**
+1. The full committed suite fresh, myself: `npx playwright test --config=pw.local.config.js` →
+   **95 passed, 0 failed** (~75s). Independently confirms the Coder's reported 95/95, including the
+   Coder's rewritten `adversarial-session-only-round2.spec.js` (corrected assertions "(a)"/"(b)" plus
+   three new tests "(d)"/"(e)"/"(g)") and the corrected `persistence.spec.js` assertion, all passing.
+2. A brand-new, independent spec file I wrote from scratch, not derived from or reusing the Coder's
+   test code: `tests/specs/tester-round3-independent.spec.js`. Reads IndexedDB **directly** via raw
+   `indexedDB.open()`/object-store `count()`/`get()` calls rather than trusting `ROE.db`'s own
+   reporting, so a bug in the app's own instrumentation can't hide a real on-disk discrepancy. Six
+   tests, covering the Manager's exact three repro scenarios plus two regression checks:
+   - `MGR-repro(a)`: boot normal (hydrated) → check ON → add data → uncheck OFF, no reload → disk.
+   - `MGR-repro(a2)`: **true** session-only window (after an actual session-only reload) → add data →
+     uncheck OFF, no reload → disk.
+   - `MGR-repro(b)`: true session-only window → delete/churn records → uncheck OFF, no reload → disk,
+     then a real reload to confirm the pre-existing baseline (not the session churn) survives.
+   - `MGR-repro(c)`: session-only reload → uncheck OFF, no reload → badge vs. `isPersistenceActive()`
+     vs. actual disk state, checked immediately.
+   - Regression check: plain/default (never-touches-the-checkbox) add→delete→reload cycle.
+   - Regression check: a genuinely first-ever boot (fresh isolated Playwright context, no prior `roe`
+     database at all) is `hydrated = true` and persists demo data normally.
+   All 6 passed.
+3. A second independent spec, `tests/specs/tester-mgr5-transparency-check.spec.js`, specifically
+   re-testing the Manager's MGR-5 scenario (deletion committed on toggle-off without reload) under
+   the **still-hydrated** condition (never went through a session-only reload) to confirm the new
+   design's documented trade-off — see "Confirmed closed" #2 below. Passed.
+4. Two throwaway race/ordering probes (`tester-race-check.spec.js`, `tester-fliptoggle-check.spec.js`,
+   10 executions total across `--repeat-each` and manual sequencing) targeting scenarios the Coder's
+   own tests don't touch: reloading with zero delay after toggling (checking for a lost async
+   `savePreference` write racing an unload), and rapid flip-flop toggling (ON→OFF→ON, and ON→OFF)
+   before ever reloading, to confirm the *last* toggle before reload is the one that's honored. Both
+   held up in every trial (10/10 and 2/2 respectively) — no lost writes, no stale state.
+5. `git diff 47cad26 3d4aa9b -- index.html` reviewed by hand, in full: confirms the entire round-3 diff
+   is confined to the exact region the Manager scoped (`hydrated`'s declaration comment,
+   `scheduleSave`/`persist`'s guard, `setSessionOnly`'s no-longer-conditional-`scheduleSave` removal,
+   the new `isPersistenceActive()`, `updateSessionBadge()`'s binding, and two blocks of user-facing
+   copy: the settings-panel hint and the toast text). Nothing in the calc engine, optimizer, alerts,
+   mentorship, API connector, a11y, perf, or CSV-export code paths was touched — no scope creep.
+
+**Total combined this session: 105 passed, 0 failed** (95 committed + 10 of my own new/independent).
+
+---
+
+## Confirmed closed this round (the Manager's three round-2 failure modes)
+
+### 1. (a)/(d) — New data added while session-only is genuinely active (post-session-only-reload) is no longer written to disk on toggle-off without a reload
+
+Verified directly against raw IndexedDB (not `ROE.db`'s own reporting): boot normally → load demo
+(40 records on disk) → check session-only → **reload** (now genuinely `hydrated = false`) → add one
+record in memory → uncheck the box **without reloading** → wait past the debounce → raw
+`indexedDB.open("roe")` → `employees` store `count()` still **40**, the new record never lands on
+disk (`MGR-A2-repro: {"baseline":40,"diskCountNoReload":40}`). This is the scenario that actually
+matches "session-only mode was truly active" — `hydrated` never flips back to `true` without an
+actual reload, so `scheduleSave`/`persist`'s sole gate holds for the entire un-hydrated window
+regardless of how many times the checkbox is flipped in between. Root cause fix (`hydrated`
+completely decoupled from `state.settings.sessionOnly`, per the code comments at
+`index.html:2204-2215` and `index.html:2353-2361`) is real, not test-shaped.
+
+### 2. (b)/(e) — Deletions made during a genuine session-only window are not committed on toggle-off without reload
+
+Same mechanism as above, tested with destructive edits instead of additions: true session-only
+window → seed 10 records in memory → delete 5 of them → uncheck without reloading → raw disk count
+is still the **pre-session-only baseline** (`MGR-B-repro: {"baseline":40,"diskCountNoReload":40}`),
+and a subsequent real reload restores exactly the baseline, not the session's churn
+(`finalCount === baseline`). The round-2 CRITICAL-class defect (data destroyed via a doorway nobody
+had tested) is closed.
+
+**Important nuance, not a new bug:** if the session was **already hydrated** when the checkbox is
+checked (i.e., the user never actually went through a session-only reload — they just ticked the box
+mid-session), deletions made in that window **are** genuinely committed to disk immediately,
+regardless of the checkbox state (`MGR-5-equivalent: {"before":40,"afterDeleteAndUncheckNoReload":35,
+"afterReload":35}`). This is now **by design, and transparently so**: `hydrated` only reflects actual
+reload state, never the pending checkbox, so until a reload happens the app keeps behaving exactly as
+it already was — and, critically, the session badge stayed accurately hidden (`writing = true`)
+through the entire sequence, so the user was never told otherwise. This is the key difference from
+round 2: the same underlying data movement is no longer a **lie** — the toast, the settings-panel
+hint, and the badge all agree with what's actually happening at every step. I verified this
+transparency claim directly rather than taking the code comments' word for it.
+
+### 3. (c)/(g) — The session badge no longer claims a write-state that isn't real
+
+Checked the exact adversarial sequence: session-only reload (genuinely `hydrated = false`) → uncheck
+the box **without reloading** → immediately read `#session-badge`'s visibility, `isPersistenceActive()`,
+and raw disk state, all in the same tick-adjacent window (no reload in between). Result:
+`{"badgeVisible":true,"actuallyWriting":false,"diskCount":40,"baseline":40}` — the badge stayed
+visible (truthfully claiming "not saving") even though the checkbox now reads unchecked, because it's
+bound to `isPersistenceActive()` (i.e. `hydrated`), not the raw settings value. This is the exact
+inversion of round 2's MGR-7 finding (badge disappearing while writes were actually still off) and it
+no longer reproduces. Also re-verified via the flip-flop probe that badge state and disk state track
+`hydrated` consistently across a full boot→toggle→reload→toggle→reload cycle, not just a single
+transition.
+
+---
+
+## Regression check: the plain/default persistence path (the one every ordinary user hits)
+
+This was the task's explicit concern: gating everything on `hydrated` instead of the raw setting
+could have broken persistence for the overwhelming majority of users who never touch the session-only
+checkbox at all. Verified this is **not** the case:
+- A genuinely first-ever boot (fresh isolated browser context, no prior `roe` IndexedDB database at
+  all — Playwright gives each test its own storage by default, so no explicit teardown was even
+  needed) comes up with `isPersistenceActive() === true` immediately, before any user interaction.
+  Loading demo data persists to disk normally.
+- In an ordinary (non-session-only) session: add → disk count increments; delete → disk count
+  decrements; reload → `hydrated` is `true` again, badge is hidden, record count matches. All four
+  assertions passed against raw IndexedDB reads.
+- The full 95-test committed suite, which is overwhelmingly non-session-only-focused (formulas,
+  optimizer, alerts, mentorship, API connector, workbook I/O, a11y, perf, the base `persistence.spec.js`
+  reload test), passed without modification.
+
+No regression in the default path.
+
+---
+
+## Spot-check: everything outside the persistence region
+
+Per the task's own scoping instruction, this was a fresh full-suite run rather than manual
+re-verification of already-settled areas, since the round-3 diff (verified by hand via
+`git diff 47cad26 3d4aa9b -- index.html`) touches only `ROE.store`'s `hydrated`/`scheduleSave`/
+`persist`/`setSessionOnly`/`isPersistenceActive`, `ROE.ui.updateSessionBadge`, and two blocks of
+settings-panel/toast copy — nothing in `calc-formulas.spec.js`, `autostaff-demo.spec.js`,
+`optimizer-ui.spec.js`, `api-connector.spec.js`, `a11y.spec.js`, `perf.spec.js`, or
+`workbook-io.spec.js`'s target code. All of these pass unmodified in the same fresh 95/95 run. No new
+information suggesting any regression here.
+
+---
+
+## What I tried and could not break (round 3)
+
+- Re-implemented all three Manager repro scenarios independently, reading raw IndexedDB rather than
+  trusting the app's or the Coder's own instrumentation — all three now behave correctly.
+- Reloaded with **zero** added delay immediately after toggling the checkbox, 5x repeated, to look
+  for a lost/raced async `savePreference` write against an immediate reload — held up 5/5 (10/10
+  across both a 0ms and 10ms variant).
+- Rapid flip-flop toggling (ON→OFF→ON and ON→OFF, both within ~50ms, before ever reloading) to check
+  that the *last* write wins and no stale preference sticks — held up in both directions.
+- Deliberately distinguished the "session actually booted un-hydrated" case from the "checkbox is
+  pending but session is still hydrated" case, since conflating these was exactly what let round 2's
+  three bugs hide — confirmed the code (and my tests) correctly distinguish them, and confirmed the
+  latter case's continued-writing behavior is honestly reflected everywhere (toast, hint text, badge),
+  not silently divergent from it.
+- Tried to find a scenario where the badge and `isPersistenceActive()`/actual disk-write behavior
+  disagree, across every toggle/reload permutation I could construct — could not produce one.
+
+---
+
+## Caveat (not a defect, a documentation/UX observation — LOW, non-blocking)
+
+The checkbox's own inline label still reads *"Session only - do not persist to IndexedDB"*, which,
+read in isolation and without the paragraph immediately below it, could be misread as taking effect
+the instant it's checked. The hint paragraph directly underneath it does fully and correctly explain
+the reload-gating and even states the badge is the source of truth — so this is not a functional gap,
+just a minor first-impression risk for a user who reads the checkbox label but skips the hint. Since
+the actual behavior, the toast, the hint text, and the badge are now all mutually consistent (the
+substantive requirement), I am not rating this above LOW, and given this is the final loop with no
+further fix cycle available, I'm documenting it rather than blocking on it. Recommend, if this project
+ever gets a loop 4 for unrelated reasons, tightening the checkbox label itself (e.g. appending
+"(takes effect after reload)").
+
+---
+
+## Verdict recommendation (round 3, final)
+
+**GO.** All three of Manager round-2's failure modes ((a) over-persistence, (b) destructive
+under-toggle-off, (c) badge dishonesty) are independently confirmed closed under my own from-scratch
+adversarial re-implementation, reading raw IndexedDB rather than trusting either the app's or the
+Coder's own reporting. The plain/default persistence path (the one every ordinary user hits, having
+never touched this checkbox) is unaffected — verified via a genuinely first-ever boot and an ordinary
+add/delete/reload cycle. Nothing outside the persistence region regressed (95/95 committed, unmodified
+elsewhere). I could not break this in five separate additional adversarial angles (raw-disk
+verification, zero-delay reload race, rapid flip-flop toggling, still-hydrated-mid-session
+transparency check, first-ever-boot check). The session-only saga, open across three consecutive fix
+loops, is closed as of this commit. The one open item (checkbox label wording, LOW) is a
+documentable, non-blocking cosmetic note, not a functional defect, and does not change the GO
+recommendation — especially given this is the final loop and the pipeline must conclude regardless.
+
+---
+
+## Files (round 3)
+
+- New independent specs (raw-IndexedDB-reading, not derived from the Coder's rewritten specs):
+  `tests/specs/tester-round3-independent.spec.js` (6 tests), `tests/specs/tester-mgr5-transparency-check.spec.js`
+  (1 test).
+- Exploratory probes (race/ordering, not core regression coverage but zero failures across all runs):
+  `tests/specs/tester-race-check.spec.js`, `tests/specs/tester-fliptoggle-check.spec.js`.
+- Re-run, unmodified, and passing: the entire committed suite including the Coder's rewritten
+  `tests/specs/adversarial-session-only-round2.spec.js` and corrected `tests/specs/persistence.spec.js`.
+- Full fresh run: `npx playwright test --config=pw.local.config.js` → 95/95 passed (committed suite);
+  105/105 including my own new files.
+- Source under test: `index.html` at commit `3d4aa9b`. Diff reviewed by hand:
+  `git diff 47cad26 3d4aa9b -- index.html`.
+- Plan: `BUILD_PLAN.md` §2.6 (still not amended by the Architect per Manager round-2's request — out
+  of scope for the Coder/Tester, noting for the record only).
+- Prior verdict basis: `MANAGER_REVIEW.md` (round 2, GO WITH FIXES), round-2 and round-1 sections
+  below, preserved unchanged.
+
+---
+---
+
 ## Re-test pass ROUND 2 (Fix loop 2 verification) — 2026-08-21
 
 This is an **independent re-verification** of the Coder's fix-loop-2 commit (`95e9df5`), following
