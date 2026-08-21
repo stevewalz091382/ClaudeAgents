@@ -1,5 +1,242 @@
 # TEST_REPORT.md — Resource Optimization Engine (ROE)
 
+## Re-test pass ROUND 2 (Fix loop 2 verification) — 2026-08-21
+
+This is an **independent re-verification** of the Coder's fix-loop-2 commit (`95e9df5`), following
+up on my own round-1 `TEST_REPORT.md` findings (below, preserved unchanged). I did not trust the
+Coder's "83/83, all my adversarial specs pass unmodified" summary at face value: I re-ran the exact
+committed spec files myself, then re-ran my own three round-1 adversarial specs unmodified, then wrote
+new adversarial variants targeting scenarios the Coder's own new code/tests do not appear to exercise
+(same-session toggle-without-reload, empty-app-start, and a wider set of horizon inputs).
+
+**Result: three of three round-1 blocking items hold up. I found one new HIGH-severity issue that the
+Coder did not test for and that directly contradicts new UI copy added in this exact patch.** It is
+not a data-destroying regression like last round's CRITICAL — it's the opposite failure mode: data the
+user believes is "session only / not being saved" gets silently written to IndexedDB the moment
+session-only is turned back off, if that happens in the same session without an intervening reload.
+
+**Environment note (unchanged from both prior rounds):** same sandboxed-proxy constraint, same local,
+uncommitted `tests/pw.local.config.js` override pointing at
+`/opt/pw-browsers/chromium-1194/chrome-linux/chrome`. The committed `tests/playwright.config.js` still
+cannot launch a browser here; out of scope, already logged twice.
+
+**What I ran:**
+1. The full committed suite fresh, myself, not trusting the Coder's reported count:
+   `npx playwright test --config=pw.local.config.js` → **83 passed, 0 failed** (56.0s). This
+   independently confirms the Coder's reported 83/83 is real, including all four of my own round-1
+   adversarial spec files (`adversarial-session-only.spec.js`, `adversarial-recheck.spec.js`,
+   `adversarial-clearall.spec.js`, `adversarial-horizon-edge.spec.js`) running **unmodified** and
+   passing for the first time.
+2. `adversarial-session-only.spec.js` alone under `--repeat-each=3` → 3/3 passed, confirming the
+   fix for last round's CRITICAL is 100% reproducible, not a lucky single run.
+3. Two new spec files of my own:
+   - `tests/specs/adversarial-session-only-round2.spec.js` — same-session toggle-without-reload
+     scenario, empty-app-start scenario, and a 3x-repeated full-cycle stability check.
+   - `tests/specs/adversarial-horizon-edge2.spec.js` — six more horizonStart inputs beyond last
+     round's `"2026-13"` (`"2026-00"`, `"0000-01"`, `"2026-1"`, `"2026-AA"`, `"9999-12"`, `"2026-99"`).
+
+---
+
+## CRITICAL
+
+**None open.** Last round's CRITICAL (turning session-only OFF after a reload silently destroyed
+previously-persisted IndexedDB data) is **confirmed fixed**, independently, including under repeat
+testing. See "Confirmed fixed" section below for detail.
+
+---
+
+## HIGH
+
+### NEW — Data added while session-only is ON gets silently written to IndexedDB the instant the box is unchecked, if this happens within the same session without a reload in between
+
+**§9 / UI-copy criterion this breaks:** the settings panel's own hint text, rewritten in this exact
+patch (`index.html:3316`), states: *"Turning it OFF does NOT immediately resume saving or load your
+existing data back in - nothing is written to IndexedDB until you reload the page."* This claim is
+demonstrably false for the most ordinary version of this flow: toggle on, do something, toggle off,
+all without ever reloading.
+
+**Root cause:** the new `hydrated` guard (the actual fix for last round's CRITICAL) is only ever set
+to `false` inside `load()` — i.e., only a real page load/reload can make it `false`. Checking the
+session-only checkbox (`setSessionOnly(true)`) does **not** touch `hydrated` at all; it stays `true`
+if the app booted normally. So the moment the user unchecks it again (`setSessionOnly(false)` →
+`scheduleSave()`), the `if (!hydrated) return;` guard added this loop does **nothing** to stop it,
+because `hydrated` was never flipped false in the first place — there was no intervening reload. The
+guard only protects the specific "empty in-memory state right after a session-only reload" case it was
+built for; it does not protect the "same-session round-trip" case, because in that case nothing about
+the in-memory state ever looked suspicious to the code (no emptiness, no reload) even though the data
+in it was added under an explicit privacy promise.
+
+**What I did (own adversarial test, `adversarial-session-only-round2.spec.js`, test "(a)"):**
+1. Loaded the app, loaded demo data (~40 employees), waited for persist (real IndexedDB now holds 40).
+2. Checked `#set-sessionOnly` via the real checkbox.
+3. **Without reloading**, added one new employee record via `ROE.store.upsert("employees", ...)`
+   (equivalent to using any real "add employee" UI action while the privacy toggle is on) — the
+   in-memory array now holds 41.
+4. **Without reloading**, unchecked `#set-sessionOnly` again.
+5. Waited 700ms (well past the 400ms debounce).
+
+**What happened:** `ROE.db.readAll("employees")` now returns **41** records, including the one added
+in step 3 under the "session only, not saved" premise. It was written to disk with zero reload, zero
+warning, zero further user action beyond unchecking one box.
+
+**What should have happened:** either (a) the record added while session-only was on should never
+reach IndexedDB unless/until the user takes an action the app clearly frames as "start persisting
+again" (e.g., an explicit reload, exactly as the UI hint text already claims happens), or (b) if
+same-session flush-on-toggle-off is the intended design, the UI hint must not claim otherwise. Right
+now the code and its own freshly-written user-facing copy disagree with each other.
+
+**Confirmed with a second, independent scenario** (test "(b)"): starting from a **completely empty**
+app/IndexedDB (no demo data loaded at all), toggling session-only ON, adding one record, toggling OFF
+(no reload), then reloading: the "ephemeral" record survives the reload and IndexedDB shows 1 record
+— not 0. So this isn't specific to "there was already data sitting around"; it reproduces from a blank
+slate too.
+
+**Severity reasoning (HIGH, not CRITICAL):** this is the inverse failure mode of last round's
+CRITICAL — over-persistence of data the user believed was private, not destruction of existing data.
+No data is lost; nothing crashes. But it is a real privacy-contract violation of the feature's entire
+stated purpose ("session only — do not persist to IndexedDB") in an entirely ordinary flow (nobody is
+required to reload between checking and unchecking a settings checkbox), and it falsifies UI copy the
+Coder wrote in this very commit to describe this exact fix. Not rated CRITICAL because: (1) it doesn't
+destroy pre-existing data, (2) the literal §9 bullet ("when on, all writes are skipped") is honored
+while the box is actually checked — the violation is specifically about what happens after it's
+unchecked again, a case §9 does not explicitly speak to. This is a genuine, real gap, not scope creep:
+it was directly in-scope of what this loop's own fix and its own new UI text claim to guarantee.
+
+**Note on novelty:** the underlying mechanism (`setSessionOnly(false)` unconditionally calling
+`scheduleSave()` against whatever is currently in memory) is *not new to this loop* — it existed in
+loop 1 too, and my own round-1 report noted toggling on/off without reloading "correctly safe, no data
+loss" because I hadn't yet tried adding new data during the ON window. What **is** new to this loop is
+the UI hint text that now makes an affirmatively false claim about this exact scenario ("nothing is
+written to IndexedDB until you reload the page"), which is why I'm flagging it now rather than treating
+it as previously-accepted behavior.
+
+**Reproduce:** `tests/specs/adversarial-session-only-round2.spec.js`, tests "(a)" and "(b)".
+
+---
+
+## Confirmed fixed (round 1 blockers, independently re-verified this round)
+
+### 1. CRITICAL — session-only OFF after a reload no longer destroys previously-persisted data
+
+Re-ran my own unmodified `adversarial-session-only.spec.js` (the exact repro from last round) plus
+`--repeat-each=3` for reproducibility. **3/3 passed.** Read the actual fix in `index.html`:
+- A new `hydrated` flag (`index.html:2210-2219`) starts `false`, is set `true` only on the real
+  disk-read branch of `load()` (`index.html:2302`), and `false` on every non-hydrating branch
+  (DB-unavailable, session-only-skip, error-fallback).
+- `scheduleSave()` (`index.html:2237-2241`) and `persist()` (`index.html:2244-2247`) both now bail
+  immediately if `!hydrated`, in addition to the pre-existing `sessionOnly` bail.
+- `setSessionOnly(false)` still calls `scheduleSave()`, but since `hydrated` is still `false` at that
+  point (it was never flipped true after the session-only-skip boot), the call is now a no-op. Only a
+  subsequent real reload (which re-runs `load()`, sees `sessionOnly` now `false`, takes the disk-read
+  branch, and sets `hydrated = true`) makes writes possible again.
+- Confirmed via direct IndexedDB inspection at every step: toggle ON → reload → in-memory 0, IDB still
+  40 → toggle OFF (no reload) → wait 700ms → IDB **still 40** (was: 0, last round) → reload → in-memory
+  and IDB both 40. This is a correct, real fix of the exact reported defect.
+
+### 2. MEDIUM — "Clear all data" leftover `settings` preference record
+
+Re-ran my own unmodified `adversarial-clearall.spec.js`. **Passed.** `ROE.db.readAll("settings")`
+returns `[]` (empty array) after typing `CLEAR`, not the `[{"sessionOnly":false,"theme":"dark"}]` from
+last round. Read the fix: `clearAll()` (`index.html:2333-2346`) no longer calls `DB.savePreference(...)`
+after `DB.clearAll()` — it resets `state.settings` fully to `C.DEFAULT_SETTINGS` in memory and leaves
+every store, including `settings`, genuinely empty on disk. Matches the literal §9 wording ("leaves
+every object store empty") exactly now.
+
+### 3. LOW — horizonStart month-range validation
+
+Re-ran my own unmodified `adversarial-horizon-edge.spec.js`. **Passed** — `"2026-13"` is now rejected
+and reverted with the inline error shown (updated error text: "...with a month between 01 and 12...").
+I went further this round with `adversarial-horizon-edge2.spec.js`, six more inputs:
+
+| Input | Result |
+|---|---|
+| `"2026-00"` | rejected, reverted to prior valid value |
+| `"2026-1"` (wrong shape) | rejected, reverted |
+| `"2026-AA"` (non-numeric month) | rejected, reverted |
+| `"2026-99"` | rejected, reverted |
+| `"9999-12"` (valid shape+range, unusual year) | **accepted** (correct — nothing in scope says to bound the year) |
+| `"0000-01"` (valid shape+range, year zero) | accepted, stored as `"0000-01"` |
+
+All the actually-in-scope cases (bad shape, non-numeric month, out-of-range month including both `00`
+and `99`) are now correctly caught. `"0000-01"` sailing through is a trivial residual (a literal year
+zero is nonsensical but shape-and-range valid, and month-range was the only thing this loop was asked
+to fix) — noting it for completeness, **not** escalating it as a new finding; it's out of proportion
+with what §9/this loop's scope actually required, and no downstream crash or corruption was found from
+it.
+
+### 4-6. API connector UI, auth-mode stale closure, preset round-trip
+
+Not re-tested from scratch this round per the task's own scoping instruction (these were independently
+confirmed in round 1 and this loop did not touch that code). Spot-checked only via the full suite
+(`api-connector.spec.js`, `optimizer-ui.spec.js`, and my own `adversarial-recheck.spec.js` all still
+pass unmodified, 0 changes needed). No regressions detected.
+
+---
+
+## Regression spot-check (formulas, determinism, auto-staff, alerts, mentorship, a11y, perf, CSV gating)
+
+Per the task's scoping instruction, this was a spot-check via the full fresh suite run rather than
+manual re-verification, since this loop's diff (`git diff HEAD~1 HEAD -- index.html`) touches only
+`ROE.store.load/scheduleSave/persist/clearAll/setSessionOnly` and the horizon-input validation handler
+— nothing in the calc engine, optimizer, alerts, mentorship, a11y, perf, or CSV-export code paths.
+`calc-formulas.spec.js`, `autostaff-demo.spec.js`, `a11y.spec.js`, `perf.spec.js`, `workbook-io.spec.js`,
+`api-connector.spec.js`, `optimizer-ui.spec.js`, and `persistence.spec.js` all pass unmodified in the
+same fresh run that produced 83/83. No new information suggesting any regression in these areas.
+
+---
+
+## What I tried and could not break (this round)
+
+- Repeated the exact fixed CRITICAL repro 3x via `--repeat-each=3` — held up every time.
+- Toggled session-only ON/OFF three full cycles (check → reload → uncheck → reload → Clear all data →
+  repeat) in a single test to check for any cumulative state corruption across repeated cycles — held
+  up, 40 employees present after every cycle.
+- Fed six additional horizonStart edge-case strings beyond last round's single repro — all
+  in-scope-invalid ones correctly rejected.
+- Verified the `settings` IndexedDB store is genuinely `[]`, not just "looks empty in the UI," after
+  Clear all data.
+- Tried an empty-app-start variant of the session-only same-session toggle (no pre-existing data at
+  all) to see if the HIGH finding above was somehow an artifact of pre-existing demo data being
+  present — it reproduces identically from a blank slate.
+
+---
+
+## Verdict recommendation (round 2)
+
+**GO WITH FIXES**, not a clean GO. All three round-1 blocking items (the data-destroying CRITICAL, the
+Clear-all leftover MEDIUM, the horizon-range LOW) are genuinely, independently confirmed fixed under
+adversarial re-test, including repeat-run and additional-variant testing beyond what the Coder's own
+new specs cover. The one new finding this round (HIGH: same-session toggle-off silently persists data
+added during the "session only" window, contradicting this exact patch's own new UI copy) is real,
+100%-reproducible, and was not caught by the Coder's own tests, but it is not destructive and does not
+undo any of the three confirmed fixes above. Given this is fix loop 2 of a maximum of 3, my
+recommendation is: fix the one new HIGH (likely by having `setSessionOnly(true)` snapshot or otherwise
+guard in-session additions, or by having `setSessionOnly(false)` require an explicit reload rather than
+calling `scheduleSave()` at all, and correcting the UI copy to match whatever behavior is actually
+implemented) before final sign-off, but the pipeline is close to done — this is not another
+back-to-square-one CRITICAL like last round.
+
+---
+
+## Files (round 2)
+
+- New adversarial specs: `tests/specs/adversarial-session-only-round2.spec.js`,
+  `tests/specs/adversarial-horizon-edge2.spec.js`.
+- Re-run, unmodified, and now passing: `tests/specs/adversarial-session-only.spec.js`,
+  `tests/specs/adversarial-clearall.spec.js`, `tests/specs/adversarial-horizon-edge.spec.js`,
+  `tests/specs/adversarial-recheck.spec.js`.
+- Full fresh run: `npx playwright test --config=pw.local.config.js` → 83/83 passed (56.0s).
+- Source under test: `index.html` at commit `95e9df5`. Diff reviewed:
+  `git diff HEAD~1 HEAD -- index.html` (37 lines changed: `hydrated` flag, `scheduleSave`/`persist`
+  guards, `load()` branch updates, `clearAll()` no longer re-writing prefs, horizon month-range regex).
+- Plan: `BUILD_PLAN.md`. Prior verdict basis: round-1 section below, `MANAGER_REVIEW.md`.
+
+---
+
+---
+
+# Round 1 report (preserved, unchanged)
+
 ## Re-test pass (Fix loop 1 verification)
 
 This is an **independent re-verification** of the Coder's fix-loop-1 commit (`fe7ec83`), done
