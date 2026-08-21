@@ -46,8 +46,13 @@ test.describe("Persistence (§9 Persistence, Task 4)", () => {
     await page.locator("#set-sessionOnly").check();
     await page.waitForTimeout(200);
 
+    // Round-3 fix: the badge reflects the ACTUAL write-state (driven by `hydrated`), not the raw
+    // checkbox value. This session booted already-hydrated and no reload has happened yet, so writes
+    // are still genuinely active - the badge must stay hidden here even though the checkbox is now
+    // checked, otherwise it would falsely claim "not saving" while a debounced save could still be
+    // in flight. It only becomes visible after the reload below actually re-derives `hydrated`.
     const badgeVisibleBeforeReload = await page.locator("#session-badge").evaluate((el) => el.classList.contains("visible"));
-    expect(badgeVisibleBeforeReload, "badge should be visible immediately after enabling session-only via the real checkbox").toBe(true);
+    expect(badgeVisibleBeforeReload, "badge must reflect actual write-state, not the pending checkbox value, until a reload actually applies it").toBe(false);
 
     await page.reload({ waitUntil: "load" });
     await page.waitForFunction(() => !!(window.ROE && window.ROE.store));

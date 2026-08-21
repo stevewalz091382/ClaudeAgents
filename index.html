@@ -2204,11 +2204,14 @@ ROE.store = (function(){
   // True only once in-memory state genuinely reflects IndexedDB (or has been explicitly wiped in
   // sync with it, e.g. clearAll). False while in-memory state was populated by the session-only
   // skip-load branch of load() (real IndexedDB data may still exist on disk but was never read into
-  // memory) or before the very first load() completes. Writes must never run while this is false -
-  // that is exactly the condition that let scheduleSave/persist clobber real IndexedDB data with an
-  // empty in-memory array (fix-loop-2 CRITICAL regression). Turning session-only back OFF flips the
-  // persisted preference immediately but does NOT set this true - only a real reload (which re-runs
-  // load() and reads the now-off preference) rehydrates memory from disk and sets it true again.
+  // memory) or before the very first load() completes. `hydrated` - not `state.settings.sessionOnly`
+  // - is the SOLE gate on whether scheduleSave/persist actually write anything (see round-3 fix
+  // below). It only ever changes inside load() and clearAll(), i.e. on an actual page reload or an
+  // explicit clear, so real write behavior can never change mid-session no matter how many times the
+  // session-only checkbox is flipped. Toggling the checkbox writes the out-of-band preference (for
+  // the *next* load()) and updates `state.settings.sessionOnly` purely as a UI/preview value; it
+  // deliberately does not touch `hydrated`, so writes keep behaving exactly as they already were
+  // until the user reloads.
   var hydrated = false;
 
   function notify(){ listeners.forEach(function(fn){ fn(state); }); }
@@ -2235,14 +2238,15 @@ ROE.store = (function(){
   }
 
   function scheduleSave(){
-    if (state.settings.sessionOnly) return;
+    // Gated on `hydrated` alone - see the comment on its declaration above. Deliberately does NOT
+    // also check `state.settings.sessionOnly`: that flag can be flipped by the user mid-session
+    // without changing `hydrated`, and real writes must not change behavior until reload either way.
     if (!hydrated) return; // never schedule a write against not-yet-rehydrated in-memory state
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(function(){ persist(); }, 400);
   }
 
   function persist(){
-    if (state.settings.sessionOnly) return Promise.resolve();
     if (!hydrated) return Promise.resolve(); // guard against clobbering IndexedDB with stale/empty memory
     if (!DB.isAvailable()) return Promise.resolve();
     return Promise.all([
@@ -2346,9 +2350,15 @@ ROE.store = (function(){
     return Promise.resolve();
   }
 
-  // Writes {sessionOnly, theme} through the dedicated out-of-band preference path (see
-  // ROE.db.savePreference) - NOT gated by the sessionOnly check itself, so this is the one write
-  // that reliably survives regardless of which way the flag is being flipped.
+  // Reload-gated: writes {sessionOnly, theme} through the dedicated out-of-band preference path
+  // (see ROE.db.savePreference), which only takes effect on the NEXT load(). Deliberately does NOT
+  // touch `hydrated` and does NOT call scheduleSave()/persist() in either direction - toggling this
+  // checkbox must never itself cause a write of current in-memory state to disk, whether turning
+  // session-only on or off. That is what keeps `hydrated` (the actual write-gate) and
+  // `state.settings.sessionOnly` (the checkbox's displayed/pending value) free to disagree for the
+  // rest of the session without ever causing a behavior change - the fix for the round-2 data-loss
+  // bugs. Real behavior (and the session badge, see isPersistenceActive()) only changes after an
+  // actual reload re-runs load() and re-derives `hydrated` from the now-current preference.
   function setSessionOnly(on){
     state.settings.sessionOnly = !!on;
     markDirty(); notify();
@@ -2356,8 +2366,13 @@ ROE.store = (function(){
       DB.savePreference({ sessionOnly: state.settings.sessionOnly, theme: state.settings.theme })
         .catch(function(err){ console.error("ROE.store: failed to save session-only preference", err); });
     }
-    if (!on) scheduleSave();
   }
+
+  // True precisely when writes are ACTUALLY active right now (i.e. what scheduleSave/persist will
+  // do), as opposed to `state.settings.sessionOnly`, which may just be a pending preference that
+  // will only take effect after the user reloads. Used to drive the session badge so it can never
+  // claim a write-state that isn't real.
+  function isPersistenceActive(){ return hydrated; }
 
   // ---- Generic CRUD over a top-level collection (employees/projects/demands/assignments/mentorships/skills) ----
   function upsert(collectionName, record){
@@ -2400,6 +2415,7 @@ ROE.store = (function(){
     getState: getState, subscribe: subscribe, getIndexes: getIndexes, markDirty: markDirty,
     load: load, persist: persist, scheduleSave: scheduleSave,
     loadDemoData: loadDemoData, clearAll: clearAll, setSessionOnly: setSessionOnly,
+    isPersistenceActive: isPersistenceActive,
     upsert: upsert, remove: remove, upsertEmployeeSkill: upsertEmployeeSkill,
     setSettings: setSettings, setWeightPreset: setWeightPreset,
     getLastPulledSnapshot: getLastPulledSnapshot, setLastPulledSnapshot: setLastPulledSnapshot,
@@ -2518,9 +2534,12 @@ ROE.ui = (function(){
   function renderAll(){ renderPanel(uiState.panel); updateSessionBadge(); }
 
   function updateSessionBadge(){
+    // Bound to isPersistenceActive() (i.e. `hydrated`, the actual write-gate), NOT the raw
+    // settings.sessionOnly checkbox value - a pending, not-yet-reloaded toggle must never change
+    // what the badge claims is happening right now.
     var badge = $("#session-badge");
-    var on = STORE.getState().settings.sessionOnly;
-    badge.classList.toggle("visible", !!on);
+    var writing = STORE.isPersistenceActive();
+    badge.classList.toggle("visible", !writing);
   }
 
   /* =========================== OVERVIEW =========================== */
@@ -3313,7 +3332,7 @@ ROE.ui = (function(){
       '<div class="card"><h2>Session &amp; privacy</h2>' +
         '<label><input type="checkbox" id="set-sessionOnly" '+(s.sessionOnly?'checked':'')+'> Session only - do not persist to IndexedDB</label>' +
         '<p class="hint">'+ (ROE.db.isAvailable() ? "IndexedDB is available." : "IndexedDB is not available in this context; session-only mode is forced.") +
-        ' Turning this ON takes effect immediately for new writes and blocks saving right away. Turning it OFF does NOT immediately resume saving or load your existing data back in - nothing is written to IndexedDB until you reload the page. Reload after turning it OFF to load your saved data from IndexedDB and resume normal saving.</p>' +
+        ' Checking or unchecking this box only takes effect after you reload the page - in <em>either</em> direction. Until you reload, saving keeps working exactly as it already was this session: if saving was on, your edits (including deletions) keep being saved even after you check this box; if saving was off (e.g. right after a session-only reload), nothing is written to IndexedDB even after you uncheck this box. The badge above always shows what is actually happening right now, not what this checkbox is set to. Reload the page for a change to this setting to actually take effect.</p>' +
         '<button type="button" id="btn-clear-all-2" class="danger">Clear all data</button>' +
       '</div>' +
       '<div class="card"><h2>API connector</h2>' +
@@ -3348,7 +3367,7 @@ ROE.ui = (function(){
     $("#set-ctxCapPct", root).onchange = function(){ STORE.setSettings({ ctxTaxCapPct: parseInt(this.value,10) }); };
     $("#set-ctxCap", root).onchange = function(){ STORE.setSettings({ ctxCap: parseInt(this.value,10) }); };
     $("#set-requireMin", root).onchange = function(){ STORE.setSettings({ requireMinSkillLevels: this.checked }); };
-    $("#set-sessionOnly", root).onchange = function(){ STORE.setSessionOnly(this.checked); updateSessionBadge(); toast(this.checked ? "Session-only mode ON" : "Session-only mode OFF"); };
+    $("#set-sessionOnly", root).onchange = function(){ STORE.setSessionOnly(this.checked); updateSessionBadge(); toast((this.checked ? "Session-only mode ON" : "Session-only mode OFF") + " - reload the page to apply. Saving behavior is unchanged until then."); };
     $("#btn-clear-all-2", root).onclick = clearAllFlow;
     $("#btn-export-xlsx", root).onclick = function(){ try { IO.exportWorkbookFile(STORE.getState(), "roe-export.xlsx"); } catch(e){ toast(String(e.message||e)); } };
     $("#btn-export-template", root).onclick = function(){ try { IO.exportTemplateFile(STORE.getState().settings, "roe-template.xlsx"); } catch(e){ toast(String(e.message||e)); } };
