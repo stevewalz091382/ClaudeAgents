@@ -1,0 +1,3457 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ROE - Resource Optimization Engine</title>
+<!-- Vendored via CDN. Feature-detected on boot; app degrades gracefully if these fail to load (see ROE.ui.checkVendors). -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" onerror="window.__ROE_CHART_FAILED=true"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" onerror="window.__ROE_XLSX_FAILED=true"></script>
+<style>
+:root{
+  --bg:#12151b; --bg-alt:#171b23; --surface:#1d222b; --surface-2:#242a35;
+  --border:#2c3340; --text:#e6e9ef; --text-dim:#9aa4b2; --text-faint:#6b7484;
+  --accent:#4f8cff; --accent-dim:#2c4a82;
+  --critical:#e5484d; --high:#f2994a; --medium:#f2c94c; --low:#6fcf97;
+  --success:#3fb950; --danger:#e5484d; --warn:#f2994a;
+  --radius:6px; --focus:2px solid #4f8cff;
+  font-size:15px;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+body{display:flex;flex-direction:column;min-height:100vh;}
+a{color:var(--accent);}
+button, select, input, textarea{font-family:inherit;font-size:14px;color:var(--text);background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px;}
+button{cursor:pointer;}
+button:hover{background:var(--accent-dim);}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+button.danger{background:var(--danger);color:#fff;border-color:var(--danger);}
+button:disabled{opacity:.5;cursor:not-allowed;}
+button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visible, [tabindex]:focus-visible{outline:var(--focus);outline-offset:2px;}
+label{display:inline-flex;flex-direction:column;gap:2px;font-size:12px;color:var(--text-dim);}
+table{border-collapse:collapse;width:100%;font-size:13px;}
+th,td{border-bottom:1px solid var(--border);padding:6px 8px;text-align:left;}
+th{color:var(--text-dim);font-weight:600;position:sticky;top:0;background:var(--surface);}
+#topbar{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--bg-alt);border-bottom:1px solid var(--border);}
+#topbar h1{font-size:16px;margin:0;flex:0 0 auto;}
+#session-badge{background:var(--warn);color:#1a1a1a;padding:2px 8px;border-radius:999px;font-size:12px;display:none;}
+#session-badge.visible{display:inline-block;}
+#topbar .spacer{flex:1;}
+#app{display:flex;flex:1;min-height:0;}
+#nav{width:190px;flex:0 0 auto;background:var(--bg-alt);border-right:1px solid var(--border);padding:10px 0;}
+#nav a{display:block;padding:10px 16px;color:var(--text-dim);text-decoration:none;border-left:3px solid transparent;}
+#nav a:hover{color:var(--text);background:var(--surface);}
+#nav a.active{color:var(--text);border-left-color:var(--accent);background:var(--surface);}
+#main{flex:1;overflow:auto;padding:18px 22px;min-width:0;}
+.panel{display:none;}
+.panel.active{display:block;}
+.kpi-row{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px;}
+.kpi-tile{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;min-width:140px;}
+.kpi-tile .val{font-size:24px;font-weight:700;}
+.kpi-tile .lbl{font-size:12px;color:var(--text-dim);}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:14px;}
+.card h2{margin-top:0;font-size:15px;}
+.hint{color:var(--text-dim);font-size:12px;}
+.banner{background:var(--surface-2);border:1px solid var(--warn);border-radius:var(--radius);padding:10px 14px;margin-bottom:12px;font-size:13px;}
+.banner.error{border-color:var(--critical);}
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;}
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;}
+.sev-CRITICAL{background:var(--critical);color:#fff;}
+.sev-HIGH{background:var(--high);color:#1a1a1a;}
+.sev-MEDIUM{background:var(--medium);color:#1a1a1a;}
+.sev-LOW{background:var(--low);color:#1a1a1a;}
+.cell-under{background:#1e3a2c;}
+.cell-target{background:#2a3a1e;}
+.cell-over{background:#4a3a1e;}
+.cell-critical{background:#4a1e1e;}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:flex-start;justify-content:center;padding:40px 20px;overflow:auto;z-index:100;}
+.modal-overlay.hidden{display:none;}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;max-width:720px;width:100%;}
+.modal h2{margin-top:0;}
+.modal .row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+.modal .row > *{flex:1;min-width:150px;}
+#toast-region{position:fixed;bottom:16px;right:16px;z-index:200;display:flex;flex-direction:column;gap:8px;}
+.toast{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.4);}
+.bar-track{background:var(--surface-2);border-radius:4px;height:8px;overflow:hidden;}
+.bar-fill{height:100%;background:var(--accent);}
+.candidate-card{border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:10px;background:var(--surface-2);}
+.modifier-chip{display:inline-block;background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:2px 8px;font-size:11px;margin-right:4px;}
+.subgrid{display:grid;grid-template-columns:100px 1fr 40px;gap:6px;align-items:center;font-size:12px;margin:2px 0;}
+.pagination{display:flex;gap:6px;align-items:center;margin-top:8px;}
+fieldset{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:12px;}
+.empty-state{color:var(--text-dim);padding:40px;text-align:center;}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;}
+</style>
+</head>
+<body>
+<div id="topbar">
+  <h1>ROE - Resource Optimization Engine</h1>
+  <span id="session-badge" role="status">Session only - nothing is being saved</span>
+  <div class="spacer"></div>
+  <button id="btn-load-demo" type="button">Load demo data</button>
+  <button id="btn-clear-all" type="button" class="danger">Clear all data</button>
+</div>
+<div id="app">
+  <nav id="nav" aria-label="Panels">
+    <a href="#overview" data-panel="overview">Overview</a>
+    <a href="#skills" data-panel="skills">Skills Matrix</a>
+    <a href="#projects" data-panel="projects">Projects</a>
+    <a href="#optimizer" data-panel="optimizer">Optimizer</a>
+    <a href="#mentorship" data-panel="mentorship">Mentorship</a>
+    <a href="#timeline" data-panel="timeline">Timeline</a>
+    <a href="#alerts" data-panel="alerts">Alerts</a>
+    <a href="#settings" data-panel="settings">Data &amp; Settings</a>
+  </nav>
+  <main id="main">
+    <div id="vendor-banner" class="banner hidden" style="display:none;"></div>
+    <section id="panel-overview" class="panel"><div class="empty-state">Loading...</div></section>
+    <section id="panel-skills" class="panel"></section>
+    <section id="panel-projects" class="panel"></section>
+    <section id="panel-optimizer" class="panel"></section>
+    <section id="panel-mentorship" class="panel"></section>
+    <section id="panel-timeline" class="panel"></section>
+    <section id="panel-alerts" class="panel"></section>
+    <section id="panel-settings" class="panel"></section>
+  </main>
+</div>
+<div id="modal-root"></div>
+<div id="toast-region" aria-live="polite"></div>
+
+<script>
+window.ROE = window.ROE || {};
+
+/* ===================== BLOCK 1: ROE.const ===================== */
+/* Pure. No DOM. No I/O. Enums, adjacency table, defaults, schema version. */
+ROE.const = (function(){
+  var SCHEMA_VERSION = 1;
+
+  var DISCIPLINES = ["Civil","Architecture","MEP","Structural","Environmental","VDC","Data/Analytics","Landscape","Geotechnical"];
+
+  // Symmetric adjacency table per BUILD_PLAN.md §3.
+  var ADJACENCY = {
+    "Civil":          ["Geotechnical","Environmental","Landscape","Structural"],
+    "Architecture":   ["VDC","Structural","Landscape"],
+    "MEP":            ["Structural","VDC"],
+    "Structural":     ["Civil","Architecture","MEP","Geotechnical"],
+    "Environmental":  ["Civil","Geotechnical","Data/Analytics"],
+    "VDC":            ["Architecture","MEP","Data/Analytics"],
+    "Data/Analytics": ["VDC","Environmental"],
+    "Landscape":      ["Architecture","Civil"],
+    "Geotechnical":   ["Civil","Structural","Environmental"]
+  };
+
+  var EMP_LEVELS = ["Junior","Mid-Level","Senior","Principal"];
+  var EMP_LEVEL_ORD = { "Junior":1, "Mid-Level":2, "Senior":3, "Principal":4 };
+
+  var LEVEL_LABELS = { 0:"None", 1:"Basic", 2:"Intermediate", 3:"Proficient", 4:"Advanced", 5:"Expert" };
+
+  var BUSINESS_GROUPS = ["Transportation","Buildings","Water","Federal","Energy"];
+  var PROJECT_PHASES = ["Planning","Concept","Schematic","DD","CD","CA","Final Design","Implementation"];
+  var BIM_LEVELS = ["BIM Level 0","BIM Level 1","BIM Level 2","BIM Level 3"];
+  var PROJECT_STATUS = ["Active","Pending","On Hold","Complete"];
+  var MENTOR_ROLES = ["Mentor","Mentee","Peer","None"];
+  var ASSIGNMENT_STATUS = ["Proposed","Committed"];
+  var ASSIGNMENT_SOURCE = ["manual","optimizer","auto-staff","import","api"];
+  var MENTORSHIP_FREQ = ["Weekly","Bi-Weekly","Monthly"];
+  var MENTORSHIP_COMPAT = ["High","Medium","Low"];
+  var MENTORSHIP_STATUS = ["Active","Pending","Ended"];
+
+  var SEED_SKILLS = [
+    { code:"REVIT",    name:"Revit",              category:"Design" },
+    { code:"CIVIL3D",  name:"Civil 3D",           category:"Design" },
+    { code:"AUTOCAD",  name:"AutoCAD",            category:"Design" },
+    { code:"GIS",      name:"GIS",                category:"Analysis" },
+    { code:"PYTHON",   name:"Python",             category:"Analysis" },
+    { code:"NAVIS",    name:"Navisworks",         category:"Coordination" },
+    { code:"BLUEBEAM", name:"Bluebeam",           category:"Documentation" },
+    { code:"PM",       name:"Project Management", category:"Management" }
+  ];
+
+  var DEFAULT_SETTINGS = {
+    schemaVersion: SCHEMA_VERSION,
+    horizonStart: "2026-01",
+    horizonMonths: 12,
+    weights: { skill:0.35, availability:0.30, seniority:0.15, discipline:0.20 },
+    presets: [],
+    ctxTaxPerExtraProject: 7,
+    ctxTaxCapPct: 30,
+    ctxCap: 4,
+    alertThresholds: { overallocPct:100, sustainedMonths:2, targetSlackPct:10, benchGapPct:25, benchMonths:3 },
+    requireMinSkillLevels: false,
+    sessionOnly: false,
+    theme: "dark",
+    api: { baseUrl:"", authMode:"none", authHeaderName:"X-API-Key", timeoutMs:15000,
+      entities:{
+        employees:  { enabled:false, pullPath:"/employees", responseRoot:"", pushPath:"/employees", pushMethod:"POST", pushMode:"bulk", idField:"id" },
+        projects:   { enabled:false, pullPath:"/projects",  responseRoot:"", pushPath:"/projects",  pushMethod:"POST", pushMode:"bulk", idField:"id" },
+        demands:    { enabled:false, pullPath:"/demands",   responseRoot:"", pushPath:"/demands",   pushMethod:"POST", pushMode:"bulk", idField:"id" },
+        assignments:{ enabled:false, pullPath:"/assignments",responseRoot:"", pushPath:"/assignments",pushMethod:"POST", pushMode:"bulk", idField:"id" },
+        skills:     { enabled:false, pullPath:"/skills",    responseRoot:"", pushPath:"/skills",    pushMethod:"POST", pushMode:"bulk", idField:"id" }
+      },
+      fieldMappings: {}
+    }
+  };
+
+  // Optimizer sub-score lookup tables (§4.3)
+  var SKILL_GAP_TABLE = function(gap){
+    if (gap >= 2) return Math.max(85, 100 - 5*(gap-1));
+    if (gap === 1) return 100;
+    if (gap === 0) return 100;
+    if (gap === -1) return 60;
+    if (gap === -2) return 30;
+    return 0; // gap <= -3
+  };
+  var SENIORITY_TABLE = function(d){
+    if (d === 0) return 100;
+    if (d === 1) return 85;
+    if (d >= 2) return 65;
+    if (d === -1) return 50;
+    return 15; // d <= -2
+  };
+  var MENTOR_SENIORITY_DELTA_TABLE = function(delta){
+    if (delta === 1) return 70;
+    if (delta === 2) return 100;
+    if (delta === 3) return 80;
+    return 0; // 0 or negative
+  };
+
+  return {
+    SCHEMA_VERSION: SCHEMA_VERSION,
+    DISCIPLINES: DISCIPLINES,
+    ADJACENCY: ADJACENCY,
+    EMP_LEVELS: EMP_LEVELS,
+    EMP_LEVEL_ORD: EMP_LEVEL_ORD,
+    LEVEL_LABELS: LEVEL_LABELS,
+    BUSINESS_GROUPS: BUSINESS_GROUPS,
+    PROJECT_PHASES: PROJECT_PHASES,
+    BIM_LEVELS: BIM_LEVELS,
+    PROJECT_STATUS: PROJECT_STATUS,
+    MENTOR_ROLES: MENTOR_ROLES,
+    ASSIGNMENT_STATUS: ASSIGNMENT_STATUS,
+    ASSIGNMENT_SOURCE: ASSIGNMENT_SOURCE,
+    MENTORSHIP_FREQ: MENTORSHIP_FREQ,
+    MENTORSHIP_COMPAT: MENTORSHIP_COMPAT,
+    MENTORSHIP_STATUS: MENTORSHIP_STATUS,
+    SEED_SKILLS: SEED_SKILLS,
+    DEFAULT_SETTINGS: DEFAULT_SETTINGS,
+    SKILL_GAP_TABLE: SKILL_GAP_TABLE,
+    SENIORITY_TABLE: SENIORITY_TABLE,
+    MENTOR_SENIORITY_DELTA_TABLE: MENTOR_SENIORITY_DELTA_TABLE
+  };
+})();
+
+/* ===================== BLOCK 2: ROE.util ===================== */
+/* Pure helpers: month keys, clamp, deep equal, id gen, CSV escape, fuzzy header match. */
+ROE.util = (function(){
+  function clamp(v, min, max){
+    if (v < min) return min;
+    if (v > max) return max;
+    return v;
+  }
+
+  function round(v){ return Math.round(v); }
+
+  function sum(arr){
+    var s = 0;
+    for (var i=0;i<arr.length;i++) s += arr[i];
+    return s;
+  }
+
+  function mean(arr){
+    if (!arr || arr.length === 0) return 0;
+    return sum(arr) / arr.length;
+  }
+
+  // "2026-01" -> {y:2026, m:1}
+  function parseMonthKey(key){
+    var parts = String(key).split("-");
+    return { y: parseInt(parts[0],10), m: parseInt(parts[1],10) };
+  }
+
+  function monthKeyOf(y, m){
+    while (m > 12){ m -= 12; y += 1; }
+    while (m < 1){ m += 12; y -= 1; }
+    var mm = (m < 10 ? "0"+m : ""+m);
+    return y + "-" + mm;
+  }
+
+  function addMonths(key, n){
+    var p = parseMonthKey(key);
+    return monthKeyOf(p.y, p.m + n);
+  }
+
+  // Contiguous list of month keys, length n, starting at start ("YYYY-MM").
+  function monthKeys(start, n){
+    var out = [];
+    for (var i=0;i<n;i++) out.push(addMonths(start, i));
+    return out;
+  }
+
+  function monthDiff(a, b){
+    var pa = parseMonthKey(a), pb = parseMonthKey(b);
+    return (pb.y - pa.y) * 12 + (pb.m - pa.m);
+  }
+
+  // Deterministic id generator. Not cryptographic; fine for a single-user client-side tool.
+  var _idCounter = 0;
+  function genId(prefix){
+    _idCounter += 1;
+    var rand = Math.random().toString(36).slice(2, 8);
+    return (prefix || "id") + "_" + Date.now().toString(36) + "_" + _idCounter.toString(36) + rand;
+  }
+
+  function deepEqual(a, b){
+    if (a === b) return true;
+    if (typeof a !== typeof b) return false;
+    if (a === null || b === null) return a === b;
+    if (typeof a !== "object") return a === b;
+    if (Array.isArray(a) !== Array.isArray(b)) return false;
+    if (Array.isArray(a)){
+      if (a.length !== b.length) return false;
+      for (var i=0;i<a.length;i++) if (!deepEqual(a[i], b[i])) return false;
+      return true;
+    }
+    var ka = Object.keys(a).sort();
+    var kb = Object.keys(b).sort();
+    if (ka.length !== kb.length) return false;
+    for (var j=0;j<ka.length;j++){
+      if (ka[j] !== kb[j]) return false;
+      if (!deepEqual(a[ka[j]], b[kb[j]])) return false;
+    }
+    return true;
+  }
+
+  function csvEscape(val){
+    if (val === null || val === undefined) return "";
+    var s = String(val);
+    if (/[",\n\r]/.test(s)){
+      s = '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+  function csvRow(cells){
+    return cells.map(csvEscape).join(",");
+  }
+
+  // Normalize a header for fuzzy matching: lowercase, strip non-alphanumerics.
+  function normalizeHeader(h){
+    return String(h || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+
+  // Returns the best matching header from `candidates` for canonical field `field`, or null.
+  function fuzzyMatchHeader(field, candidates){
+    var target = normalizeHeader(field);
+    var best = null, bestScore = 0;
+    for (var i=0;i<candidates.length;i++){
+      var c = candidates[i];
+      var norm = normalizeHeader(c);
+      var score = 0;
+      if (norm === target) score = 100;
+      else if (norm.indexOf(target) !== -1 || target.indexOf(norm) !== -1) score = 60;
+      if (score > bestScore){ bestScore = score; best = c; }
+    }
+    return bestScore > 0 ? best : null;
+  }
+
+  function isMonthKey(s){
+    return /^\d{4}-(0[1-9]|1[0-2])$/.test(String(s));
+  }
+
+  function parseNum(v, fallback){
+    var n = typeof v === "number" ? v : parseFloat(v);
+    return isNaN(n) ? (fallback === undefined ? 0 : fallback) : n;
+  }
+
+  function clone(obj){
+    return JSON.parse(JSON.stringify(obj));
+  }
+
+  function nowIso(){
+    return new Date().toISOString();
+  }
+
+  return {
+    clamp: clamp, round: round, sum: sum, mean: mean,
+    monthKeys: monthKeys, addMonths: addMonths, monthDiff: monthDiff, parseMonthKey: parseMonthKey, monthKeyOf: monthKeyOf, isMonthKey: isMonthKey,
+    genId: genId, deepEqual: deepEqual, clone: clone,
+    csvEscape: csvEscape, csvRow: csvRow,
+    normalizeHeader: normalizeHeader, fuzzyMatchHeader: fuzzyMatchHeader,
+    parseNum: parseNum, nowIso: nowIso
+  };
+})();
+
+/* ===================== BLOCK 3: ROE.model ===================== */
+/* Pure. Canonical record factories + validators. */
+ROE.model = (function(){
+  var C = ROE.const, U = ROE.util;
+
+  function ok(errors){ return { ok: errors.length === 0, errors: errors }; }
+
+  function req(errors, rec, field, label){
+    var v = rec[field];
+    if (v === undefined || v === null || v === ""){
+      errors.push({ field: field, message: (label||field) + " is required" });
+    }
+  }
+
+  function oneOf(errors, rec, field, allowed, label){
+    if (rec[field] !== undefined && rec[field] !== null && rec[field] !== "" && allowed.indexOf(rec[field]) === -1){
+      errors.push({ field: field, message: (label||field) + " must be one of: " + allowed.join(", ") });
+    }
+  }
+
+  // ---- Employee ----
+  function newEmployee(p){
+    p = p || {};
+    return {
+      id: p.id || U.genId("emp"),
+      name: p.name || "",
+      email: p.email || "",
+      level: p.level || "Junior",
+      discipline: p.discipline || C.DISCIPLINES[0],
+      office: p.office || "",
+      businessGroup: p.businessGroup || C.BUSINESS_GROUPS[0],
+      targetUtil: p.targetUtil !== undefined ? p.targetUtil : 85,
+      mentorRole: p.mentorRole || "None",
+      active: p.active !== undefined ? p.active : true,
+      notes: p.notes || "",
+      updatedAt: p.updatedAt || U.nowIso()
+    };
+  }
+
+  function validateEmployee(rec){
+    var errors = [];
+    req(errors, rec, "id", "Employee ID");
+    req(errors, rec, "name", "Name");
+    oneOf(errors, rec, "level", C.EMP_LEVELS, "Level");
+    oneOf(errors, rec, "discipline", C.DISCIPLINES, "Discipline");
+    oneOf(errors, rec, "businessGroup", C.BUSINESS_GROUPS, "Business group");
+    oneOf(errors, rec, "mentorRole", C.MENTOR_ROLES, "Mentor role");
+    if (rec.targetUtil !== undefined && (rec.targetUtil < 0 || rec.targetUtil > 100)){
+      errors.push({ field:"targetUtil", message:"Target utilization must be 0-100" });
+    }
+    return ok(errors);
+  }
+
+  // ---- Skill ----
+  function newSkill(p){
+    p = p || {};
+    return {
+      id: p.id || U.genId("skl"),
+      code: p.code || "",
+      name: p.name || "",
+      category: p.category || "",
+      updatedAt: p.updatedAt || U.nowIso()
+    };
+  }
+
+  function validateSkill(rec){
+    var errors = [];
+    req(errors, rec, "id", "Skill ID");
+    req(errors, rec, "code", "Code");
+    req(errors, rec, "name", "Name");
+    return ok(errors);
+  }
+
+  // ---- EmployeeSkill ----
+  function newEmployeeSkill(p){
+    p = p || {};
+    return {
+      employeeId: p.employeeId || "",
+      skillId: p.skillId || "",
+      level: p.level !== undefined ? p.level : 0
+    };
+  }
+
+  function validateEmployeeSkill(rec){
+    var errors = [];
+    req(errors, rec, "employeeId", "Employee ID");
+    req(errors, rec, "skillId", "Skill ID");
+    if (rec.level < 0 || rec.level > 5){
+      errors.push({ field:"level", message:"Level must be 0-5" });
+    }
+    return ok(errors);
+  }
+
+  // Normalize a skill level that may come in as an integer or a label string.
+  function normalizeSkillLevel(v){
+    if (v === undefined || v === null || v === "") return 0;
+    if (typeof v === "number") return U.clamp(Math.round(v), 0, 5);
+    var s = String(v).trim();
+    if (/^\d+$/.test(s)) return U.clamp(parseInt(s,10), 0, 5);
+    var lower = s.toLowerCase();
+    for (var k in C.LEVEL_LABELS){
+      if (C.LEVEL_LABELS[k].toLowerCase() === lower) return parseInt(k,10);
+    }
+    return 0;
+  }
+
+  // ---- Project ----
+  function newProject(p){
+    p = p || {};
+    return {
+      id: p.id || U.genId("prj"),
+      name: p.name || "",
+      client: p.client || "",
+      market: p.market || C.BUSINESS_GROUPS[0],
+      discipline: p.discipline || C.DISCIPLINES[0],
+      phase: p.phase || "Planning",
+      budget: p.budget !== undefined ? p.budget : 0,
+      bimLevel: p.bimLevel || "BIM Level 1",
+      teamMin: p.teamMin !== undefined ? p.teamMin : 1,
+      teamMax: p.teamMax !== undefined ? p.teamMax : 10,
+      priority: p.priority !== undefined ? p.priority : 3,
+      status: p.status || "Active",
+      software: p.software || [],
+      notes: p.notes || "",
+      updatedAt: p.updatedAt || U.nowIso()
+    };
+  }
+
+  function validateProject(rec){
+    var errors = [];
+    req(errors, rec, "id", "Project ID");
+    req(errors, rec, "name", "Name");
+    oneOf(errors, rec, "market", C.BUSINESS_GROUPS, "Market");
+    oneOf(errors, rec, "discipline", C.DISCIPLINES, "Discipline");
+    oneOf(errors, rec, "phase", C.PROJECT_PHASES, "Phase");
+    oneOf(errors, rec, "bimLevel", C.BIM_LEVELS, "BIM level");
+    oneOf(errors, rec, "status", C.PROJECT_STATUS, "Status");
+    if (rec.priority !== undefined && (rec.priority < 1 || rec.priority > 5)){
+      errors.push({ field:"priority", message:"Priority must be 1-5" });
+    }
+    if (rec.teamMin !== undefined && rec.teamMax !== undefined && rec.teamMin > rec.teamMax){
+      errors.push({ field:"teamMin", message:"teamMin cannot exceed teamMax" });
+    }
+    return ok(errors);
+  }
+
+  // ---- Demand ----
+  function newDemand(p){
+    p = p || {};
+    return {
+      id: p.id || U.genId("dem"),
+      projectId: p.projectId || "",
+      title: p.title || "",
+      discipline: p.discipline || C.DISCIPLINES[0],
+      minLevel: p.minLevel || "Junior",
+      requiredSkills: p.requiredSkills || [],
+      openings: p.openings !== undefined ? p.openings : 1,
+      allocationByMonth: p.allocationByMonth || {},
+      updatedAt: p.updatedAt || U.nowIso()
+    };
+  }
+
+  function validateDemand(rec){
+    var errors = [];
+    req(errors, rec, "id", "Demand ID");
+    req(errors, rec, "projectId", "Project ID");
+    req(errors, rec, "title", "Title");
+    oneOf(errors, rec, "discipline", C.DISCIPLINES, "Discipline");
+    oneOf(errors, rec, "minLevel", C.EMP_LEVELS, "Min level");
+    if (rec.openings !== undefined && rec.openings < 1){
+      errors.push({ field:"openings", message:"Openings must be >= 1" });
+    }
+    (rec.requiredSkills || []).forEach(function(rs, i){
+      if (!rs.skillId) errors.push({ field:"requiredSkills["+i+"].skillId", message:"Skill required" });
+      if (rs.weight !== undefined && [1,2,3].indexOf(rs.weight) === -1){
+        errors.push({ field:"requiredSkills["+i+"].weight", message:"Weight must be 1, 2, or 3" });
+      }
+    });
+    for (var m in rec.allocationByMonth || {}){
+      var v = rec.allocationByMonth[m];
+      if (v < 0 || v > 100) errors.push({ field:"allocationByMonth["+m+"]", message:"Pct must be 0-100" });
+    }
+    return ok(errors);
+  }
+
+  // ---- Assignment ----
+  function newAssignment(p){
+    p = p || {};
+    return {
+      id: p.id || U.genId("asg"),
+      projectId: p.projectId || "",
+      employeeId: p.employeeId || "",
+      demandId: p.demandId !== undefined ? p.demandId : null,
+      allocationByMonth: p.allocationByMonth || {},
+      status: p.status || "Proposed",
+      source: p.source || "manual",
+      scoreSnapshot: p.scoreSnapshot !== undefined ? p.scoreSnapshot : null,
+      updatedAt: p.updatedAt || U.nowIso()
+    };
+  }
+
+  function validateAssignment(rec){
+    var errors = [];
+    req(errors, rec, "id", "Assignment ID");
+    req(errors, rec, "projectId", "Project ID");
+    req(errors, rec, "employeeId", "Employee ID");
+    oneOf(errors, rec, "status", C.ASSIGNMENT_STATUS, "Status");
+    oneOf(errors, rec, "source", C.ASSIGNMENT_SOURCE, "Source");
+    for (var m in rec.allocationByMonth || {}){
+      var v = rec.allocationByMonth[m];
+      if (v < 0 || v > 100) errors.push({ field:"allocationByMonth["+m+"]", message:"Pct must be 0-100" });
+    }
+    return ok(errors);
+  }
+
+  // ---- Mentorship ----
+  function newMentorship(p){
+    p = p || {};
+    return {
+      id: p.id || U.genId("men"),
+      mentorId: p.mentorId || "",
+      menteeId: p.menteeId || "",
+      focusSkillId: p.focusSkillId || "",
+      sharedProjectId: p.sharedProjectId !== undefined ? p.sharedProjectId : null,
+      frequency: p.frequency || "Monthly",
+      score: p.score !== undefined ? p.score : 0,
+      compat: p.compat || "Low",
+      status: p.status || "Active",
+      updatedAt: p.updatedAt || U.nowIso()
+    };
+  }
+
+  function validateMentorship(rec){
+    var errors = [];
+    req(errors, rec, "id", "Mentorship ID");
+    req(errors, rec, "mentorId", "Mentor ID");
+    req(errors, rec, "menteeId", "Mentee ID");
+    oneOf(errors, rec, "frequency", C.MENTORSHIP_FREQ, "Frequency");
+    oneOf(errors, rec, "compat", C.MENTORSHIP_COMPAT, "Compat");
+    oneOf(errors, rec, "status", C.MENTORSHIP_STATUS, "Status");
+    return ok(errors);
+  }
+
+  // ---- Settings ----
+  function newSettings(p){
+    var d = U.clone(C.DEFAULT_SETTINGS);
+    p = p || {};
+    for (var k in p){ if (k !== "api") d[k] = p[k]; }
+    if (p.api){
+      for (var ak in p.api){ if (ak !== "token") d.api[ak] = p.api[ak]; }
+    }
+    return d;
+  }
+
+  return {
+    newEmployee: newEmployee, validateEmployee: validateEmployee,
+    newSkill: newSkill, validateSkill: validateSkill,
+    newEmployeeSkill: newEmployeeSkill, validateEmployeeSkill: validateEmployeeSkill,
+    normalizeSkillLevel: normalizeSkillLevel,
+    newProject: newProject, validateProject: validateProject,
+    newDemand: newDemand, validateDemand: validateDemand,
+    newAssignment: newAssignment, validateAssignment: validateAssignment,
+    newMentorship: newMentorship, validateMentorship: validateMentorship,
+    newSettings: newSettings
+  };
+})();
+
+/* ===================== BLOCK 4: ROE.calc ===================== */
+/* Pure. Index builders, ctxTax, capacity, utilization, demand fill. Memoized by the caller (ROE.store) on a dirty flag. */
+ROE.calc = (function(){
+  var U = ROE.util;
+
+  function ctxTaxPct(n, settings){
+    var rate = settings.ctxTaxPerExtraProject;
+    var cap = settings.ctxTaxCapPct;
+    if (n <= 1) return 0;
+    return U.clamp(rate * (n - 1), 0, cap);
+  }
+
+  // Builds memoizable lookup structures from the full canonical state.
+  // Returns { byEmployeeMonth: Map<empId, Map<monthKey,{pct,projectIds:Set}>>,
+  //           byProjectMonth:  Map<projectId, Map<monthKey,{pct,employeeIds:Set}>>,
+  //           demandFill:      Map<demandId, Map<monthKey, fillPct>> }
+  function buildIndexes(state){
+    var byEmployeeMonth = new Map();
+    var byProjectMonth = new Map();
+    var demandAssigned = new Map(); // demandId -> monthKey -> pct sum
+
+    (state.assignments || []).forEach(function(a){
+      var alloc = a.allocationByMonth || {};
+      for (var m in alloc){
+        var pct = alloc[m];
+        if (!pct) continue;
+
+        if (!byEmployeeMonth.has(a.employeeId)) byEmployeeMonth.set(a.employeeId, new Map());
+        var empMonths = byEmployeeMonth.get(a.employeeId);
+        if (!empMonths.has(m)) empMonths.set(m, { pct:0, projectIds:new Set() });
+        var eRec = empMonths.get(m);
+        eRec.pct += pct;
+        eRec.projectIds.add(a.projectId);
+
+        if (!byProjectMonth.has(a.projectId)) byProjectMonth.set(a.projectId, new Map());
+        var prjMonths = byProjectMonth.get(a.projectId);
+        if (!prjMonths.has(m)) prjMonths.set(m, { pct:0, employeeIds:new Set() });
+        var pRec = prjMonths.get(m);
+        pRec.pct += pct;
+        pRec.employeeIds.add(a.employeeId);
+
+        if (a.demandId){
+          if (!demandAssigned.has(a.demandId)) demandAssigned.set(a.demandId, new Map());
+          var dm = demandAssigned.get(a.demandId);
+          dm.set(m, (dm.get(m) || 0) + pct);
+        }
+      }
+    });
+
+    var demandFill = new Map();
+    (state.demands || []).forEach(function(d){
+      var fillByMonth = new Map();
+      var assignedByMonth = demandAssigned.get(d.id) || new Map();
+      for (var m in (d.allocationByMonth || {})){
+        var perOpening = d.allocationByMonth[m] || 0;
+        var required = perOpening * (d.openings || 1);
+        var assigned = assignedByMonth.get(m) || 0;
+        var pct = required > 0 ? (100 * assigned / required) : 100;
+        fillByMonth.set(m, pct);
+      }
+      demandFill.set(d.id, fillByMonth);
+    });
+
+    return { byEmployeeMonth: byEmployeeMonth, byProjectMonth: byProjectMonth, demandFill: demandFill };
+  }
+
+  function n(empId, month, idx){
+    var em = idx.byEmployeeMonth.get(empId);
+    if (!em) return 0;
+    var rec = em.get(month);
+    return rec ? rec.projectIds.size : 0;
+  }
+
+  // Projected concurrent-project count for a *candidate* evaluation: existing distinct
+  // projects that month, plus 1 if `projectId` is not already among them.
+  function projectedN(empId, month, projectId, idx){
+    var em = idx.byEmployeeMonth.get(empId);
+    if (!em) return 1;
+    var rec = em.get(month);
+    if (!rec) return 1;
+    return rec.projectIds.has(projectId) ? rec.projectIds.size : rec.projectIds.size + 1;
+  }
+
+  function effectiveCapacity(emp, month, idx, settings){
+    var count = n(emp.id, month, idx);
+    var tax = ctxTaxPct(count, settings);
+    return emp.targetUtil * (1 - tax/100);
+  }
+
+  // Effective capacity using a projected concurrent-project count (for candidate evaluation).
+  function effectiveCapacityProjected(emp, month, projectId, idx, settings){
+    var count = projectedN(emp.id, month, projectId, idx);
+    var tax = ctxTaxPct(count, settings);
+    return emp.targetUtil * (1 - tax/100);
+  }
+
+  function committed(empId, month, idx){
+    var em = idx.byEmployeeMonth.get(empId);
+    if (!em) return 0;
+    var rec = em.get(month);
+    return rec ? rec.pct : 0;
+  }
+
+  function netCap(emp, month, idx, settings){
+    return effectiveCapacity(emp, month, idx, settings) - committed(emp.id, month, idx);
+  }
+
+  function free(emp, month, idx, settings){
+    return Math.max(0, netCap(emp, month, idx, settings));
+  }
+
+  // free() using the projected concurrent-project count (for candidate evaluation).
+  function freeProjected(emp, month, projectId, idx, settings){
+    var cap = effectiveCapacityProjected(emp, month, projectId, idx, settings);
+    var used = committed(emp.id, month, idx);
+    return Math.max(0, cap - used);
+  }
+
+  function utilization(empId, month, idx){
+    return committed(empId, month, idx);
+  }
+
+  function demandFillPct(demandId, month, idx){
+    var dm = idx.demandFill.get(demandId);
+    if (!dm) return 100;
+    var v = dm.get(month);
+    return v === undefined ? 100 : v;
+  }
+
+  function concurrentProjectsAt(empId, month, idx){
+    return n(empId, month, idx);
+  }
+
+  return {
+    ctxTaxPct: ctxTaxPct,
+    buildIndexes: buildIndexes,
+    n: n, projectedN: projectedN,
+    effectiveCapacity: effectiveCapacity, effectiveCapacityProjected: effectiveCapacityProjected,
+    committed: committed, netCap: netCap, free: free, freeProjected: freeProjected,
+    utilization: utilization, demandFillPct: demandFillPct, concurrentProjectsAt: concurrentProjectsAt
+  };
+})();
+
+/* ===================== BLOCK 5: ROE.score ===================== */
+/* Pure. Optimizer sub-scores, composite, modifiers, candidate ranking, auto-staff solver. */
+ROE.score = (function(){
+  var C = ROE.const, U = ROE.util, CALC = ROE.calc;
+
+  function normalizeWeights(w){
+    w = w || {};
+    var skill = U.parseNum(w.skill, 0), availability = U.parseNum(w.availability, 0),
+        seniority = U.parseNum(w.seniority, 0), discipline = U.parseNum(w.discipline, 0);
+    var total = skill + availability + seniority + discipline;
+    if (total <= 0) return U.clone(C.DEFAULT_SETTINGS.weights);
+    return { skill: skill/total, availability: availability/total, seniority: seniority/total, discipline: discipline/total };
+  }
+
+  function disciplineRelation(a, b){
+    if (a === b) return "exact";
+    var adj = C.ADJACENCY[a] || [];
+    if (adj.indexOf(b) !== -1) return "adjacent";
+    return "unrelated";
+  }
+
+  function disciplineSubScore(a, b){
+    var rel = disciplineRelation(a, b);
+    if (rel === "exact") return 100;
+    if (rel === "adjacent") return 65;
+    return 25;
+  }
+
+  function empSkillMap(state, empId){
+    var map = {};
+    (state.employeeSkills || []).forEach(function(es){
+      if (es.employeeId === empId) map[es.skillId] = es.level;
+    });
+    return map;
+  }
+
+  function skillScoreFor(requiredSkills, empSkills){
+    if (!requiredSkills || requiredSkills.length === 0){
+      return { score: 70, disqualified: false, breakdown: [] };
+    }
+    var wsum = 0, num = 0, disqualified = false, breakdown = [];
+    requiredSkills.forEach(function(rs){
+      var e = empSkills[rs.skillId] !== undefined ? empSkills[rs.skillId] : 0;
+      var gap = e - rs.minLevel;
+      var sub = C.SKILL_GAP_TABLE(gap);
+      var weight = rs.weight || 1;
+      wsum += weight;
+      num += sub * weight;
+      if (gap < 0) disqualified = true;
+      breakdown.push({ skillId: rs.skillId, empLevel: e, minLevel: rs.minLevel, gap: gap, sub: sub, weight: weight });
+    });
+    var score = wsum > 0 ? num / wsum : 70;
+    return { score: score, disqualified: disqualified, breakdown: breakdown };
+  }
+
+  function demandMonths(demand){
+    var months = [];
+    for (var m in (demand.allocationByMonth || {})){
+      if (demand.allocationByMonth[m] > 0) months.push(m);
+    }
+    return months;
+  }
+
+  function availabilityScoreFor(emp, demand, projectId, idx, settings){
+    var months = demandMonths(demand);
+    if (months.length === 0) return { score: 100, feasibleFraction: 1, perMonth: [] };
+    var fits = [];
+    var perMonth = [];
+    months.forEach(function(m){
+      var freeAmt = CALC.freeProjected(emp, m, projectId, idx, settings);
+      var need = demand.allocationByMonth[m];
+      var fit = need > 0 ? Math.min(1, freeAmt / need) : 1;
+      fits.push(fit);
+      perMonth.push({ month:m, free:freeAmt, need:need, fit:fit });
+    });
+    var feasibleFraction = U.mean(fits);
+    return { score: 100 * feasibleFraction, feasibleFraction: feasibleFraction, perMonth: perMonth };
+  }
+
+  function seniorityScoreFor(empLevel, demandMinLevel){
+    var empOrd = C.EMP_LEVEL_ORD[empLevel] || 1;
+    var demOrd = C.EMP_LEVEL_ORD[demandMinLevel] || 1;
+    var d = empOrd - demOrd;
+    return { score: C.SENIORITY_TABLE(d), delta: d };
+  }
+
+  function isActiveMentorOf(state, empId, projectId, idx){
+    // true if this employee is a Mentor (with <2 active mentees) and one of their mentees is staffed on projectId
+    var mentorships = (state.mentorships || []).filter(function(m){ return m.mentorId === empId && m.status === "Active"; });
+    if (mentorships.length >= 2) return false;
+    var prjMonths = idx.byProjectMonth.get(projectId);
+    if (!prjMonths) return false;
+    var staffedIds = new Set();
+    prjMonths.forEach(function(rec){ rec.employeeIds.forEach(function(id){ staffedIds.add(id); }); });
+    return mentorships.some(function(m){ return staffedIds.has(m.menteeId); });
+  }
+
+  function isMenteeOfStaffedMentor(state, empId, projectId, idx){
+    var mentorships = (state.mentorships || []).filter(function(m){ return m.menteeId === empId && m.status === "Active"; });
+    if (mentorships.length === 0) return false;
+    var prjMonths = idx.byProjectMonth.get(projectId);
+    if (!prjMonths) return false;
+    var staffedIds = new Set();
+    prjMonths.forEach(function(rec){ rec.employeeIds.forEach(function(id){ staffedIds.add(id); }); });
+    return mentorships.some(function(m){ return staffedIds.has(m.mentorId); });
+  }
+
+  function hasCommittedOnProject(state, empId, projectId){
+    return (state.assignments || []).some(function(a){
+      return a.employeeId === empId && a.projectId === projectId && a.status === "Committed";
+    });
+  }
+
+  // Core scoring function. Returns full breakdown per §4.3-4.4.
+  function scoreCandidate(state, empId, demandId, weights){
+    var settings = state.settings;
+    var idx = state._idx || CALC.buildIndexes(state);
+    var emp = (state.employees || []).find(function(e){ return e.id === empId; });
+    var demand = (state.demands || []).find(function(d){ return d.id === demandId; });
+    if (!emp || !demand) return null;
+    var project = (state.projects || []).find(function(p){ return p.id === demand.projectId; });
+
+    var w = normalizeWeights(weights);
+    var empSkills = empSkillMap(state, empId);
+    var skillR = skillScoreFor(demand.requiredSkills, empSkills);
+    var availR = availabilityScoreFor(emp, demand, demand.projectId, idx, settings);
+    var seniorR = seniorityScoreFor(emp.level, demand.minLevel);
+    var discScore = disciplineSubScore(emp.discipline, demand.discipline);
+
+    var disqualified = settings.requireMinSkillLevels && skillR.disqualified;
+
+    var subScores = { skill: skillR.score, availability: availR.score, seniority: seniorR.score, discipline: discScore };
+    var contributions = {
+      skill: w.skill * subScores.skill,
+      availability: w.availability * subScores.availability,
+      seniority: w.seniority * subScores.seniority,
+      discipline: w.discipline * subScores.discipline
+    };
+    var base = contributions.skill + contributions.availability + contributions.seniority + contributions.discipline;
+
+    var modifiers = [];
+    if (hasCommittedOnProject(state, empId, demand.projectId)){
+      modifiers.push({ name:"Continuity", value:4, reason:"Employee already has a committed assignment on this project" });
+    }
+    if (isActiveMentorOf(state, empId, demand.projectId, idx)){
+      modifiers.push({ name:"Mentorship", value:5, reason:"Candidate is a mentor of a mentee already staffed on this project" });
+    } else if (isMenteeOfStaffedMentor(state, empId, demand.projectId, idx)){
+      modifiers.push({ name:"Mentorship", value:5, reason:"Candidate's mentor is already staffed on this project" });
+    }
+    var months = demandMonths(demand);
+    var overload = months.some(function(m){
+      return CALC.projectedN(empId, m, demand.projectId, idx) > settings.ctxCap;
+    });
+    if (overload){
+      modifiers.push({ name:"Overload", value:-10, reason:"Would push concurrent projects above ctxCap ("+settings.ctxCap+") in at least one demand month" });
+    }
+    var committedVals = months.map(function(m){ return CALC.committed(empId, m, idx); });
+    var meanCommitted = U.mean(committedVals);
+    var benchThreshold = emp.targetUtil - (settings.alertThresholds.benchGapPct || 0);
+    if (months.length > 0 && meanCommitted < benchThreshold){
+      modifiers.push({ name:"Bench relief", value:3, reason:"Mean committed ("+Math.round(meanCommitted)+"%) is below target minus bench gap ("+benchThreshold+"%)" });
+    }
+
+    var modifierSum = modifiers.reduce(function(s,m){ return s + m.value; }, 0);
+    var clampedModifiers = U.clamp(modifierSum, -15, 10);
+
+    var matchScore = U.clamp(Math.round(base + clampedModifiers), 0, 100);
+
+    var reasons = [];
+    if (disqualified) reasons.push("below minimum skill level");
+
+    return {
+      employeeId: empId, demandId: demandId,
+      matchScore: matchScore,
+      subScores: subScores,
+      contributions: contributions,
+      base: base,
+      modifiers: modifiers,
+      modifierSum: modifierSum,
+      clampedModifiers: clampedModifiers,
+      feasibleFraction: availR.feasibleFraction,
+      skillBreakdown: skillR.breakdown,
+      availabilityBreakdown: availR.perMonth,
+      seniorityDelta: seniorR.delta,
+      disqualified: disqualified,
+      reasons: reasons
+    };
+  }
+
+  // Ranks all active employees against a demand. Excludes disqualified candidates when
+  // settings.requireMinSkillLevels is true (they are returned separately as `excluded`).
+  function rankCandidates(state, demandId, weights){
+    var idx = state._idx || CALC.buildIndexes(state);
+    var stateWithIdx = state._idx ? state : Object.assign({}, state, { _idx: idx });
+    var results = [], excluded = [];
+    (state.employees || []).filter(function(e){ return e.active; }).forEach(function(emp){
+      var r = scoreCandidate(stateWithIdx, emp.id, demandId, weights);
+      if (!r) return;
+      if (r.disqualified){ excluded.push(r); return; }
+      results.push(r);
+    });
+    results.sort(function(a, b){
+      if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
+      if (b.feasibleFraction !== a.feasibleFraction) return b.feasibleFraction - a.feasibleFraction;
+      return a.employeeId < b.employeeId ? -1 : (a.employeeId > b.employeeId ? 1 : 0);
+    });
+    return { candidates: results, excluded: excluded };
+  }
+
+  // ---- Auto-staff solver (§4.5): greedy, deterministic, explainable. ----
+  // Returns { proposals:[{demandId, employeeId, allocationByMonth, scoreSnapshot}], unfilled:[{demandId, reason}] }
+  function autoStaff(state, projectId, weights){
+    var workingState = U.clone(state);
+    workingState.assignments = (state.assignments || []).slice(); // shallow ok, we only append
+    var demands = (state.demands || []).filter(function(d){ return d.projectId === projectId; });
+    var project = (state.projects || []).find(function(p){ return p.id === projectId; });
+
+    function totalFte(d){
+      var s = 0;
+      for (var m in d.allocationByMonth) s += d.allocationByMonth[m] * (d.openings || 1);
+      return s;
+    }
+
+    demands = demands.slice().sort(function(a, b){
+      if (project.priority !== undefined && a.projectId === b.projectId){ /* same project, same priority */ }
+      var fa = totalFte(a), fb = totalFte(b);
+      if (fb !== fa) return fb - fa;
+      return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+    });
+    // Overall ordering across demands: project.priority asc (all demands share one project here), then FTE desc, then id asc.
+    // autoStaff operates per-project so priority is constant; ordering above covers FTE desc / id asc.
+
+    var proposals = [];
+    var unfilled = [];
+
+    demands.forEach(function(demand){
+      for (var opening = 0; opening < demand.openings; opening++){
+        workingState._idx = ROE.calc.buildIndexes(workingState);
+        var ranking = rankCandidates(workingState, demand.id, weights);
+        var eligible = ranking.candidates.filter(function(c){ return c.feasibleFraction > 0; });
+        if (eligible.length === 0){
+          var reason = "no capacity / no skill match / all candidates below minimum";
+          if (ranking.candidates.length === 0 && ranking.excluded.length > 0) reason = "all candidates below minimum skill level";
+          else if (ranking.candidates.every(function(c){ return c.feasibleFraction === 0; })) reason = "no capacity";
+          unfilled.push({ demandId: demand.id, opening: opening+1, reason: reason });
+          continue;
+        }
+        var pick = eligible[0];
+        var emp = workingState.employees.find(function(e){ return e.id === pick.employeeId; });
+        var alloc = {};
+        for (var m in demand.allocationByMonth){
+          var need = demand.allocationByMonth[m];
+          if (!need) continue;
+          var freeAmt = ROE.calc.freeProjected(emp, m, projectId, workingState._idx, workingState.settings);
+          var give = Math.min(need, freeAmt);
+          if (give > 0) alloc[m] = give;
+        }
+        var proposal = {
+          id: ROE.util.genId("asg"),
+          demandId: demand.id,
+          projectId: projectId,
+          employeeId: emp.id,
+          allocationByMonth: alloc,
+          status: "Proposed",
+          source: "auto-staff",
+          scoreSnapshot: pick.matchScore,
+          updatedAt: ROE.util.nowIso()
+        };
+        proposals.push(proposal);
+        // Recompute indexes for later picks: append this proposal to the working assignment list.
+        workingState.assignments = workingState.assignments.concat([proposal]);
+      }
+    });
+
+    return { proposals: proposals, unfilled: unfilled };
+  }
+
+  return {
+    normalizeWeights: normalizeWeights,
+    disciplineRelation: disciplineRelation,
+    disciplineSubScore: disciplineSubScore,
+    skillScoreFor: skillScoreFor,
+    availabilityScoreFor: availabilityScoreFor,
+    seniorityScoreFor: seniorityScoreFor,
+    scoreCandidate: scoreCandidate,
+    rankCandidates: rankCandidates,
+    autoStaff: autoStaff
+  };
+})();
+
+/* ===================== BLOCK 6: ROE.alerts ===================== */
+/* Pure. Rules engine. Alerts are always derived, never persisted. */
+ROE.alerts = (function(){
+  var U = ROE.util, CALC = ROE.calc;
+
+  function consecutiveRuns(monthList, predicate){
+    var runs = [], cur = [];
+    monthList.forEach(function(m){
+      if (predicate(m)){ cur.push(m); }
+      else { if (cur.length) runs.push(cur); cur = []; }
+    });
+    if (cur.length) runs.push(cur);
+    return runs;
+  }
+
+  function severityForBurnout(score){
+    if (score >= 70) return "CRITICAL";
+    if (score >= 50) return "HIGH";
+    if (score >= 30) return "MEDIUM";
+    return null;
+  }
+
+  function scan(state, thresholds){
+    var settings = state.settings;
+    thresholds = thresholds || settings.alertThresholds;
+    var idx = state._idx || CALC.buildIndexes(state);
+    var months = U.monthKeys(settings.horizonStart, settings.horizonMonths);
+    var alerts = [];
+    var seq = 0;
+    function push(a){
+      seq += 1;
+      alerts.push(Object.assign({ id: "alrt_" + seq }, a));
+    }
+
+    var activeEmployees = (state.employees || []).filter(function(e){ return e.active; });
+
+    activeEmployees.forEach(function(emp){
+      var committedByMonth = months.map(function(m){ return CALC.committed(emp.id, m, idx); });
+      var concurrentByMonth = months.map(function(m){ return CALC.concurrentProjectsAt(emp.id, m, idx); });
+
+      // SUSTAINED_OVERALLOC
+      var overallocRuns = consecutiveRuns(months, function(m){ return CALC.committed(emp.id, m, idx) > thresholds.overallocPct; });
+      var sustainedRuns = overallocRuns.filter(function(r){ return r.length >= thresholds.sustainedMonths; });
+      sustainedRuns.forEach(function(run){
+        push({ severity:"HIGH", ruleId:"SUSTAINED_OVERALLOC", subjectType:"employee", subjectId:emp.id,
+          monthKeys: run, message: emp.name + " is over " + thresholds.overallocPct + "% committed for " + run.length + " consecutive month(s)",
+          suggestedAction: "Rebalance or reduce allocations for " + emp.name });
+      });
+
+      // OVER_TARGET (>= 3 consecutive months over targetUtil + targetSlackPct)
+      var overTargetThreshold = emp.targetUtil + thresholds.targetSlackPct;
+      var overTargetRuns = consecutiveRuns(months, function(m){ return CALC.committed(emp.id, m, idx) > overTargetThreshold; });
+      overTargetRuns.filter(function(r){ return r.length >= 3; }).forEach(function(run){
+        push({ severity:"MEDIUM", ruleId:"OVER_TARGET", subjectType:"employee", subjectId:emp.id,
+          monthKeys: run, message: emp.name + " is over target+slack (" + overTargetThreshold + "%) for " + run.length + " month(s)",
+          suggestedAction: "Review workload against target utilization" });
+      });
+
+      // CTX_OVERLOAD
+      var overloadMonths = months.filter(function(m){ return CALC.concurrentProjectsAt(emp.id, m, idx) > settings.ctxCap; });
+      if (overloadMonths.length){
+        var maxConcurrent = Math.max.apply(null, overloadMonths.map(function(m){ return CALC.concurrentProjectsAt(emp.id, m, idx); }));
+        var sev = maxConcurrent > settings.ctxCap + 2 ? "HIGH" : "MEDIUM";
+        push({ severity: sev, ruleId:"CTX_OVERLOAD", subjectType:"employee", subjectId:emp.id,
+          monthKeys: overloadMonths, message: emp.name + " exceeds ctxCap (" + settings.ctxCap + ") with up to " + maxConcurrent + " concurrent projects",
+          suggestedAction: "Reduce concurrent project count for " + emp.name });
+      }
+
+      // BENCH_RISK
+      var benchThreshold = emp.targetUtil - thresholds.benchGapPct;
+      var benchRuns = consecutiveRuns(months, function(m){ return CALC.committed(emp.id, m, idx) < benchThreshold; });
+      benchRuns.filter(function(r){ return r.length >= thresholds.benchMonths; }).forEach(function(run){
+        push({ severity:"LOW", ruleId:"BENCH_RISK", subjectType:"employee", subjectId:emp.id,
+          monthKeys: run, message: emp.name + " is under " + benchThreshold + "% committed for " + run.length + " month(s)",
+          suggestedAction: "Consider staffing " + emp.name + " on additional work" });
+      });
+
+      // BURNOUT_COMPOSITE
+      var sustainedOverallocMonths = months.filter(function(m){ return CALC.committed(emp.id, m, idx) > thresholds.overallocPct; }).length;
+      var peakCommitted = committedByMonth.length ? Math.max.apply(null, committedByMonth) : 0;
+      var maxConcurrentProjects = concurrentByMonth.length ? Math.max.apply(null, concurrentByMonth) : 0;
+      var burnoutScore = 100 * (
+        0.5 * (sustainedOverallocMonths / settings.horizonMonths) +
+        0.3 * Math.min(1, Math.max(0, (peakCommitted - 100)) / 50) +
+        0.2 * Math.min(1, maxConcurrentProjects / 6)
+      );
+      var bSev = severityForBurnout(burnoutScore);
+      if (bSev){
+        push({ severity:bSev, ruleId:"BURNOUT_COMPOSITE", subjectType:"employee", subjectId:emp.id,
+          monthKeys: months.filter(function(m){ return CALC.committed(emp.id, m, idx) > thresholds.overallocPct; }),
+          message: emp.name + " burnout composite score is " + Math.round(burnoutScore),
+          suggestedAction: "Review " + emp.name + "'s overall load and concurrent project count",
+          score: burnoutScore });
+      }
+    });
+
+    // UNSTAFFED_DEMAND / SKILL_GAP (per demand)
+    (state.demands || []).forEach(function(demand){
+      var project = (state.projects || []).find(function(p){ return p.id === demand.projectId; });
+      var priority = project ? project.priority : 3;
+      var months2 = Object.keys(demand.allocationByMonth || {});
+      var understaffedMonths = months2.filter(function(m){ return CALC.demandFillPct(demand.id, m, idx) < 100; });
+      if (understaffedMonths.length){
+        push({ severity: priority <= 2 ? "HIGH" : "MEDIUM", ruleId:"UNSTAFFED_DEMAND", subjectType:"demand", subjectId:demand.id,
+          monthKeys: understaffedMonths, message: "Demand '" + demand.title + "' is understaffed in " + understaffedMonths.length + " month(s)",
+          suggestedAction: "Run the optimizer or auto-staff for this demand" });
+      }
+
+      if ((demand.requiredSkills || []).length){
+        var anyGap = demand.requiredSkills.some(function(rs){
+          return !activeEmployees.some(function(emp){
+            var es = (state.employeeSkills || []).find(function(x){ return x.employeeId === emp.id && x.skillId === rs.skillId; });
+            var level = es ? es.level : 0;
+            return level >= rs.minLevel;
+          });
+        });
+        if (anyGap){
+          push({ severity:"MEDIUM", ruleId:"SKILL_GAP", subjectType:"demand", subjectId:demand.id,
+            monthKeys: [], message: "No active employee meets all required skill minimums for demand '" + demand.title + "'",
+            suggestedAction: "Upskill an employee or adjust required skill minimums" });
+        }
+      }
+    });
+
+    // TEAM_SIZE (per project per month)
+    (state.projects || []).forEach(function(project){
+      var prjMonths = idx.byProjectMonth.get(project.id);
+      if (!prjMonths) return;
+      var offenderMonths = [];
+      prjMonths.forEach(function(rec, m){
+        var size = rec.employeeIds.size;
+        if (size < project.teamMin || size > project.teamMax) offenderMonths.push(m);
+      });
+      if (offenderMonths.length){
+        push({ severity:"LOW", ruleId:"TEAM_SIZE", subjectType:"project", subjectId:project.id,
+          monthKeys: offenderMonths.sort(), message: "Project '" + project.name + "' team size is outside [" + project.teamMin + ", " + project.teamMax + "] in " + offenderMonths.length + " month(s)",
+          suggestedAction: "Adjust staffing to fit the target team size band" });
+      }
+    });
+
+    return alerts;
+  }
+
+  return { scan: scan, consecutiveRuns: consecutiveRuns, severityForBurnout: severityForBurnout };
+})();
+
+/* ===================== BLOCK 7: ROE.mentor ===================== */
+/* Pure. Mentorship pairing engine (§4.7). */
+ROE.mentor = (function(){
+  var C = ROE.const, U = ROE.util;
+
+  function activeMenteeCount(state, mentorId){
+    return (state.mentorships || []).filter(function(m){ return m.mentorId === mentorId && m.status === "Active"; }).length;
+  }
+
+  function empSkillLevel(state, employeeId, skillId){
+    var es = (state.employeeSkills || []).find(function(x){ return x.employeeId === employeeId && x.skillId === skillId; });
+    return es ? es.level : 0;
+  }
+
+  function sharedProject(state, empA, empB){
+    var aProjects = new Set((state.assignments||[]).filter(function(a){ return a.employeeId === empA; }).map(function(a){ return a.projectId; }));
+    var match = (state.assignments||[]).find(function(a){ return a.employeeId === empB && aProjects.has(a.projectId); });
+    return match ? match.projectId : null;
+  }
+
+  function alreadyPaired(state, mentorId, menteeId){
+    return (state.mentorships || []).some(function(m){
+      return m.mentorId === mentorId && m.menteeId === menteeId && (m.status === "Active" || m.status === "Pending");
+    });
+  }
+
+  function compatFor(score){
+    if (score >= 75) return "High";
+    if (score >= 50) return "Medium";
+    return "Low";
+  }
+
+  // Computes a pairing score + focus skill for a specific mentor/mentee pair.
+  function pairScoreFor(state, mentor, mentee){
+    var skillIds = (C.SEED_SKILLS || []).map(function(s){ return s.code; });
+    // Use whatever skills exist in the store (seeded or custom).
+    var allSkillIds = (state.skills || []).map(function(s){ return s.id; });
+    var bestSkillId = null, bestGapValue = -1;
+    allSkillIds.forEach(function(skillId){
+      var mentorLevel = empSkillLevel(state, mentor.id, skillId);
+      var menteeLevel = empSkillLevel(state, mentee.id, skillId);
+      var gapValue = 100 * U.clamp((mentorLevel - menteeLevel) / 3, 0, 1);
+      if (gapValue > bestGapValue){ bestGapValue = gapValue; bestSkillId = skillId; }
+    });
+    var skillGapValue = bestGapValue < 0 ? 0 : bestGapValue;
+
+    var mentorOrd = C.EMP_LEVEL_ORD[mentor.level] || 1;
+    var menteeOrd = C.EMP_LEVEL_ORD[mentee.level] || 1;
+    var delta = mentorOrd - menteeOrd;
+    var seniorityDeltaValue = C.MENTOR_SENIORITY_DELTA_TABLE(delta);
+
+    var disciplineValue;
+    if (mentor.discipline === mentee.discipline) disciplineValue = 100;
+    else if ((C.ADJACENCY[mentor.discipline]||[]).indexOf(mentee.discipline) !== -1) disciplineValue = 60;
+    else disciplineValue = 20;
+
+    var mentees = activeMenteeCount(state, mentor.id);
+    if (mentees >= 2) return null; // excluded entirely
+    var mentorSpareCapacityValue = 100 * (1 - mentees/2);
+
+    var raw = 0.40*skillGapValue + 0.25*seniorityDeltaValue + 0.20*disciplineValue + 0.15*mentorSpareCapacityValue;
+    var shared = sharedProject(state, mentor.id, mentee.id);
+    if (shared) raw += 5;
+    var pairScore = U.clamp(Math.round(raw), 0, 100);
+
+    return {
+      mentorId: mentor.id, menteeId: mentee.id, focusSkillId: bestSkillId,
+      pairScore: pairScore, compat: compatFor(pairScore),
+      sharedProjectId: shared,
+      breakdown: { skillGapValue:skillGapValue, seniorityDeltaValue:seniorityDeltaValue, disciplineValue:disciplineValue, mentorSpareCapacityValue:mentorSpareCapacityValue, sharedBonus: shared ? 5 : 0 }
+    };
+  }
+
+  // Suggests ranked mentor/mentee pairs, excluding mentors already at 2 active mentees,
+  // excluding already-paired combinations, and excluding scores below 35.
+  function suggest(state){
+    var mentors = (state.employees || []).filter(function(e){ return e.active && e.mentorRole === "Mentor"; });
+    var mentees = (state.employees || []).filter(function(e){ return e.active && e.mentorRole === "Mentee"; });
+    var out = [];
+    mentors.forEach(function(mentor){
+      if (activeMenteeCount(state, mentor.id) >= 2) return;
+      mentees.forEach(function(mentee){
+        if (alreadyPaired(state, mentor.id, mentee.id)) return;
+        var r = pairScoreFor(state, mentor, mentee);
+        if (!r) return;
+        if (r.pairScore < 35) return;
+        out.push(r);
+      });
+    });
+    out.sort(function(a,b){ return b.pairScore - a.pairScore; });
+    return out;
+  }
+
+  return { suggest: suggest, pairScoreFor: pairScoreFor, activeMenteeCount: activeMenteeCount, compatFor: compatFor };
+})();
+
+/* ===================== BLOCK 8: ROE.io ===================== */
+/* Pure workbook build/parse/template/CSV. SheetJS calls isolated to two thin adapters at the bottom. */
+ROE.io = (function(){
+  var C = ROE.const, U = ROE.util, M = ROE.model;
+
+  var COLUMNS = {
+    Meta: ["Key","Value"],
+    Employees: ["EmployeeID","Name","Email","Level","Discipline","Office","BusinessGroup","TargetUtil","MentorRole","Active","Notes"],
+    Skills: ["SkillID","Code","Name","Category"],
+    EmployeeSkills: ["EmployeeID","SkillID","Level","LevelLabel"],
+    Projects: ["ProjectID","Name","Client","Market","Discipline","Phase","Budget","BIMLevel","TeamMin","TeamMax","Priority","Status","Software","Notes"],
+    ProjectDemands: ["DemandID","ProjectID","Title","Discipline","MinLevel","Openings","RequiredSkills"],
+    Assignments: ["AssignmentID","ProjectID","EmployeeID","DemandID","Status","Source","ScoreSnapshot"],
+    Mentorships: ["MentorshipID","MentorID","MenteeID","FocusSkillID","SharedProjectID","Frequency","Score","Compat","Status"]
+  };
+
+  function monthCols(settings){ return U.monthKeys(settings.horizonStart, settings.horizonMonths); }
+
+  function encodeRequiredSkills(arr){
+    return (arr || []).map(function(rs){ return rs.skillId + ":" + rs.minLevel + ":" + rs.weight; }).join(";");
+  }
+  function decodeRequiredSkills(str){
+    if (!str) return [];
+    return String(str).split(";").filter(Boolean).map(function(part){
+      var p = part.split(":");
+      return { skillId: p[0], minLevel: parseInt(p[1],10) || 0, weight: parseInt(p[2],10) || 1 };
+    });
+  }
+
+  // ---- Build sheets (AoA: array of arrays incl. header row) from canonical state ----
+  function buildWorkbookSheets(state){
+    var settings = state.settings;
+    var months = monthCols(settings);
+    var sheets = {};
+
+    sheets.Meta = [
+      ["Key","Value"],
+      ["SchemaVersion", settings.schemaVersion],
+      ["ExportedAt", U.nowIso()],
+      ["HorizonStart", settings.horizonStart],
+      ["HorizonMonths", settings.horizonMonths]
+    ];
+
+    sheets.Employees = [COLUMNS.Employees].concat((state.employees||[]).map(function(e){
+      return [e.id, e.name, e.email, e.level, e.discipline, e.office, e.businessGroup, e.targetUtil, e.mentorRole, e.active, e.notes];
+    }));
+
+    sheets.Skills = [COLUMNS.Skills].concat((state.skills||[]).map(function(s){
+      return [s.id, s.code, s.name, s.category];
+    }));
+
+    sheets.EmployeeSkills = [COLUMNS.EmployeeSkills].concat((state.employeeSkills||[]).map(function(es){
+      return [es.employeeId, es.skillId, es.level, C.LEVEL_LABELS[es.level] || ""];
+    }));
+
+    sheets.Projects = [COLUMNS.Projects].concat((state.projects||[]).map(function(p){
+      return [p.id, p.name, p.client, p.market, p.discipline, p.phase, p.budget, p.bimLevel, p.teamMin, p.teamMax, p.priority, p.status, (p.software||[]).join(";"), p.notes];
+    }));
+
+    sheets.ProjectDemands = [COLUMNS.ProjectDemands.concat(months)].concat((state.demands||[]).map(function(d){
+      var base = [d.id, d.projectId, d.title, d.discipline, d.minLevel, d.openings, encodeRequiredSkills(d.requiredSkills)];
+      var monthVals = months.map(function(m){ return d.allocationByMonth && d.allocationByMonth[m] !== undefined ? d.allocationByMonth[m] : ""; });
+      return base.concat(monthVals);
+    }));
+
+    sheets.Assignments = [COLUMNS.Assignments.concat(months)].concat((state.assignments||[]).map(function(a){
+      var base = [a.id, a.projectId, a.employeeId, a.demandId || "", a.status, a.source, a.scoreSnapshot === null || a.scoreSnapshot === undefined ? "" : a.scoreSnapshot];
+      var monthVals = months.map(function(m){ return a.allocationByMonth && a.allocationByMonth[m] !== undefined ? a.allocationByMonth[m] : ""; });
+      return base.concat(monthVals);
+    }));
+
+    sheets.Mentorships = [COLUMNS.Mentorships].concat((state.mentorships||[]).map(function(m){
+      return [m.id, m.mentorId, m.menteeId, m.focusSkillId, m.sharedProjectId || "", m.frequency, m.score, m.compat, m.status];
+    }));
+
+    return sheets;
+  }
+
+  function buildTemplateSheets(settings){
+    var months = monthCols(settings);
+    var sheets = {};
+    sheets.Meta = [
+      ["Key","Value"],
+      ["SchemaVersion", settings.schemaVersion],
+      ["ExportedAt", U.nowIso()],
+      ["HorizonStart", settings.horizonStart],
+      ["HorizonMonths", settings.horizonMonths]
+    ];
+    sheets.Skills = [COLUMNS.Skills].concat(C.SEED_SKILLS.map(function(s){
+      return ["skl_" + s.code.toLowerCase(), s.code, s.name, s.category];
+    }));
+    sheets.Employees = [COLUMNS.Employees, ["EXAMPLE-EMP-1","Jordan Example","jordan.example@example.com","Mid-Level","Civil","Example City, ST","Transportation",85,"None",true,"Example row - ignored on import"]];
+    sheets.EmployeeSkills = [COLUMNS.EmployeeSkills, ["EXAMPLE-EMP-1","skl_civil3d",3,"Proficient"]];
+    sheets.Projects = [COLUMNS.Projects, ["EXAMPLE-PRJ-1","Example Interchange Project","Example Client","Transportation","Civil","Planning",1000000,"BIM Level 2",4,10,3,"Active","skl_civil3d;skl_autocad","Example row - ignored on import"]];
+    sheets.ProjectDemands = [COLUMNS.ProjectDemands.concat(months), ["EXAMPLE-DEM-1","EXAMPLE-PRJ-1","Example Civil Designer","Civil","Mid-Level",1,"skl_civil3d:3:2;skl_autocad:2:1"].concat(months.map(function(m,i){ return i < 2 ? 50 : ""; }))];
+    sheets.Assignments = [COLUMNS.Assignments.concat(months), ["EXAMPLE-ASG-1","EXAMPLE-PRJ-1","EXAMPLE-EMP-1","EXAMPLE-DEM-1","Proposed","manual",""].concat(months.map(function(m,i){ return i < 2 ? 50 : ""; }))];
+    sheets.Mentorships = [COLUMNS.Mentorships, ["EXAMPLE-MEN-1","EXAMPLE-EMP-1","EXAMPLE-EMP-1","skl_civil3d","","Monthly",0,"Low","Pending"]];
+    return sheets;
+  }
+
+  function buildCsvForSheet(aoa){
+    return aoa.map(function(row){ return U.csvRow(row); }).join("\r\n");
+  }
+
+  // ---- Header mapping detection ----
+  // Returns { field: matchedHeader|null } for each canonical field in `sheetName`.
+  function detectMapping(sheetName, headers){
+    var fields = COLUMNS[sheetName] || [];
+    var mapping = {};
+    fields.forEach(function(f){
+      var exact = headers.find(function(h){ return U.normalizeHeader(h) === U.normalizeHeader(f); });
+      mapping[f] = exact || U.fuzzyMatchHeader(f, headers) || null;
+    });
+    return mapping;
+  }
+
+  function colIndex(headers, headerName){
+    return headers.indexOf(headerName);
+  }
+
+  // Parses one sheet's AoA into canonical records.
+  // opts: { mapping: {field:header}, monthKeys: [...horizon month keys...] }
+  // Returns { records:[], errors:[{sheet,row,field,message}], skipped:count, monthWarnings:[headerName,...] }
+  function parseSheet(sheetName, aoa, opts){
+    opts = opts || {};
+    var result = { records: [], errors: [], skipped: 0, monthWarnings: [] };
+    if (!aoa || aoa.length === 0) return result;
+    var headers = aoa[0];
+    var mapping = opts.mapping || detectMapping(sheetName, headers);
+    var horizonMonths = opts.monthKeys || [];
+    var isWideMonths = sheetName === "ProjectDemands" || sheetName === "Assignments";
+    var monthHeaderCols = [];
+    if (isWideMonths){
+      headers.forEach(function(h, i){
+        if (U.isMonthKey(h)){
+          if (horizonMonths.indexOf(h) !== -1) monthHeaderCols.push({ header:h, index:i });
+          else result.monthWarnings.push(h);
+        }
+      });
+    }
+
+    function get(row, field){
+      var h = mapping[field];
+      if (!h) return undefined;
+      var idx = colIndex(headers, h);
+      return idx === -1 ? undefined : row[idx];
+    }
+
+    for (var r = 1; r < aoa.length; r++){
+      var row = aoa[r];
+      if (!row || row.every(function(c){ return c === undefined || c === "" || c === null; })) continue;
+      var rowNum = r + 1;
+      var idField = COLUMNS[sheetName][0];
+      var idVal = get(row, idField);
+      if (idVal && String(idVal).indexOf("EXAMPLE-") === 0){ result.skipped += 1; continue; }
+
+      var rec, valid;
+      if (sheetName === "Employees"){
+        rec = M.newEmployee({
+          id: idVal || undefined, name: get(row,"Name"), email: get(row,"Email"), level: get(row,"Level"),
+          discipline: get(row,"Discipline"), office: get(row,"Office"), businessGroup: get(row,"BusinessGroup"),
+          targetUtil: U.parseNum(get(row,"TargetUtil"), 85), mentorRole: get(row,"MentorRole") || "None",
+          active: get(row,"Active") === undefined ? true : (get(row,"Active") === true || get(row,"Active") === "true" || get(row,"Active") === 1 || get(row,"Active") === "TRUE"),
+          notes: get(row,"Notes")
+        });
+        valid = M.validateEmployee(rec);
+      } else if (sheetName === "Skills"){
+        rec = M.newSkill({ id: idVal || undefined, code: get(row,"Code"), name: get(row,"Name"), category: get(row,"Category") });
+        valid = M.validateSkill(rec);
+      } else if (sheetName === "EmployeeSkills"){
+        rec = M.newEmployeeSkill({ employeeId: get(row,"EmployeeID"), skillId: get(row,"SkillID"), level: M.normalizeSkillLevel(get(row,"Level")) });
+        valid = M.validateEmployeeSkill(rec);
+      } else if (sheetName === "Projects"){
+        var swRaw = get(row,"Software");
+        rec = M.newProject({
+          id: idVal || undefined, name: get(row,"Name"), client: get(row,"Client"), market: get(row,"Market"),
+          discipline: get(row,"Discipline"), phase: get(row,"Phase"), budget: U.parseNum(get(row,"Budget"),0),
+          bimLevel: get(row,"BIMLevel"), teamMin: U.parseNum(get(row,"TeamMin"),1), teamMax: U.parseNum(get(row,"TeamMax"),10),
+          priority: U.parseNum(get(row,"Priority"),3), status: get(row,"Status"),
+          software: swRaw ? String(swRaw).split(";").filter(Boolean) : [], notes: get(row,"Notes")
+        });
+        valid = M.validateProject(rec);
+      } else if (sheetName === "ProjectDemands"){
+        var alloc = {};
+        monthHeaderCols.forEach(function(mc){
+          var v = row[mc.index];
+          if (v !== undefined && v !== "") alloc[mc.header] = U.parseNum(v, 0);
+        });
+        rec = M.newDemand({
+          id: idVal || undefined, projectId: get(row,"ProjectID"), title: get(row,"Title"), discipline: get(row,"Discipline"),
+          minLevel: get(row,"MinLevel"), openings: U.parseNum(get(row,"Openings"),1),
+          requiredSkills: decodeRequiredSkills(get(row,"RequiredSkills")), allocationByMonth: alloc
+        });
+        valid = M.validateDemand(rec);
+      } else if (sheetName === "Assignments"){
+        var alloc2 = {};
+        monthHeaderCols.forEach(function(mc){
+          var v = row[mc.index];
+          if (v !== undefined && v !== "") alloc2[mc.header] = U.parseNum(v, 0);
+        });
+        rec = M.newAssignment({
+          id: idVal || undefined, projectId: get(row,"ProjectID"), employeeId: get(row,"EmployeeID"),
+          demandId: get(row,"DemandID") || null, status: get(row,"Status") || "Proposed", source: get(row,"Source") || "import",
+          scoreSnapshot: get(row,"ScoreSnapshot") === "" || get(row,"ScoreSnapshot") === undefined ? null : U.parseNum(get(row,"ScoreSnapshot"), null),
+          allocationByMonth: alloc2
+        });
+        valid = M.validateAssignment(rec);
+      } else if (sheetName === "Mentorships"){
+        rec = M.newMentorship({
+          id: idVal || undefined, mentorId: get(row,"MentorID"), menteeId: get(row,"MenteeID"), focusSkillId: get(row,"FocusSkillID"),
+          sharedProjectId: get(row,"SharedProjectID") || null, frequency: get(row,"Frequency"),
+          score: U.parseNum(get(row,"Score"),0), compat: get(row,"Compat"), status: get(row,"Status")
+        });
+        valid = M.validateMentorship(rec);
+      } else {
+        continue;
+      }
+
+      if (!valid.ok){
+        valid.errors.forEach(function(e){
+          result.errors.push({ sheet: sheetName, row: rowNum, field: e.field, message: e.message });
+        });
+      } else {
+        result.records.push(rec);
+      }
+    }
+    return result;
+  }
+
+  // Parses a full workbook (object of sheetName -> AoA). mappings: optional per-sheet mapping override.
+  function parseWorkbook(sheetsAoA, settings, mappings){
+    var horizonMonths = U.monthKeys(settings.horizonStart, settings.horizonMonths);
+    var out = { bySheet: {}, monthWarnings: [] };
+    Object.keys(COLUMNS).forEach(function(sheetName){
+      if (sheetName === "Meta") return;
+      var aoa = sheetsAoA[sheetName];
+      if (!aoa) return;
+      var r = parseSheet(sheetName, aoa, { mapping: mappings && mappings[sheetName], monthKeys: horizonMonths });
+      out.bySheet[sheetName] = r;
+      if (r.monthWarnings.length) out.monthWarnings.push({ sheet: sheetName, headers: r.monthWarnings });
+    });
+    return out;
+  }
+
+  // Computes insert/update/skip/error preview counts against existing state, matching by ID.
+  function diffAgainstState(state, parsed){
+    var summary = {};
+    var entityKeyBySheet = { Employees:"employees", Skills:"skills", EmployeeSkills:null, Projects:"projects", ProjectDemands:"demands", Assignments:"assignments", Mentorships:"mentorships" };
+    Object.keys(parsed.bySheet).forEach(function(sheetName){
+      var r = parsed.bySheet[sheetName];
+      var stateKey = entityKeyBySheet[sheetName];
+      var existingIds = new Set();
+      if (stateKey) (state[stateKey] || []).forEach(function(rec){ existingIds.add(rec.id); });
+      var inserts = 0, updates = 0;
+      if (sheetName === "EmployeeSkills"){
+        inserts = r.records.length; // long-format upserts, treated as inserts/updates by composite key elsewhere
+      } else {
+        r.records.forEach(function(rec){
+          if (existingIds.has(rec.id)) updates += 1; else inserts += 1;
+        });
+      }
+      summary[sheetName] = { insert: inserts, update: updates, skipped: r.skipped, errors: r.errors.length };
+    });
+    return summary;
+  }
+
+  return {
+    COLUMNS: COLUMNS, monthCols: monthCols,
+    encodeRequiredSkills: encodeRequiredSkills, decodeRequiredSkills: decodeRequiredSkills,
+    buildWorkbookSheets: buildWorkbookSheets, buildTemplateSheets: buildTemplateSheets,
+    buildCsvForSheet: buildCsvForSheet, detectMapping: detectMapping,
+    parseSheet: parseSheet, parseWorkbook: parseWorkbook, diffAgainstState: diffAgainstState,
+
+    // ---- Thin SheetJS adapters (impure: touch window.XLSX / trigger downloads) ----
+    isXlsxAvailable: function(){ return typeof window !== "undefined" && !!window.XLSX; },
+
+    exportWorkbookFile: function(state, filename){
+      if (!window.XLSX) throw new Error("XLSX library is not available");
+      var sheets = buildWorkbookSheets(state);
+      var wb = window.XLSX.utils.book_new();
+      Object.keys(sheets).forEach(function(name){
+        var ws = window.XLSX.utils.aoa_to_sheet(sheets[name]);
+        window.XLSX.utils.book_append_sheet(wb, ws, name);
+      });
+      window.XLSX.writeFile(wb, filename || "roe-export.xlsx");
+    },
+
+    exportTemplateFile: function(settings, filename){
+      if (!window.XLSX) throw new Error("XLSX library is not available");
+      var sheets = buildTemplateSheets(settings);
+      var wb = window.XLSX.utils.book_new();
+      Object.keys(sheets).forEach(function(name){
+        var ws = window.XLSX.utils.aoa_to_sheet(sheets[name]);
+        window.XLSX.utils.book_append_sheet(wb, ws, name);
+      });
+      window.XLSX.writeFile(wb, filename || "roe-template.xlsx");
+    },
+
+    // Reads a File object (from an <input type=file>) and returns a Promise resolving to
+    // a plain { sheetName: AoA } object (pure data), via SheetJS.
+    readWorkbookFile: function(file){
+      if (!window.XLSX) return Promise.reject(new Error("XLSX library is not available"));
+      return new Promise(function(resolve, reject){
+        var reader = new FileReader();
+        reader.onload = function(e){
+          try {
+            var data = new Uint8Array(e.target.result);
+            var wb = window.XLSX.read(data, { type: "array" });
+            var out = {};
+            wb.SheetNames.forEach(function(name){
+              out[name] = window.XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, blankrows:false, defval:"" });
+            });
+            resolve(out);
+          } catch (err){ reject(err); }
+        };
+        reader.onerror = function(){ reject(reader.error); };
+        reader.readAsArrayBuffer(file);
+      });
+    }
+  };
+})();
+
+/* ===================== ROE.demo ===================== */
+/* Pure. Builds the ~40 employee / 12 project / ~120 assignment / 6 mentorship seed dataset.
+   Original names and records - not copied from any reference application.
+   Distributions are deliberately shaped so every one of the 8 alert rules (§4.6) fires at least once. */
+ROE.demo = (function(){
+  var C = ROE.const, U = ROE.util, M = ROE.model;
+
+  var FIRST_NAMES = ["Marisol","Deshawn","Priya","Callum","Noor","Devon","Sofia","Kai","Elena","Trevor",
+    "Maya","Jamal","Ingrid","Oscar","Renee","Felix","Aisha","Bruno","Celeste","Dario",
+    "Yara","Milo","Sana","Theo","Zoe","Gustavo","Nadia","Rowan","Petra","Cole",
+    "Amara","Lucas","Ines","Owen","Farah","Silas","Wren","Tomas","Leila","Andre"];
+  var LAST_NAMES = ["Whitfield","Okafor","Bergstrom","Nakamura","Delacroix","Voss","Marchetti","Solano","Krantz","Oduya",
+    "Falk","Reyes","Lindqvist","Tanaka","Abara","Costin","Vale","Marlowe","Petrov","Osei",
+    "Hollis","Bianchi","Kova","Feldman","Amaro","Renner","Dubois","Kessler","Ottaway","Sarno",
+    "Winslow","Braddock","Nyren","Castellanos","Ferro","Halvorsen","Quintana","Storm","Weiss","Odom"];
+  var OFFICES = ["Omaha, NE","Denver, CO","Portland, OR","Raleigh, NC","Austin, TX","Columbus, OH"];
+
+  function skillId(code){ return "skl_" + code.toLowerCase(); }
+
+  function skillsForDiscipline(discipline, seedIdx){
+    var v = seedIdx % 5;
+    var out = [];
+    function add(code, base){ out.push({ skillId: skillId(code), level: U.clamp(base + (v % 3) - 1, 0, 5) }); }
+    if (["Civil","Geotechnical","Environmental","Landscape"].indexOf(discipline) !== -1){
+      add("CIVIL3D", 3); add("AUTOCAD", 3); add("GIS", U.clamp(2 + (v%2), 0, 4)); add("PM", 1);
+    } else if (["Architecture","VDC","Structural","MEP"].indexOf(discipline) !== -1){
+      add("REVIT", 3); add("NAVIS", 2); add("BLUEBEAM", 2); add("AUTOCAD", 2); add("PM", 1);
+    } else { // Data/Analytics
+      add("PYTHON", 3); add("GIS", U.clamp(2 + (v%2), 0, 4)); add("PM", 1);
+    }
+    return out;
+  }
+
+  function buildEmployees(){
+    var employees = [];
+    var employeeSkills = [];
+    var levels = ["Mid-Level","Senior","Junior","Mid-Level","Senior","Principal","Junior","Senior"];
+    var mentors = { 5:2, 6:1, 7:2, 8:1 }; // employee index -> Mentor, value unused here
+    var mentees = [9,10,11,12,13,14];
+
+    for (var i = 0; i < 40; i++){
+      var name = FIRST_NAMES[i] + " " + LAST_NAMES[(i*7+3) % LAST_NAMES.length];
+      var discipline = C.DISCIPLINES[i % C.DISCIPLINES.length];
+      var level = levels[i % levels.length];
+      var businessGroup = C.BUSINESS_GROUPS[i % C.BUSINESS_GROUPS.length];
+      var office = OFFICES[i % OFFICES.length];
+      var targetUtil = [80,85,85,90,85][i % 5];
+      var mentorRole = "None";
+      if (mentors.hasOwnProperty(i)) mentorRole = "Mentor";
+      else if (mentees.indexOf(i) !== -1) mentorRole = "Mentee";
+
+      var emp = M.newEmployee({
+        id: "emp_" + (i+1),
+        name: name, email: name.toLowerCase().replace(/\s+/g,".") + "@roe-demo.example",
+        level: level, discipline: discipline, office: office, businessGroup: businessGroup,
+        targetUtil: targetUtil, mentorRole: mentorRole, active: true,
+        notes: ""
+      });
+      employees.push(emp);
+
+      skillsForDiscipline(discipline, i).forEach(function(s){
+        employeeSkills.push(M.newEmployeeSkill({ employeeId: emp.id, skillId: s.skillId, level: s.level }));
+      });
+    }
+    // Ensure nobody active has GIS >= 5, so the Silverleaf "GIS Specialist Lead" demand (min level 5) can never be met - guarantees SKILL_GAP.
+    employeeSkills.forEach(function(es){
+      if (es.skillId === skillId("GIS") && es.level > 4) es.level = 4;
+    });
+    // Guarantee mentor/mentee pairs have a real skill gap on at least one shared skill.
+    [[5,9],[5,10],[6,11],[7,12],[7,13],[8,14]].forEach(function(pair){
+      var mentorId = "emp_" + (pair[0]+1), menteeId = "emp_" + (pair[1]+1);
+      var mentorEs = employeeSkills.find(function(es){ return es.employeeId === mentorId && es.skillId === skillId("PM"); });
+      var menteeEs = employeeSkills.find(function(es){ return es.employeeId === menteeId && es.skillId === skillId("PM"); });
+      if (mentorEs) mentorEs.level = 4;
+      if (menteeEs) menteeEs.level = 1;
+    });
+    return { employees: employees, employeeSkills: employeeSkills };
+  }
+
+  function buildSkills(){
+    return C.SEED_SKILLS.map(function(s){
+      return M.newSkill({ id: skillId(s.code), code: s.code, name: s.name, category: s.category });
+    });
+  }
+
+  function buildProjectsAndDemands(){
+    var defs = [
+      { name:"Cedar Fork Interchange Rehabilitation", client:"Meridian DOT", market:"Transportation", discipline:"Civil", phase:"CD", budget:18000000, bimLevel:"BIM Level 2", teamMin:6, teamMax:10, priority:1, status:"Active", software:["REVIT","CIVIL3D"] },
+      { name:"Blue Heron Water Reclamation Facility", client:"Blue Heron Utility District", market:"Water", discipline:"Environmental", phase:"DD", budget:42000000, bimLevel:"BIM Level 3", teamMin:5, teamMax:9, priority:2, status:"Active", software:["CIVIL3D","GIS"] },
+      { name:"Northgate Federal Courthouse Modernization", client:"GSA Region 7", market:"Federal", discipline:"Architecture", phase:"Schematic", budget:26000000, bimLevel:"BIM Level 2", teamMin:4, teamMax:8, priority:1, status:"Active", software:["REVIT"] },
+      { name:"Prairie View Corporate Campus", client:"Prairie View Holdings", market:"Buildings", discipline:"Architecture", phase:"CD", budget:31000000, bimLevel:"BIM Level 2", teamMin:5, teamMax:9, priority:3, status:"Active", software:["REVIT","NAVIS"] },
+      { name:"Sable Ridge Wind Interconnection", client:"Sable Ridge Energy Co-op", market:"Energy", discipline:"Structural", phase:"Concept", budget:15000000, bimLevel:"BIM Level 1", teamMin:3, teamMax:6, priority:3, status:"Active", software:["AUTOCAD"] },
+      { name:"Millrace Levee Stabilization", client:"Millrace Flood Control District", market:"Water", discipline:"Geotechnical", phase:"CA", budget:9000000, bimLevel:"BIM Level 1", teamMin:3, teamMax:5, priority:4, status:"Active", software:["CIVIL3D"] },
+      { name:"Harborlight Transit Center", client:"Harborlight Regional Transit", market:"Transportation", discipline:"VDC", phase:"DD", budget:54000000, bimLevel:"BIM Level 3", teamMin:6, teamMax:10, priority:2, status:"Active", software:["REVIT","NAVIS"] },
+      { name:"Copper Basin Substation Upgrade", client:"Copper Basin Power", market:"Energy", discipline:"MEP", phase:"CD", budget:12000000, bimLevel:"BIM Level 2", teamMin:3, teamMax:6, priority:3, status:"Active", software:["REVIT"] },
+      { name:"Aurora Municipal Complex", client:"City of Aurora Springs", market:"Buildings", discipline:"MEP", phase:"Planning", budget:8000000, bimLevel:"BIM Level 1", teamMin:2, teamMax:5, priority:4, status:"Pending", software:["AUTOCAD"] },
+      { name:"Redstone Bridge Replacement", client:"State Bridge Authority", market:"Transportation", discipline:"Structural", phase:"Final Design", budget:22000000, bimLevel:"BIM Level 2", teamMin:4, teamMax:8, priority:2, status:"Active", software:["CIVIL3D"] },
+      { name:"Silverleaf Data Campus", client:"Silverleaf Digital Infrastructure", market:"Buildings", discipline:"Data/Analytics", phase:"Concept", budget:60000000, bimLevel:"BIM Level 2", teamMin:3, teamMax:7, priority:3, status:"Active", software:["PYTHON","GIS"] },
+      { name:"Windgate Federal Research Annex", client:"Dept. of Federal Research Svcs", market:"Federal", discipline:"Environmental", phase:"Schematic", budget:19000000, bimLevel:"BIM Level 1", teamMin:3, teamMax:6, priority:5, status:"On Hold", software:["GIS"] }
+    ];
+
+    var projects = defs.map(function(d, i){
+      return M.newProject({
+        id: "prj_" + (i+1), name: d.name, client: d.client, market: d.market, discipline: d.discipline,
+        phase: d.phase, budget: d.budget, bimLevel: d.bimLevel, teamMin: d.teamMin, teamMax: d.teamMax,
+        priority: d.priority, status: d.status, software: d.software.map(skillId), notes: ""
+      });
+    });
+
+    var months = U.monthKeys("2026-01", 12);
+    function allocAll(pct){ var o = {}; months.forEach(function(m){ o[m] = pct; }); return o; }
+    function allocRange(pct, start, count){ var o = {}; for (var i=start;i<start+count && i<months.length;i++) o[months[i]] = pct; return o; }
+
+    var demands = [];
+    projects.forEach(function(p, i){
+      demands.push(M.newDemand({
+        id: "dem_" + (i+1) + "_main", projectId: p.id, title: p.discipline + " Lead",
+        discipline: p.discipline, minLevel: "Mid-Level",
+        requiredSkills: [ { skillId: p.software[0], minLevel: 2, weight: 2 } ],
+        openings: 2, allocationByMonth: allocAll(60)
+      }));
+    });
+    // Extra, deliberately unstaffed HIGH-priority demand (UNSTAFFED_DEMAND, priority <= 2).
+    demands.push(M.newDemand({
+      id: "dem_unstaffed", projectId: "prj_3", title: "Lead Architect (Unstaffed)",
+      discipline: "Architecture", minLevel: "Senior",
+      requiredSkills: [ { skillId: skillId("REVIT"), minLevel: 4, weight: 3 } ],
+      openings: 1, allocationByMonth: allocAll(50)
+    }));
+    // Extra demand nobody active can meet (SKILL_GAP): requires GIS level 5, capped globally at 4.
+    demands.push(M.newDemand({
+      id: "dem_skillgap", projectId: "prj_11", title: "GIS Specialist Lead",
+      discipline: "Data/Analytics", minLevel: "Senior",
+      requiredSkills: [ { skillId: skillId("GIS"), minLevel: 5, weight: 3 } ],
+      openings: 1, allocationByMonth: allocAll(40)
+    }));
+
+    return { projects: projects, demands: demands, months: months, allocAll: allocAll, allocRange: allocRange };
+  }
+
+  function buildAssignments(employees, projects, demands, months, allocAll, allocRange){
+    var assignments = [];
+    var seq = 0;
+    function add(employeeId, projectId, demandId, alloc, source){
+      seq += 1;
+      assignments.push(M.newAssignment({
+        id: "asg_" + seq, projectId: projectId, employeeId: employeeId, demandId: demandId || null,
+        allocationByMonth: alloc, status: "Committed", source: source || "import"
+      }));
+    }
+
+    // Reserve indices 0,1,3,4 (0-based) for hand-crafted alert scenarios below; generic staffing uses 5..39.
+    var reserved = [0,1,3,4];
+    var pool = [];
+    for (var i = 0; i < employees.length; i++) if (reserved.indexOf(i) === -1) pool.push(i);
+
+    var pctCycle = [30,40,50,60,70];
+    var cursor = 0;
+    projects.forEach(function(p, pi){
+      var mainDemand = demands.find(function(d){ return d.id === "dem_" + (pi+1) + "_main"; });
+      var count = (p.id === "prj_6") ? 2 : 10; // Millrace intentionally understaffed to breach teamMin (TEAM_SIZE)
+      for (var k = 0; k < count; k++){
+        var empIdx = pool[cursor % pool.length];
+        cursor += 1;
+        var emp = employees[empIdx];
+        var pct = pctCycle[(pi + k) % pctCycle.length];
+        var alloc = (k % 2 === 0) ? allocAll(pct) : allocRange(pct, 0, 6);
+        add(emp.id, p.id, mainDemand.id, alloc, "import");
+      }
+    });
+
+    // ---- Hand-crafted alert scenarios ----
+    var e0 = employees[0].id, e1 = employees[1].id, e3 = employees[3].id, e4 = employees[4].id;
+
+    // e0: severe, sustained, multi-project overload -> SUSTAINED_OVERALLOC (HIGH), CTX_OVERLOAD (HIGH, >ctxCap+2),
+    // and BURNOUT_COMPOSITE (CRITICAL).
+    ["prj_1","prj_2","prj_3","prj_4","prj_5","prj_7","prj_10"].forEach(function(pid){
+      add(e0, pid, null, allocRange(30, 0, 6), "manual");
+    });
+
+    // e1: benched most of the year -> BENCH_RISK (LOW).
+    add(e1, "prj_8", null, allocRange(15, 0, 2), "manual");
+
+    // e3: moderate context-switch overload (5 concurrent, within cap+2) -> CTX_OVERLOAD (MEDIUM only).
+    ["prj_2","prj_4","prj_6","prj_9","prj_12"].forEach(function(pid){
+      add(e3, pid, null, allocRange(15, 0, 4), "manual");
+    });
+
+    // e4: over target+slack but never over 100% -> OVER_TARGET (MEDIUM), not SUSTAINED_OVERALLOC.
+    add(e4, "prj_9", null, allocRange(90, 0, 4), "manual");
+
+    return assignments;
+  }
+
+  function buildMentorships(){
+    var pairs = [[5,9],[5,10],[6,11],[7,12],[7,13],[8,14]];
+    return pairs.map(function(pair, i){
+      var mentorId = "emp_" + (pair[0]+1), menteeId = "emp_" + (pair[1]+1);
+      return M.newMentorship({
+        id: "men_" + (i+1), mentorId: mentorId, menteeId: menteeId,
+        focusSkillId: skillId("PM"), sharedProjectId: null,
+        frequency: ["Weekly","Bi-Weekly","Monthly"][i % 3],
+        score: 60 + i*5, compat: (60 + i*5) >= 75 ? "High" : ((60+i*5) >= 50 ? "Medium" : "Low"),
+        status: "Active"
+      });
+    });
+  }
+
+  function build(){
+    var eb = buildEmployees();
+    var skills = buildSkills();
+    var pd = buildProjectsAndDemands();
+    var assignments = buildAssignments(eb.employees, pd.projects, pd.demands, pd.months, pd.allocAll, pd.allocRange);
+    var mentorships = buildMentorships();
+    var settings = M.newSettings({ horizonStart:"2026-01", horizonMonths:12 });
+
+    return {
+      employees: eb.employees,
+      skills: skills,
+      employeeSkills: eb.employeeSkills,
+      projects: pd.projects,
+      demands: pd.demands,
+      assignments: assignments,
+      mentorships: mentorships,
+      settings: settings
+    };
+  }
+
+  return { build: build };
+})();
+
+/* ===================== BLOCK 9: ROE.api ===================== */
+/* Impure, isolated: fetch, field mapping, diff, push. Token lives ONLY in the _session closure variable -
+   never in the persisted config object, never in IndexedDB/localStorage/sessionStorage/exports. */
+ROE.api = (function(){
+  var U = ROE.util;
+  var _session = { token: null };
+
+  function ApiError(message, status, isCors){
+    this.message = message; this.status = status || null; this.isCors = !!isCors;
+    this.name = "ApiError";
+  }
+  ApiError.prototype = Object.create(Error.prototype);
+
+  function setToken(t){ _session.token = t || null; }
+  function clearToken(){ _session.token = null; }
+  function hasToken(){ return !!_session.token; }
+
+  function getByPath(obj, path){
+    if (!path) return obj;
+    return path.split(".").reduce(function(o,k){ return (o !== undefined && o !== null) ? o[k] : undefined; }, obj);
+  }
+
+  function buildUrl(baseUrl, path){
+    return String(baseUrl || "").replace(/\/$/, "") + path;
+  }
+
+  function buildHeaders(config){
+    var headers = { "Content-Type": "application/json" };
+    if (config.authMode === "apiKey" && _session.token){
+      headers[config.authHeaderName || "X-API-Key"] = _session.token;
+    } else if (config.authMode === "bearer" && _session.token){
+      headers["Authorization"] = "Bearer " + _session.token;
+    }
+    return headers;
+  }
+
+  function extractArray(json, responseRoot){
+    var arr = responseRoot ? getByPath(json, responseRoot) : json;
+    if (!Array.isArray(arr)){
+      return { error: "Response is not a JSON array" + (responseRoot ? " at '" + responseRoot + "'" : "") + "." };
+    }
+    return { data: arr };
+  }
+
+  function applyFieldMapping(remoteRec, mapping){
+    var out = {};
+    for (var field in (mapping || {})){
+      out[field] = getByPath(remoteRec, mapping[field]);
+    }
+    // Fields with no mapping fall through untouched if they already look canonical.
+    if (remoteRec && typeof remoteRec === "object" && remoteRec.id !== undefined && out.id === undefined) out.id = remoteRec.id;
+    return out;
+  }
+
+  function doFetch(url, options, timeoutMs){
+    var controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    var timer = null;
+    if (controller){
+      options = Object.assign({}, options, { signal: controller.signal });
+      timer = setTimeout(function(){ controller.abort(); }, timeoutMs || 15000);
+    }
+    return fetch(url, options).then(function(res){
+      if (timer) clearTimeout(timer);
+      return res;
+    }).catch(function(err){
+      if (timer) clearTimeout(timer);
+      if (err && err.name === "AbortError"){
+        throw new ApiError("Request timed out after " + (timeoutMs||15000) + "ms.", null, false);
+      }
+      // A fetch TypeError with no HTTP status reaching the browser is the classic CORS-block signature.
+      throw new ApiError("Request failed with no HTTP response - this is almost always a CORS block: the target API must return Access-Control-Allow-Origin (and allow your auth header via Access-Control-Allow-Headers). There is no proxy; this app has no server component.", null, true);
+    });
+  }
+
+  // Pull one entity: fetch -> extract array -> apply field mapping. Returns a Promise<Array<canonicalPartial>>.
+  function pull(config, entityName, mapping){
+    var entity = config.entities[entityName];
+    if (!entity || !entity.enabled) return Promise.reject(new ApiError("Entity '" + entityName + "' is not enabled.", null));
+    var url = buildUrl(config.baseUrl, entity.pullPath);
+    return doFetch(url, { method: "GET", headers: buildHeaders(config) }, config.timeoutMs).then(function(res){
+      if (!res.ok){
+        return res.text().then(function(t){
+          throw new ApiError("HTTP " + res.status + " " + res.statusText + (t ? (": " + t.slice(0,200)) : ""), res.status, false);
+        });
+      }
+      return res.json();
+    }).then(function(json){
+      var extracted = extractArray(json, entity.responseRoot);
+      if (extracted.error) throw new ApiError(extracted.error, null, false);
+      return extracted.data.map(function(r){ return applyFieldMapping(r, mapping); });
+    });
+  }
+
+  // Computes adds/updates/unchanged between local records and freshly pulled remote records.
+  // `lastSnapshotById` is the last-pulled snapshot (for detecting unsaved local edits).
+  function diffPull(localRecords, remoteRecords, lastSnapshotById, idField){
+    idField = idField || "id";
+    var localById = {};
+    (localRecords || []).forEach(function(r){ localById[r[idField]] = r; });
+    var snapshotById = lastSnapshotById || {};
+    var adds = [], updates = [], unchanged = [];
+    (remoteRecords || []).forEach(function(remote){
+      var id = remote[idField];
+      var local = localById[id];
+      if (!local){ adds.push({ id: id, remote: remote }); return; }
+      var snap = snapshotById[id];
+      var localEdited = !!(snap && !U.deepEqual(local, snap));
+      var fieldsChanged = [];
+      for (var k in remote){
+        if (!U.deepEqual(local[k], remote[k])) fieldsChanged.push({ field: k, before: local[k], after: remote[k] });
+      }
+      if (fieldsChanged.length === 0){ unchanged.push({ id: id }); return; }
+      // Records with unsaved local edits default to "keep local"; remote never silently overwrites them.
+      updates.push({ id: id, fields: fieldsChanged, localEdited: localEdited, applyRemote: !localEdited });
+    });
+    return { adds: adds, updates: updates, unchanged: unchanged };
+  }
+
+  // Computes the push diff: local state vs. the last-pulled remote snapshot.
+  function diffPush(localRecords, lastSnapshotById, idField){
+    idField = idField || "id";
+    var snapshotById = lastSnapshotById || {};
+    var toCreate = [], toUpdate = [];
+    (localRecords || []).forEach(function(local){
+      var snap = snapshotById[local[idField]];
+      if (!snap){ toCreate.push(local); return; }
+      if (!U.deepEqual(local, snap)) toUpdate.push(local);
+    });
+    return { toCreate: toCreate, toUpdate: toUpdate };
+  }
+
+  function push(config, entityName, records){
+    var entity = config.entities[entityName];
+    if (!entity || !entity.enabled) return Promise.reject(new ApiError("Entity '" + entityName + "' is not enabled.", null));
+    var url = buildUrl(config.baseUrl, entity.pushPath);
+    var headers = buildHeaders(config);
+    if (entity.pushMode === "bulk"){
+      return doFetch(url, { method: entity.pushMethod || "POST", headers: headers, body: JSON.stringify(records) }, config.timeoutMs)
+        .then(function(res){
+          if (!res.ok) throw new ApiError("HTTP " + res.status + " " + res.statusText, res.status, false);
+          return res.json().catch(function(){ return null; });
+        });
+    }
+    // perRecord
+    return Promise.all(records.map(function(rec){
+      return doFetch(url, { method: entity.pushMethod || "POST", headers: headers, body: JSON.stringify(rec) }, config.timeoutMs)
+        .then(function(res){
+          if (!res.ok) throw new ApiError("HTTP " + res.status + " " + res.statusText + " for record " + rec[entity.idField||"id"], res.status, false);
+          return res.json().catch(function(){ return null; });
+        });
+    }));
+  }
+
+  return {
+    ApiError: ApiError,
+    setToken: setToken, clearToken: clearToken, hasToken: hasToken,
+    _session: _session,
+    getByPath: getByPath, buildUrl: buildUrl, buildHeaders: buildHeaders,
+    extractArray: extractArray, applyFieldMapping: applyFieldMapping,
+    pull: pull, push: push, diffPull: diffPull, diffPush: diffPush
+  };
+})();
+
+/* ===================== BLOCK 10: ROE.db ===================== */
+/* Impure, isolated: IndexedDB wrapper. Database "roe", version 1. */
+ROE.db = (function(){
+  var DB_NAME = "roe";
+  var DB_VERSION = 1;
+  // Note: an `employeeSkills` store is added beyond §2.6's literal list because EmployeeSkill
+  // records are part of the canonical model (§3) and must survive reload (N-6); everything else
+  // matches §2.6 exactly (out-of-line keyed stores for settings/meta/employeeSkills).
+  var STORE_DEFS = [
+    { name:"employees", opts:{ keyPath:"id" } },
+    { name:"projects", opts:{ keyPath:"id" } },
+    { name:"demands", opts:{ keyPath:"id" } },
+    { name:"assignments", opts:{ keyPath:"id" } },
+    { name:"mentorships", opts:{ keyPath:"id" } },
+    { name:"skills", opts:{ keyPath:"id" } },
+    { name:"employeeSkills", opts:{} },
+    { name:"settings", opts:{} },
+    { name:"meta", opts:{} }
+  ];
+
+  var _dbPromise = null;
+
+  function isAvailable(){
+    return typeof indexedDB !== "undefined" && indexedDB !== null;
+  }
+
+  function open(){
+    if (_dbPromise) return _dbPromise;
+    _dbPromise = new Promise(function(resolve, reject){
+      if (!isAvailable()){ reject(new Error("IndexedDB is not available in this browser/context.")); return; }
+      var req;
+      try { req = indexedDB.open(DB_NAME, DB_VERSION); }
+      catch (e){ reject(e); return; }
+      req.onupgradeneeded = function(e){
+        var db = e.target.result;
+        STORE_DEFS.forEach(function(def){
+          if (!db.objectStoreNames.contains(def.name)) db.createObjectStore(def.name, def.opts);
+        });
+      };
+      req.onsuccess = function(){ resolve(req.result); };
+      req.onerror = function(){ reject(req.error || new Error("Failed to open IndexedDB")); };
+      req.onblocked = function(){ reject(new Error("IndexedDB open blocked by another tab")); };
+    });
+    return _dbPromise;
+  }
+
+  function readAll(storeName){
+    return open().then(function(db){
+      return new Promise(function(resolve, reject){
+        var tx = db.transaction(storeName, "readonly");
+        var store = tx.objectStore(storeName);
+        var req = store.getAll();
+        req.onsuccess = function(){ resolve(req.result || []); };
+        req.onerror = function(){ reject(req.error); };
+      });
+    });
+  }
+
+  function getRecord(storeName, key){
+    return open().then(function(db){
+      return new Promise(function(resolve, reject){
+        var tx = db.transaction(storeName, "readonly");
+        var req = tx.objectStore(storeName).get(key);
+        req.onsuccess = function(){ resolve(req.result); };
+        req.onerror = function(){ reject(req.error); };
+      });
+    });
+  }
+
+  function putRecord(storeName, value, key){
+    return open().then(function(db){
+      return new Promise(function(resolve, reject){
+        var tx = db.transaction(storeName, "readwrite");
+        var req = key !== undefined ? tx.objectStore(storeName).put(value, key) : tx.objectStore(storeName).put(value);
+        tx.oncomplete = function(){ resolve(); };
+        tx.onerror = function(){ reject(tx.error || req.error); };
+      });
+    });
+  }
+
+  // Replaces the entire contents of a keyPath store with `records` (array of plain objects with `id`).
+  function replaceAll(storeName, records){
+    return open().then(function(db){
+      return new Promise(function(resolve, reject){
+        var tx = db.transaction(storeName, "readwrite");
+        var store = tx.objectStore(storeName);
+        store.clear();
+        (records || []).forEach(function(r){ store.put(r); });
+        tx.oncomplete = function(){ resolve(); };
+        tx.onerror = function(){ reject(tx.error); };
+      });
+    });
+  }
+
+  // Replaces the entire contents of an out-of-line-keyed store using keyFn(record) -> key.
+  function replaceAllKeyed(storeName, records, keyFn){
+    return open().then(function(db){
+      return new Promise(function(resolve, reject){
+        var tx = db.transaction(storeName, "readwrite");
+        var store = tx.objectStore(storeName);
+        store.clear();
+        (records || []).forEach(function(r){ store.put(r, keyFn(r)); });
+        tx.oncomplete = function(){ resolve(); };
+        tx.onerror = function(){ reject(tx.error); };
+      });
+    });
+  }
+
+  function clearAll(){
+    return open().then(function(db){
+      return new Promise(function(resolve, reject){
+        var tx = db.transaction(STORE_DEFS.map(function(d){ return d.name; }), "readwrite");
+        STORE_DEFS.forEach(function(def){ tx.objectStore(def.name).clear(); });
+        tx.oncomplete = function(){ resolve(); };
+        tx.onerror = function(){ reject(tx.error); };
+      });
+    });
+  }
+
+  function deleteDatabase(){
+    _dbPromise = null;
+    return new Promise(function(resolve, reject){
+      var req = indexedDB.deleteDatabase(DB_NAME);
+      req.onsuccess = function(){ resolve(); };
+      req.onerror = function(){ reject(req.error); };
+      req.onblocked = function(){ resolve(); };
+    });
+  }
+
+  return {
+    STORE_DEFS: STORE_DEFS, isAvailable: isAvailable, open: open,
+    readAll: readAll, getRecord: getRecord, putRecord: putRecord,
+    replaceAll: replaceAll, replaceAllKeyed: replaceAllKeyed,
+    clearAll: clearAll, deleteDatabase: deleteDatabase
+  };
+})();
+
+/* ===================== BLOCK 11: ROE.store ===================== */
+/* Impure: in-memory canonical state, mutations, dirty flag, debounced save, subscribe/notify. */
+ROE.store = (function(){
+  var C = ROE.const, U = ROE.util, DB = ROE.db, CALC = ROE.calc;
+
+  var state = {
+    employees: [], skills: [], employeeSkills: [], projects: [], demands: [], assignments: [], mentorships: [],
+    settings: U.clone(C.DEFAULT_SETTINGS)
+  };
+
+  var listeners = [];
+  var dirty = true;
+  var cachedIdx = null;
+  var saveTimer = null;
+  var lastPulledSnapshots = {}; // entityName -> {id: record} - for the API diff/push flow
+
+  function notify(){ listeners.forEach(function(fn){ fn(state); }); }
+  function subscribe(fn){
+    listeners.push(fn);
+    return function(){ listeners = listeners.filter(function(f){ return f !== fn; }); };
+  }
+
+  function markDirty(){ dirty = true; cachedIdx = null; }
+
+  function getIndexes(){
+    if (dirty || !cachedIdx){ cachedIdx = CALC.buildIndexes(state); dirty = false; }
+    return cachedIdx;
+  }
+
+  function getState(){ return state; }
+
+  function whitelistSettings(settings){
+    // Serializer whitelist: strips any `token` field by construction. The token itself never
+    // lives here anyway (it's ROE.api._session.token), this is defense in depth.
+    var copy = U.clone(settings);
+    if (copy.api && copy.api.token !== undefined) delete copy.api.token;
+    return copy;
+  }
+
+  function scheduleSave(){
+    if (state.settings.sessionOnly) return;
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(function(){ persist(); }, 400);
+  }
+
+  function persist(){
+    if (state.settings.sessionOnly) return Promise.resolve();
+    if (!DB.isAvailable()) return Promise.resolve();
+    return Promise.all([
+      DB.replaceAll("employees", state.employees),
+      DB.replaceAll("projects", state.projects),
+      DB.replaceAll("demands", state.demands),
+      DB.replaceAll("assignments", state.assignments),
+      DB.replaceAll("mentorships", state.mentorships),
+      DB.replaceAll("skills", state.skills),
+      DB.replaceAllKeyed("employeeSkills", state.employeeSkills, function(r){ return r.employeeId + "|" + r.skillId; }),
+      DB.putRecord("settings", whitelistSettings(state.settings), "app"),
+      DB.putRecord("meta", { schemaVersion: C.SCHEMA_VERSION }, "schemaVersion")
+    ]).catch(function(err){ console.error("ROE.store persist failed", err); });
+  }
+
+  function load(){
+    if (!DB.isAvailable()){
+      state.settings.sessionOnly = true;
+      markDirty(); notify();
+      return Promise.resolve({ fellBackToSessionOnly: true, empty: true });
+    }
+    return Promise.all([
+      DB.readAll("employees"), DB.readAll("projects"), DB.readAll("demands"),
+      DB.readAll("assignments"), DB.readAll("mentorships"), DB.readAll("skills"),
+      DB.readAll("employeeSkills"), DB.getRecord("settings", "app"), DB.getRecord("meta", "schemaVersion")
+    ]).then(function(results){
+      var employees=results[0], projects=results[1], demands=results[2], assignments=results[3],
+          mentorships=results[4], skills=results[5], employeeSkills=results[6], settingsRec=results[7];
+      var empty = employees.length === 0 && projects.length === 0 && !settingsRec;
+      state.employees = employees; state.projects = projects; state.demands = demands;
+      state.assignments = assignments; state.mentorships = mentorships; state.skills = skills;
+      state.employeeSkills = employeeSkills;
+      state.settings = settingsRec ? Object.assign(U.clone(C.DEFAULT_SETTINGS), settingsRec) : U.clone(C.DEFAULT_SETTINGS);
+      markDirty(); notify();
+      return { empty: empty };
+    }).catch(function(err){
+      console.error("ROE.store load failed, falling back to session-only mode", err);
+      state.settings.sessionOnly = true;
+      markDirty(); notify();
+      return { fellBackToSessionOnly: true, empty: true };
+    });
+  }
+
+  function loadDemoData(){
+    var demo = ROE.demo.build();
+    state.employees = demo.employees;
+    state.skills = demo.skills;
+    state.employeeSkills = demo.employeeSkills;
+    state.projects = demo.projects;
+    state.demands = demo.demands;
+    state.assignments = demo.assignments;
+    state.mentorships = demo.mentorships;
+    state.settings = Object.assign(U.clone(state.settings), demo.settings);
+    markDirty(); notify(); scheduleSave();
+  }
+
+  function clearAll(){
+    state.employees = []; state.skills = []; state.employeeSkills = [];
+    state.projects = []; state.demands = []; state.assignments = []; state.mentorships = [];
+    var sessionOnly = state.settings.sessionOnly;
+    state.settings = U.clone(C.DEFAULT_SETTINGS);
+    state.settings.sessionOnly = sessionOnly;
+    lastPulledSnapshots = {};
+    markDirty(); notify();
+    if (DB.isAvailable()) return DB.clearAll();
+    return Promise.resolve();
+  }
+
+  function setSessionOnly(on){
+    state.settings.sessionOnly = !!on;
+    markDirty(); notify();
+    if (!on) scheduleSave();
+  }
+
+  // ---- Generic CRUD over a top-level collection (employees/projects/demands/assignments/mentorships/skills) ----
+  function upsert(collectionName, record){
+    var arr = state[collectionName];
+    record.updatedAt = U.nowIso();
+    var idx = arr.findIndex(function(r){ return r.id === record.id; });
+    if (idx === -1) arr.push(record); else arr[idx] = record;
+    markDirty(); notify(); scheduleSave();
+    return record;
+  }
+
+  function remove(collectionName, id){
+    state[collectionName] = state[collectionName].filter(function(r){ return r.id !== id; });
+    markDirty(); notify(); scheduleSave();
+  }
+
+  function upsertEmployeeSkill(rec){
+    var idx = state.employeeSkills.findIndex(function(r){ return r.employeeId === rec.employeeId && r.skillId === rec.skillId; });
+    if (idx === -1) state.employeeSkills.push(rec); else state.employeeSkills[idx] = rec;
+    markDirty(); notify(); scheduleSave();
+  }
+
+  function setSettings(patch){
+    state.settings = Object.assign({}, state.settings, patch);
+    markDirty(); notify(); scheduleSave();
+  }
+
+  function setWeightPreset(name, weights){
+    var presets = state.settings.presets.slice();
+    var idx = presets.findIndex(function(p){ return p.name === name; });
+    var rec = { name: name, weights: weights };
+    if (idx === -1) presets.push(rec); else presets[idx] = rec;
+    setSettings({ presets: presets });
+  }
+
+  function getLastPulledSnapshot(entityName){ return lastPulledSnapshots[entityName] || {}; }
+  function setLastPulledSnapshot(entityName, byId){ lastPulledSnapshots[entityName] = byId; }
+
+  return {
+    getState: getState, subscribe: subscribe, getIndexes: getIndexes, markDirty: markDirty,
+    load: load, persist: persist, scheduleSave: scheduleSave,
+    loadDemoData: loadDemoData, clearAll: clearAll, setSessionOnly: setSessionOnly,
+    upsert: upsert, remove: remove, upsertEmployeeSkill: upsertEmployeeSkill,
+    setSettings: setSettings, setWeightPreset: setWeightPreset,
+    getLastPulledSnapshot: getLastPulledSnapshot, setLastPulledSnapshot: setLastPulledSnapshot,
+    whitelistSettings: whitelistSettings
+  };
+})();
+
+/* ===================== BLOCK 12: ROE.ui ===================== */
+/* Impure: render functions per panel, event wiring, bootstrap. The only block allowed to touch document/window UI APIs. */
+ROE.ui = (function(){
+  var C = ROE.const, U = ROE.util, STORE = ROE.store, CALC = ROE.calc, SCORE = ROE.score, ALERTS = ROE.alerts, MENTOR = ROE.mentor, IO = ROE.io, API = ROE.api;
+
+  var PANELS = ["overview","skills","projects","optimizer","mentorship","timeline","alerts","settings"];
+
+  var uiState = {
+    panel: "overview",
+    skills: { page:1, pageSize:100, sortKey:"name", sortDir:"asc", filters:{ discipline:"", office:"", businessGroup:"", minLevel:"", skillId:"", skillMin:"" } },
+    projects: { openProjectId: null },
+    optimizer: { projectId:null, demandId:"", weights:{ skill:35, availability:30, seniority:15, discipline:20 }, autoStaffPreview:null },
+    timeline: { mode:"employee" },
+    alerts: { severity:"", rule:"", text:"", results:null },
+    importSession: { mappings:{}, sheets:null, parsed:null },
+    api: { pullPreview:null, pushPreview:null }
+  };
+
+  // ---------- small DOM helpers ----------
+  function $(sel, root){ return (root||document).querySelector(sel); }
+  function $all(sel, root){ return Array.prototype.slice.call((root||document).querySelectorAll(sel)); }
+  function h(html){ var t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstElementChild; }
+  function esc(s){ return String(s === undefined || s === null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]; }); }
+
+  function toast(msg){
+    var region = $("#toast-region");
+    var t = h('<div class="toast" role="status">' + esc(msg) + "</div>");
+    region.appendChild(t);
+    setTimeout(function(){ t.remove(); }, 4000);
+  }
+
+  function openModal(innerHtml, onMount){
+    var root = $("#modal-root");
+    root.innerHTML = '<div class="modal-overlay"><div class="modal" role="dialog" aria-modal="true">' + innerHtml + "</div></div>";
+    var overlay = $(".modal-overlay", root);
+    overlay.addEventListener("click", function(e){ if (e.target === overlay) closeModal(); });
+    document.addEventListener("keydown", modalEscHandler);
+    if (onMount) onMount($(".modal", root));
+  }
+  function modalEscHandler(e){ if (e.key === "Escape") closeModal(); }
+  function closeModal(){
+    $("#modal-root").innerHTML = "";
+    document.removeEventListener("keydown", modalEscHandler);
+  }
+
+  function downloadText(filename, content, mime){
+    var blob = new Blob([content], { type: mime || "text/plain" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function vendorsOk(){ return { chart: !!window.Chart, xlsx: !!window.XLSX }; }
+
+  function updateVendorBanner(){
+    var v = vendorsOk();
+    var banner = $("#vendor-banner");
+    if (v.chart && v.xlsx){ banner.style.display = "none"; return; }
+    var missing = [];
+    if (!v.chart) missing.push("Chart.js (charts disabled)");
+    if (!v.xlsx) missing.push("SheetJS/xlsx (import/export/templates disabled)");
+    banner.className = "banner";
+    banner.style.display = "block";
+    banner.innerHTML = "<strong>Some optional libraries failed to load from the CDN:</strong> " + esc(missing.join(", ")) +
+      ". Everything else still works. See About in Data &amp; Settings for details.";
+  }
+
+  // ---------- routing ----------
+  function navigate(panel){
+    if (PANELS.indexOf(panel) === -1) panel = "overview";
+    uiState.panel = panel;
+    if (location.hash.slice(1) !== panel) location.hash = "#" + panel;
+    $all("#nav a").forEach(function(a){ a.classList.toggle("active", a.dataset.panel === panel); });
+    $all(".panel").forEach(function(p){ p.classList.remove("active"); });
+    var target = $("#panel-" + panel);
+    target.classList.add("active");
+    renderPanel(panel);
+  }
+
+  function renderPanel(panel){
+    if (panel === "overview") renderOverview();
+    else if (panel === "skills") renderSkills();
+    else if (panel === "projects") renderProjects();
+    else if (panel === "optimizer") renderOptimizer();
+    else if (panel === "mentorship") renderMentorship();
+    else if (panel === "timeline") renderTimeline();
+    else if (panel === "alerts") renderAlerts();
+    else if (panel === "settings") renderSettings();
+  }
+
+  function renderAll(){ renderPanel(uiState.panel); updateSessionBadge(); }
+
+  function updateSessionBadge(){
+    var badge = $("#session-badge");
+    var on = STORE.getState().settings.sessionOnly;
+    badge.classList.toggle("visible", !!on);
+  }
+
+  /* =========================== OVERVIEW =========================== */
+  function renderOverview(){
+    var state = STORE.getState();
+    var root = $("#panel-overview");
+    if (state.employees.length === 0){
+      root.innerHTML = '<div class="empty-state">No data yet. Click <strong>Load demo data</strong> in the top bar to get started, or import a workbook from Data &amp; Settings.</div>';
+      return;
+    }
+    var idx = STORE.getIndexes();
+    var months = U.monthKeys(state.settings.horizonStart, state.settings.horizonMonths);
+    var currentMonth = months[0];
+    var activeEmployees = state.employees.filter(function(e){ return e.active; });
+    var activeProjects = state.projects.filter(function(p){ return p.status === "Active"; });
+
+    var utils = activeEmployees.map(function(e){ return CALC.committed(e.id, currentMonth, idx); });
+    var meanUtil = Math.round(U.mean(utils));
+    var overCount = activeEmployees.filter(function(e){ return CALC.committed(e.id, currentMonth, idx) > state.settings.alertThresholds.overallocPct; }).length;
+
+    var unstaffedFte = 0;
+    state.demands.forEach(function(d){
+      months.forEach(function(m){
+        var need = (d.allocationByMonth[m]||0) * (d.openings||1);
+        var fillPct = CALC.demandFillPct(d.id, m, idx);
+        unstaffedFte += need * Math.max(0, (100-fillPct))/100;
+      });
+    });
+    unstaffedFte = Math.round(unstaffedFte / 100); // FTE-months, rough KPI
+
+    var alerts = ALERTS.scan(state, state.settings.alertThresholds);
+    var bySev = { CRITICAL:0, HIGH:0, MEDIUM:0, LOW:0 };
+    alerts.forEach(function(a){ bySev[a.severity] = (bySev[a.severity]||0) + 1; });
+
+    var scorecardRows = activeEmployees.slice(0, 200).map(function(e){
+      var c = CALC.committed(e.id, currentMonth, idx);
+      var status = c > state.settings.alertThresholds.overallocPct ? "Over" : (c < e.targetUtil - state.settings.alertThresholds.benchGapPct ? "Bench" : "On target");
+      return "<tr><td>"+esc(e.name)+"</td><td>"+e.targetUtil+"%</td><td>"+Math.round(c)+"%</td><td>"+status+"</td></tr>";
+    }).join("");
+
+    root.innerHTML =
+      '<div class="kpi-row">' +
+        kpi(activeEmployees.length, "Headcount") +
+        kpi(activeProjects.length, "Active projects") +
+        kpi(meanUtil + "%", "Mean utilization (" + currentMonth + ")") +
+        kpi(overCount, "Over-allocated now") +
+        kpi(unstaffedFte, "Unstaffed demand (FTE-months)") +
+        kpi(alerts.length, "Open alerts (C:"+bySev.CRITICAL+" H:"+bySev.HIGH+" M:"+bySev.MEDIUM+" L:"+bySev.LOW+")") +
+      '</div>' +
+      '<div class="card"><h2>Org utilization by month</h2><canvas id="chart-overview" height="90" aria-label="Monthly organization utilization chart" role="img"></canvas></div>' +
+      '<div class="card"><h2>Utilization vs. target</h2><table><thead><tr><th>Employee</th><th>Target</th><th>Committed</th><th>Status</th></tr></thead><tbody>' + scorecardRows + '</tbody></table></div>';
+
+    if (window.Chart){
+      var ctx = $("#chart-overview").getContext("2d");
+      var series = months.map(function(m){ return U.mean(activeEmployees.map(function(e){ return CALC.committed(e.id, m, idx); })); });
+      if (root._chart) root._chart.destroy();
+      root._chart = new Chart(ctx, {
+        type: "line",
+        data: { labels: months, datasets: [{ label:"Mean utilization %", data: series, borderColor:"#4f8cff", backgroundColor:"rgba(79,140,255,.15)", fill:true, tension:.25 }] },
+        options: { responsive:true, plugins:{legend:{display:false}}, scales:{ y:{ beginAtZero:true } } }
+      });
+    } else {
+      $("#chart-overview").outerHTML = '<p class="hint">Chart.js unavailable - chart disabled.</p>';
+    }
+  }
+
+  function kpi(val, label){
+    return '<div class="kpi-tile"><div class="val">'+esc(val)+'</div><div class="lbl">'+esc(label)+'</div></div>';
+  }
+
+  /* =========================== SKILLS MATRIX =========================== */
+  function renderSkills(){
+    var state = STORE.getState();
+    var root = $("#panel-skills");
+    var f = uiState.skills.filters;
+
+    var filtered = state.employees.filter(function(e){
+      if (f.discipline && e.discipline !== f.discipline) return false;
+      if (f.office && e.office !== f.office) return false;
+      if (f.businessGroup && e.businessGroup !== f.businessGroup) return false;
+      if (f.minLevel && C.EMP_LEVEL_ORD[e.level] < C.EMP_LEVEL_ORD[f.minLevel]) return false;
+      if (f.skillId && f.skillMin !== ""){
+        var es = state.employeeSkills.find(function(x){ return x.employeeId===e.id && x.skillId===f.skillId; });
+        var lvl = es ? es.level : 0;
+        if (lvl < parseInt(f.skillMin,10)) return false;
+      }
+      return true;
+    });
+
+    var sk = uiState.skills.sortKey, dir = uiState.skills.sortDir === "asc" ? 1 : -1;
+    filtered.sort(function(a,b){
+      var av = a[sk], bv = b[sk];
+      if (av === undefined) av = "";
+      if (bv === undefined) bv = "";
+      if (av < bv) return -1*dir; if (av > bv) return 1*dir; return 0;
+    });
+
+    var pageSize = uiState.skills.pageSize;
+    var totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+    if (uiState.skills.page > totalPages) uiState.skills.page = totalPages;
+    var pageItems = filtered.slice((uiState.skills.page-1)*pageSize, uiState.skills.page*pageSize);
+
+    var offices = Array.from(new Set(state.employees.map(function(e){ return e.office; }))).filter(Boolean).sort();
+
+    function levelColor(lvl){
+      var colors = ["#1b2028","#243244","#1f4a5c","#1f6b4e","#4f8f2a","#c9a227"];
+      return colors[lvl] || colors[0];
+    }
+
+    var skillCols = state.skills.map(function(s){ return '<th>'+esc(s.code)+'</th>'; }).join("");
+    var rows = pageItems.map(function(e){
+      var skillCells = state.skills.map(function(s){
+        var es = state.employeeSkills.find(function(x){ return x.employeeId===e.id && x.skillId===s.id; });
+        var lvl = es ? es.level : 0;
+        return '<td style="background:'+levelColor(lvl)+';text-align:center;" data-skill-cell data-emp="'+e.id+'" data-skill="'+s.id+'">'+
+          '<input type="number" min="0" max="5" value="'+lvl+'" aria-label="'+esc(e.name)+' '+esc(s.code)+' skill level" style="width:44px;" data-emp="'+e.id+'" data-skill="'+s.id+'" class="skill-level-input"></td>';
+      }).join("");
+      return '<tr><td>'+esc(e.name)+'</td><td>'+esc(e.level)+'</td><td>'+esc(e.discipline)+'</td><td>'+esc(e.office)+'</td><td>'+esc(e.businessGroup)+'</td>'+skillCells+
+        '<td><button type="button" class="edit-emp" data-id="'+e.id+'">Edit</button></td></tr>';
+    }).join("");
+
+    root.innerHTML =
+      '<div class="card">' +
+        '<div class="toolbar">' +
+          labelSelect("Discipline", "f-discipline", ["", ""].concat(0), "") + // placeholder replaced below
+        '</div>' +
+      '</div>';
+
+    // Build the toolbar manually (labelSelect above was a placeholder; construct directly for clarity/control).
+    var toolbarHtml =
+      '<div class="toolbar">' +
+        selectField("f-discipline", "Discipline", ["",""].slice(0,0).concat(["", C.DISCIPLINES.join("||")]), f.discipline) +
+        '</div>';
+    // Simpler: build filter controls explicitly.
+    root.innerHTML =
+      '<div class="card">' +
+        '<div class="toolbar">' +
+          fieldSelect("f-discipline","Discipline", [""].concat(C.DISCIPLINES), f.discipline) +
+          fieldSelect("f-office","Office", [""].concat(offices), f.office) +
+          fieldSelect("f-bg","Business group", [""].concat(C.BUSINESS_GROUPS), f.businessGroup) +
+          fieldSelect("f-minlevel","Min level", [""].concat(C.EMP_LEVELS), f.minLevel) +
+          fieldSelect("f-skill","Skill", [""].concat(state.skills.map(function(s){return s.id+"::"+s.code;})), f.skillId ? f.skillId+"::"+(state.skills.find(function(s){return s.id===f.skillId;})||{}).code : "", true) +
+          fieldNumber("f-skillmin","Min skill level", f.skillMin, 0, 5) +
+          '<button type="button" id="btn-add-employee" class="primary">Add employee</button>' +
+        '</div>' +
+        '<table><thead><tr>' +
+          sortTh("Name","name") + sortTh("Level","level") + sortTh("Discipline","discipline") + sortTh("Office","office") + sortTh("Business group","businessGroup") +
+          skillCols + '<th>Actions</th>' +
+        '</tr></thead><tbody>' + (rows || '<tr><td colspan="99">No employees match the current filters.</td></tr>') + '</tbody></table>' +
+        pagination(uiState.skills.page, totalPages, filtered.length) +
+      '</div>';
+
+    // wiring
+    $("#f-discipline", root).onchange = function(){ f.discipline = this.value; uiState.skills.page=1; renderSkills(); };
+    $("#f-office", root).onchange = function(){ f.office = this.value; uiState.skills.page=1; renderSkills(); };
+    $("#f-bg", root).onchange = function(){ f.businessGroup = this.value; uiState.skills.page=1; renderSkills(); };
+    $("#f-minlevel", root).onchange = function(){ f.minLevel = this.value; uiState.skills.page=1; renderSkills(); };
+    $("#f-skill", root).onchange = function(){ f.skillId = this.value ? this.value.split("::")[0] : ""; uiState.skills.page=1; renderSkills(); };
+    $("#f-skillmin", root).onchange = function(){ f.skillMin = this.value; uiState.skills.page=1; renderSkills(); };
+    $("#btn-add-employee", root).onclick = function(){ openEmployeeModal(null); };
+    $all("th[data-sort]", root).forEach(function(th){
+      th.onclick = function(){
+        var k = th.dataset.sort;
+        if (uiState.skills.sortKey === k) uiState.skills.sortDir = uiState.skills.sortDir === "asc" ? "desc" : "asc";
+        else { uiState.skills.sortKey = k; uiState.skills.sortDir = "asc"; }
+        renderSkills();
+      };
+    });
+    $all(".edit-emp", root).forEach(function(btn){ btn.onclick = function(){ openEmployeeModal(btn.dataset.id); }; });
+    $all(".skill-level-input", root).forEach(function(inp){
+      inp.onchange = function(){
+        var lvl = U.clamp(parseInt(this.value,10)||0, 0, 5);
+        STORE.upsertEmployeeSkill(ROE.model.newEmployeeSkill({ employeeId: this.dataset.emp, skillId: this.dataset.skill, level: lvl }));
+        toast("Skill level updated");
+      };
+    });
+    $all(".page-btn", root).forEach(function(btn){
+      btn.onclick = function(){ uiState.skills.page = parseInt(btn.dataset.page,10); renderSkills(); };
+    });
+  }
+
+  function sortTh(label, key){
+    var active = uiState.skills.sortKey === key;
+    return '<th data-sort="'+key+'" style="cursor:pointer;">'+esc(label)+(active ? (uiState.skills.sortDir==="asc"?" ▲":" ▼") : "")+'</th>';
+  }
+  function fieldSelect(id, label, options, value){
+    var opts = options.map(function(o){
+      var v = o, l = o;
+      if (typeof o === "string" && o.indexOf("::") !== -1){ v = o.split("::")[0]; l = o.split("::")[1]; }
+      var sel = (v === value || (typeof value === "string" && value.split("::")[0] === v)) ? " selected" : "";
+      return '<option value="'+esc(v)+'"'+sel+'>'+esc(l || "(all)")+'</option>';
+    }).join("");
+    return '<label>'+esc(label)+'<select id="'+id+'">'+opts+'</select></label>';
+  }
+  function fieldNumber(id, label, value, min, max){
+    return '<label>'+esc(label)+'<input type="number" id="'+id+'" value="'+esc(value)+'" min="'+min+'" max="'+max+'"></label>';
+  }
+  function labelSelect(){ return ""; } // unused placeholder kept for readability of earlier draft; harmless no-op.
+
+  function pagination(page, totalPages, total){
+    if (totalPages <= 1) return '<div class="pagination hint">'+total+' record(s)</div>';
+    var btns = "";
+    for (var i=1;i<=totalPages;i++) btns += '<button type="button" class="page-btn" data-page="'+i+'" '+(i===page?'disabled':'')+'>'+i+'</button>';
+    return '<div class="pagination">'+btns+'<span class="hint">'+total+' record(s)</span></div>';
+  }
+
+  function openEmployeeModal(id){
+    var state = STORE.getState();
+    var emp = id ? state.employees.find(function(e){ return e.id===id; }) : ROE.model.newEmployee({});
+    openModal(
+      '<h2>'+(id?'Edit':'Add')+' employee</h2>' +
+      '<div class="row">' +
+        field("name","Name","text",emp.name) + field("email","Email","email",emp.email) +
+      '</div><div class="row">' +
+        selectRow("level","Level",C.EMP_LEVELS,emp.level) + selectRow("discipline","Discipline",C.DISCIPLINES,emp.discipline) +
+      '</div><div class="row">' +
+        field("office","Office","text",emp.office) + selectRow("businessGroup","Business group",C.BUSINESS_GROUPS,emp.businessGroup) +
+      '</div><div class="row">' +
+        field("targetUtil","Target utilization %","number",emp.targetUtil) + selectRow("mentorRole","Mentor role",C.MENTOR_ROLES,emp.mentorRole) +
+      '</div><div class="row">' +
+        '<label>Active <input type="checkbox" id="m-active" '+(emp.active?'checked':'')+'></label>' +
+      '</div><div class="row"><label>Notes<textarea id="m-notes" rows="2">'+esc(emp.notes)+'</textarea></label></div>' +
+      '<div class="row" style="justify-content:flex-end;">' +
+        (id? '<button type="button" id="m-delete" class="danger">Delete</button>' : '') +
+        '<button type="button" id="m-cancel">Cancel</button><button type="button" id="m-save" class="primary">Save</button>' +
+      '</div>',
+      function(modal){
+        $("#m-cancel", modal).onclick = closeModal;
+        $("#m-save", modal).onclick = function(){
+          var rec = ROE.model.newEmployee({
+            id: emp.id, name: $("#m-name",modal).value, email: $("#m-email",modal).value,
+            level: $("#m-level",modal).value, discipline: $("#m-discipline",modal).value,
+            office: $("#m-office",modal).value, businessGroup: $("#m-businessGroup",modal).value,
+            targetUtil: U.parseNum($("#m-targetUtil",modal).value,85), mentorRole: $("#m-mentorRole",modal).value,
+            active: $("#m-active",modal).checked, notes: $("#m-notes",modal).value
+          });
+          var valid = ROE.model.validateEmployee(rec);
+          if (!valid.ok){ toast("Fix errors: " + valid.errors.map(function(e){return e.message;}).join("; ")); return; }
+          STORE.upsert("employees", rec);
+          closeModal(); renderAll(); toast("Employee saved");
+        };
+        if (id) $("#m-delete", modal).onclick = function(){ STORE.remove("employees", id); closeModal(); renderAll(); toast("Employee deleted"); };
+      }
+    );
+  }
+
+  function field(name,label,type,value){
+    return '<label>'+esc(label)+'<input id="m-'+name+'" type="'+type+'" value="'+esc(value)+'"></label>';
+  }
+  function selectRow(name,label,options,value){
+    return '<label>'+esc(label)+'<select id="m-'+name+'">'+options.map(function(o){return '<option value="'+esc(o)+'" '+(o===value?'selected':'')+'>'+esc(o)+'</option>';}).join("")+'</select></label>';
+  }
+
+  /* =========================== PROJECTS =========================== */
+  function renderProjects(){
+    var state = STORE.getState();
+    var root = $("#panel-projects");
+    var idx = STORE.getIndexes();
+    var rows = state.projects.map(function(p){
+      var demands = state.demands.filter(function(d){ return d.projectId === p.id; });
+      var months = Object.keys(demands[0] ? demands[0].allocationByMonth : {});
+      var fillPcts = [];
+      demands.forEach(function(d){ Object.keys(d.allocationByMonth).forEach(function(m){ fillPcts.push(CALC.demandFillPct(d.id,m,idx)); }); });
+      var avgFill = fillPcts.length ? Math.round(U.mean(fillPcts)) : 100;
+      return '<tr><td>'+esc(p.name)+'</td><td>'+esc(p.client)+'</td><td>'+esc(p.market)+'</td><td>'+esc(p.discipline)+'</td><td>'+esc(p.phase)+'</td>'+
+        '<td>'+p.priority+'</td><td>'+esc(p.status)+'</td><td>'+avgFill+'%</td>' +
+        '<td><button type="button" class="edit-prj" data-id="'+p.id+'">Open</button></td></tr>';
+    }).join("");
+    root.innerHTML =
+      '<div class="card"><div class="toolbar"><button type="button" id="btn-add-project" class="primary">Add project</button></div>' +
+      '<table><thead><tr><th>Name</th><th>Client</th><th>Market</th><th>Discipline</th><th>Phase</th><th>Priority</th><th>Status</th><th>Avg demand fill</th><th>Actions</th></tr></thead>' +
+      '<tbody>'+(rows||'<tr><td colspan="9">No projects yet.</td></tr>')+'</tbody></table></div>';
+    $("#btn-add-project", root).onclick = function(){ openProjectModal(null); };
+    $all(".edit-prj", root).forEach(function(btn){ btn.onclick = function(){ openProjectModal(btn.dataset.id); }; });
+  }
+
+  function openProjectModal(id){
+    var state = STORE.getState();
+    var prj = id ? state.projects.find(function(p){ return p.id===id; }) : ROE.model.newProject({});
+    var demands = id ? state.demands.filter(function(d){ return d.projectId===id; }) : [];
+    var months = U.monthKeys(state.settings.horizonStart, state.settings.horizonMonths);
+
+    function demandsHtml(){
+      return demands.map(function(d, di){
+        var idx2 = STORE.getIndexes();
+        var monthCells = months.map(function(m){
+          var v = d.allocationByMonth[m] !== undefined ? d.allocationByMonth[m] : "";
+          return '<td><input type="number" min="0" max="100" style="width:56px;" value="'+v+'" data-demand="'+d.id+'" data-month="'+m+'" class="demand-month-input" aria-label="'+esc(d.title)+' '+m+' pct"></td>';
+        }).join("");
+        var fill = months.map(function(m){ return Math.round(CALC.demandFillPct(d.id,m,idx2)); });
+        return '<div class="card" data-demand-card="'+d.id+'">' +
+          '<div class="row"><label>Title<input type="text" class="d-title" data-id="'+d.id+'" value="'+esc(d.title)+'"></label>' +
+          selectRow2("d-disc",C.DISCIPLINES,d.discipline,d.id,"discipline") +
+          selectRow2("d-minlevel",C.EMP_LEVELS,d.minLevel,d.id,"minLevel") +
+          '<label>Openings<input type="number" class="d-openings" min="1" data-id="'+d.id+'" value="'+d.openings+'"></label>' +
+          '<button type="button" class="danger d-remove" data-id="'+d.id+'">Remove demand</button></div>' +
+          '<div class="hint">Required skills: '+esc(IO.encodeRequiredSkills(d.requiredSkills)||"(none)")+' (SKILLID:minLevel:weight;...) '+
+          '<input type="text" class="d-reqskills" data-id="'+d.id+'" placeholder="e.g. skl_civil3d:3:2" value="'+esc(IO.encodeRequiredSkills(d.requiredSkills))+'" style="width:260px;"></div>' +
+          '<div class="hint">Fill-across: <input type="text" class="fa-start" data-id="'+d.id+'" placeholder="start YYYY-MM" style="width:100px;"> to ' +
+          '<input type="text" class="fa-end" data-id="'+d.id+'" placeholder="end YYYY-MM" style="width:100px;"> value ' +
+          '<input type="number" class="fa-val" data-id="'+d.id+'" min="0" max="100" style="width:60px;"> ' +
+          '<button type="button" class="fa-apply" data-id="'+d.id+'">Apply range</button></div>' +
+          '<div style="overflow-x:auto;"><table><thead><tr><th>Month</th>'+months.map(function(m){return '<th>'+m+'</th>';}).join("")+'</tr></thead>' +
+          '<tbody><tr><td>Pct/opening</td>'+monthCells+'</tr><tr><td>Fill %</td>'+fill.map(function(f){return '<td>'+f+'%</td>';}).join("")+'</tr></tbody></table></div>' +
+        '</div>';
+      }).join("") + '<button type="button" id="btn-add-demand">Add demand</button>';
+    }
+
+    openModal(
+      '<h2>'+(id?'Edit':'Add')+' project</h2>' +
+      '<div class="row">' + field("p-name","Name","text",prj.name) + field("p-client","Client","text",prj.client) + '</div>' +
+      '<div class="row">' + selectRow("p-market","Market",C.BUSINESS_GROUPS,prj.market) + selectRow("p-discipline","Discipline",C.DISCIPLINES,prj.discipline) + selectRow("p-phase","Phase",C.PROJECT_PHASES,prj.phase) + '</div>' +
+      '<div class="row">' + field("p-budget","Budget","number",prj.budget) + selectRow("p-bimLevel","BIM level",C.BIM_LEVELS,prj.bimLevel) + selectRow("p-status","Status",C.PROJECT_STATUS,prj.status) + '</div>' +
+      '<div class="row">' + field("p-teamMin","Team min","number",prj.teamMin) + field("p-teamMax","Team max","number",prj.teamMax) + field("p-priority","Priority (1-5)","number",prj.priority) + '</div>' +
+      '<div class="row"><label>Notes<textarea id="p-notes" rows="2">'+esc(prj.notes)+'</textarea></label></div>' +
+      (id ? '<h2>Demands</h2><div id="demands-editor">'+demandsHtml()+'</div>' : '<p class="hint">Save the project first, then reopen it to manage demands.</p>') +
+      '<div class="row" style="justify-content:flex-end;">' +
+        (id? '<button type="button" id="m-delete" class="danger">Delete project</button>' : '') +
+        '<button type="button" id="m-cancel">Cancel</button><button type="button" id="m-save" class="primary">Save</button>' +
+      '</div>',
+      function(modal){ wireProjectModal(modal, id, prj); }
+    );
+  }
+
+  function selectRow2(cls, options, value, id, field){
+    return '<label>'+field+'<select class="'+cls+'" data-id="'+id+'" data-field="'+field+'">'+options.map(function(o){return '<option value="'+esc(o)+'" '+(o===value?'selected':'')+'>'+esc(o)+'</option>';}).join("")+'</select></label>';
+  }
+
+  function wireProjectModal(modal, id, prj){
+    $("#m-cancel", modal).onclick = closeModal;
+    $("#m-save", modal).onclick = function(){
+      var rec = ROE.model.newProject({
+        id: prj.id, name: $("#p-name",modal).value, client: $("#p-client",modal).value, market: $("#p-market",modal).value,
+        discipline: $("#p-discipline",modal).value, phase: $("#p-phase",modal).value, budget: U.parseNum($("#p-budget",modal).value,0),
+        bimLevel: $("#p-bimLevel",modal).value, status: $("#p-status",modal).value,
+        teamMin: U.parseNum($("#p-teamMin",modal).value,1), teamMax: U.parseNum($("#p-teamMax",modal).value,10),
+        priority: U.parseNum($("#p-priority",modal).value,3), software: prj.software, notes: $("#p-notes",modal).value
+      });
+      var valid = ROE.model.validateProject(rec);
+      if (!valid.ok){ toast("Fix errors: " + valid.errors.map(function(e){return e.message;}).join("; ")); return; }
+      STORE.upsert("projects", rec);
+      closeModal(); renderAll(); toast("Project saved");
+    };
+    if (id){
+      $("#m-delete", modal).onclick = function(){
+        STORE.remove("projects", id);
+        STORE.getState().demands.filter(function(d){return d.projectId===id;}).forEach(function(d){ STORE.remove("demands", d.id); });
+        closeModal(); renderAll(); toast("Project deleted");
+      };
+      wireDemandsEditor(modal, id);
+    }
+  }
+
+  function wireDemandsEditor(modal, projectId){
+    var editor = $("#demands-editor", modal);
+    if (!editor) return;
+    $("#btn-add-demand", editor).onclick = function(){
+      var d = ROE.model.newDemand({ projectId: projectId, title: "New demand", allocationByMonth: {} });
+      STORE.upsert("demands", d);
+      openProjectModal(projectId);
+    };
+    $all(".demand-month-input", editor).forEach(function(inp){
+      inp.onchange = function(){
+        var d = STORE.getState().demands.find(function(x){return x.id===this.dataset.demand;}.bind(this));
+        if (!d) return;
+        d.allocationByMonth[this.dataset.month] = U.clamp(parseInt(this.value,10)||0, 0, 100);
+        STORE.upsert("demands", d);
+      };
+    });
+    $all(".d-title", editor).forEach(function(inp){ inp.onchange = function(){ var d=STORE.getState().demands.find(function(x){return x.id===inp.dataset.id;}); d.title=inp.value; STORE.upsert("demands", d); }; });
+    $all(".d-disc, .d-minlevel", editor).forEach(function(sel){ sel.onchange = function(){ var d=STORE.getState().demands.find(function(x){return x.id===sel.dataset.id;}); d[sel.dataset.field]=sel.value; STORE.upsert("demands", d); }; });
+    $all(".d-openings", editor).forEach(function(inp){ inp.onchange = function(){ var d=STORE.getState().demands.find(function(x){return x.id===inp.dataset.id;}); d.openings=Math.max(1,parseInt(inp.value,10)||1); STORE.upsert("demands", d); }; });
+    $all(".d-reqskills", editor).forEach(function(inp){ inp.onchange = function(){ var d=STORE.getState().demands.find(function(x){return x.id===inp.dataset.id;}); d.requiredSkills=IO.decodeRequiredSkills(inp.value); STORE.upsert("demands", d); toast("Required skills updated"); }; });
+    $all(".d-remove", editor).forEach(function(btn){ btn.onclick = function(){ STORE.remove("demands", btn.dataset.id); openProjectModal(projectId); }; });
+    $all(".fa-apply", editor).forEach(function(btn){
+      btn.onclick = function(){
+        var demandId = btn.dataset.id;
+        var card = editor.querySelector('[data-demand-card="'+demandId+'"]');
+        var start = card.querySelector(".fa-start").value.trim();
+        var end = card.querySelector(".fa-end").value.trim();
+        var val = U.clamp(parseInt(card.querySelector(".fa-val").value,10)||0, 0, 100);
+        if (!U.isMonthKey(start) || !U.isMonthKey(end)){ toast("Enter valid YYYY-MM start/end months"); return; }
+        var d = STORE.getState().demands.find(function(x){return x.id===demandId;});
+        var months = U.monthKeys(STORE.getState().settings.horizonStart, STORE.getState().settings.horizonMonths);
+        var si = months.indexOf(start), ei = months.indexOf(end);
+        if (si === -1 || ei === -1 || ei < si){ toast("Range must be within the horizon and start <= end"); return; }
+        for (var i=si;i<=ei;i++) d.allocationByMonth[months[i]] = val;
+        STORE.upsert("demands", d);
+        openProjectModal(projectId);
+        toast("Applied " + val + "% across " + (ei-si+1) + " month(s)");
+      };
+    });
+  }
+
+  /* =========================== OPTIMIZER =========================== */
+  function renderOptimizer(){
+    var state = STORE.getState();
+    var root = $("#panel-optimizer");
+    var os = uiState.optimizer;
+    if (!os.projectId && state.projects.length) os.projectId = state.projects[0].id;
+    var projectDemands = state.demands.filter(function(d){ return d.projectId === os.projectId; });
+    if (os.demandId && !projectDemands.some(function(d){return d.id===os.demandId;})) os.demandId = "";
+
+    var projectOptions = state.projects.map(function(p){ return '<option value="'+p.id+'" '+(p.id===os.projectId?'selected':'')+'>'+esc(p.name)+'</option>'; }).join("");
+    var demandOptions = '<option value="">All open demands</option>' + projectDemands.map(function(d){ return '<option value="'+d.id+'" '+(d.id===os.demandId?'selected':'')+'>'+esc(d.title)+'</option>'; }).join("");
+
+    var presetOptions = '<option value="">(none)</option>' + state.settings.presets.map(function(p){ return '<option value="'+esc(p.name)+'">'+esc(p.name)+'</option>'; }).join("");
+
+    root.innerHTML =
+      '<div class="card"><div class="toolbar">' +
+        '<label>Project<select id="opt-project">'+projectOptions+'</select></label>' +
+        '<label>Demand<select id="opt-demand">'+demandOptions+'</select></label>' +
+        '<label>Preset<select id="opt-preset">'+presetOptions+'</select></label>' +
+        '<button type="button" id="opt-save-preset">Save preset</button>' +
+        '<button type="button" id="opt-autostaff" class="primary">Auto-staff project</button>' +
+      '</div>' +
+      '<div class="toolbar">' +
+        weightSlider("skill","Skill") + weightSlider("availability","Availability") + weightSlider("seniority","Seniority") + weightSlider("discipline","Discipline") +
+        '<span class="hint" id="opt-normalized"></span>' +
+      '</div></div>' +
+      '<div id="opt-results"></div>' +
+      '<div id="opt-autostaff-preview"></div>';
+
+    $("#opt-project", root).onchange = function(){ os.projectId = this.value; os.demandId=""; renderOptimizer(); };
+    $("#opt-demand", root).onchange = function(){ os.demandId = this.value; renderOptimizerResults(); };
+    ["skill","availability","seniority","discipline"].forEach(function(k){
+      $("#w-"+k, root).oninput = function(){ os.weights[k] = parseInt(this.value,10); updateNormalizedLabel(); renderOptimizerResults(); };
+    });
+    $("#opt-preset", root).onchange = function(){
+      var p = state.settings.presets.find(function(x){return x.name===this.value;}.bind(this));
+      if (p){ os.weights = { skill: Math.round(p.weights.skill*100), availability: Math.round(p.weights.availability*100), seniority: Math.round(p.weights.seniority*100), discipline: Math.round(p.weights.discipline*100) }; renderOptimizer(); }
+    };
+    $("#opt-save-preset", root).onclick = function(){
+      var name = prompt("Preset name?");
+      if (!name) return;
+      STORE.setWeightPreset(name, SCORE.normalizeWeights(os.weights));
+      renderOptimizer(); toast("Preset saved");
+    };
+    $("#opt-autostaff", root).onclick = function(){ runAutoStaff(); };
+    updateNormalizedLabel();
+    renderOptimizerResults();
+  }
+
+  function weightSlider(key, label){
+    return '<label>'+label+' ('+uiState.optimizer.weights[key]+')<input type="range" id="w-'+key+'" min="0" max="100" value="'+uiState.optimizer.weights[key]+'"></label>';
+  }
+  function updateNormalizedLabel(){
+    var el2 = $("#opt-normalized");
+    if (!el2) return;
+    var n = SCORE.normalizeWeights(uiState.optimizer.weights);
+    el2.textContent = "Normalized: skill "+Math.round(n.skill*100)+"%, availability "+Math.round(n.availability*100)+"%, seniority "+Math.round(n.seniority*100)+"%, discipline "+Math.round(n.discipline*100)+"%";
+    $all('label[for=""]'); // no-op guard
+    ["skill","availability","seniority","discipline"].forEach(function(k){
+      var lab = document.getElementById("w-"+k);
+      if (lab && lab.parentElement) lab.parentElement.firstChild.textContent = k[0].toUpperCase()+k.slice(1)+" ("+uiState.optimizer.weights[k]+")";
+    });
+  }
+
+  function renderOptimizerResults(){
+    var state = STORE.getState();
+    var root = $("#opt-results");
+    if (!root) return;
+    var os = uiState.optimizer;
+    var demandsToScore = os.demandId ? state.demands.filter(function(d){return d.id===os.demandId;}) : state.demands.filter(function(d){return d.projectId===os.projectId;});
+    if (demandsToScore.length === 0){ root.innerHTML = '<div class="empty-state">No demands for this project.</div>'; return; }
+
+    state._idx = STORE.getIndexes();
+    var html = demandsToScore.map(function(demand){
+      var ranking = SCORE.rankCandidates(state, demand.id, os.weights);
+      var cards = ranking.candidates.slice(0, 15).map(function(c){
+        var emp = state.employees.find(function(e){return e.id===c.employeeId;});
+        var mods = c.modifiers.map(function(m){ return '<span class="modifier-chip" title="'+esc(m.reason)+'">'+m.name+' '+(m.value>0?'+':'')+m.value+'</span>'; }).join(" ");
+        return '<div class="candidate-card">' +
+          '<strong>'+esc(emp.name)+'</strong> - matchScore '+c.matchScore+
+          ' <button type="button" class="commit-candidate" data-emp="'+c.employeeId+'" data-demand="'+demand.id+'">Commit</button>' +
+          ' <button type="button" class="review-candidate" data-emp="'+c.employeeId+'" data-demand="'+demand.id+'">Review</button>' +
+          '<div class="subgrid"><span>Skill</span><div class="bar-track"><div class="bar-fill" style="width:'+c.subScores.skill+'%"></div></div><span>'+Math.round(c.subScores.skill)+'</span></div>' +
+          '<div class="subgrid"><span>Availability</span><div class="bar-track"><div class="bar-fill" style="width:'+c.subScores.availability+'%"></div></div><span>'+Math.round(c.subScores.availability)+'</span></div>' +
+          '<div class="subgrid"><span>Seniority</span><div class="bar-track"><div class="bar-fill" style="width:'+c.subScores.seniority+'%"></div></div><span>'+Math.round(c.subScores.seniority)+'</span></div>' +
+          '<div class="subgrid"><span>Discipline</span><div class="bar-track"><div class="bar-fill" style="width:'+c.subScores.discipline+'%"></div></div><span>'+Math.round(c.subScores.discipline)+'</span></div>' +
+          (mods ? ('<div>'+mods+'</div>') : '') +
+        '</div>';
+      }).join("");
+      var excludedHtml = ranking.excluded.length ? ('<p class="hint">'+ranking.excluded.length+' candidate(s) excluded: below minimum skill level.</p>') : "";
+      return '<div class="card"><h2>'+esc(demand.title)+' ('+demand.openings+' opening(s))</h2>'+excludedHtml+(cards || '<p class="hint">No eligible candidates.</p>')+'</div>';
+    }).join("");
+    root.innerHTML = html;
+
+    $all(".commit-candidate", root).forEach(function(btn){
+      btn.onclick = function(){ commitCandidate(btn.dataset.emp, btn.dataset.demand); };
+    });
+    $all(".review-candidate", root).forEach(function(btn){
+      btn.onclick = function(){ reviewCandidate(btn.dataset.emp, btn.dataset.demand); };
+    });
+  }
+
+  function commitCandidate(empId, demandId){
+    var state = STORE.getState();
+    state._idx = STORE.getIndexes();
+    var demand = state.demands.find(function(d){return d.id===demandId;});
+    var emp = state.employees.find(function(e){return e.id===empId;});
+    var r = SCORE.scoreCandidate(state, empId, demandId, uiState.optimizer.weights);
+    var alloc = {};
+    for (var m in demand.allocationByMonth){
+      var need = demand.allocationByMonth[m];
+      if (!need) continue;
+      var freeAmt = CALC.freeProjected(emp, m, demand.projectId, state._idx, state.settings);
+      var give = Math.min(need, freeAmt);
+      if (give > 0) alloc[m] = give;
+    }
+    var asg = ROE.model.newAssignment({ projectId: demand.projectId, employeeId: empId, demandId: demandId, allocationByMonth: alloc, status:"Committed", source:"optimizer", scoreSnapshot: r.matchScore });
+    STORE.upsert("assignments", asg);
+    renderOptimizerResults();
+    toast("Committed " + emp.name + " to " + demand.title);
+  }
+
+  function reviewCandidate(empId, demandId){
+    var state = STORE.getState();
+    state._idx = STORE.getIndexes();
+    var emp = state.employees.find(function(e){return e.id===empId;});
+    var r = SCORE.scoreCandidate(state, empId, demandId, uiState.optimizer.weights);
+    openModal(
+      '<h2>Score breakdown - '+esc(emp.name)+'</h2>' +
+      '<p>matchScore = '+r.matchScore+' (base '+Math.round(r.base)+' + modifiers '+r.clampedModifiers+')</p>' +
+      '<h3>Skill</h3><pre class="mono">'+esc(JSON.stringify(r.skillBreakdown,null,2))+'</pre>' +
+      '<h3>Availability</h3><pre class="mono">'+esc(JSON.stringify(r.availabilityBreakdown,null,2))+'</pre>' +
+      '<h3>Modifiers</h3><pre class="mono">'+esc(JSON.stringify(r.modifiers,null,2))+'</pre>' +
+      '<div class="row" style="justify-content:flex-end;"><button type="button" id="m-close">Close</button></div>',
+      function(modal){ $("#m-close",modal).onclick = closeModal; }
+    );
+  }
+
+  function runAutoStaff(){
+    var state = STORE.getState();
+    var result = SCORE.autoStaff(state, uiState.optimizer.projectId, uiState.optimizer.weights);
+    uiState.optimizer.autoStaffPreview = result;
+    var root = $("#opt-autostaff-preview");
+    var rows = result.proposals.map(function(p, i){
+      var emp = state.employees.find(function(e){return e.id===p.employeeId;});
+      var demand = state.demands.find(function(d){return d.id===p.demandId;});
+      return '<tr><td><input type="checkbox" class="as-accept" data-i="'+i+'" checked aria-label="Accept row '+i+'"></td><td>'+esc(demand.title)+'</td><td>'+esc(emp.name)+'</td><td>'+p.scoreSnapshot+'</td><td>'+esc(JSON.stringify(p.allocationByMonth))+'</td></tr>';
+    }).join("");
+    var unfilledRows = result.unfilled.map(function(u){
+      var demand = state.demands.find(function(d){return d.id===u.demandId;});
+      return '<li>'+esc(demand?demand.title:u.demandId)+' opening '+u.opening+': '+esc(u.reason)+'</li>';
+    }).join("");
+    root.innerHTML =
+      '<div class="card"><h2>Auto-staff preview</h2>' +
+      (rows ? ('<table><thead><tr><th>Accept</th><th>Demand</th><th>Employee</th><th>Score</th><th>Allocation</th></tr></thead><tbody>'+rows+'</tbody></table>') : '<p class="hint">No proposals could be generated.</p>') +
+      (unfilledRows ? ('<h3>Unfilled</h3><ul>'+unfilledRows+'</ul>') : "") +
+      (rows ? '<button type="button" id="as-commit-all" class="primary">Commit all accepted</button>' : "") +
+      '</div>';
+    if (rows){
+      $("#as-commit-all", root).onclick = function(){
+        var accepted = $all(".as-accept", root).filter(function(cb){return cb.checked;}).map(function(cb){return parseInt(cb.dataset.i,10);});
+        accepted.forEach(function(i){
+          var p = result.proposals[i];
+          STORE.upsert("assignments", Object.assign({}, p, { status: "Committed" }));
+        });
+        uiState.optimizer.autoStaffPreview = null;
+        root.innerHTML = "";
+        renderOptimizerResults();
+        toast(accepted.length + " assignment(s) committed");
+      };
+    }
+  }
+
+  /* =========================== MENTORSHIP =========================== */
+  function renderMentorship(){
+    var state = STORE.getState();
+    var root = $("#panel-mentorship");
+    var byId = {}; state.employees.forEach(function(e){ byId[e.id]=e; });
+
+    var current = state.mentorships.map(function(m){
+      var mentor = byId[m.mentorId], mentee = byId[m.menteeId];
+      var load = MENTOR.activeMenteeCount(state, m.mentorId);
+      return '<tr><td>'+esc(mentor?mentor.name:m.mentorId)+' ('+load+'/2)</td><td>'+esc(mentee?mentee.name:m.menteeId)+'</td>'+
+        '<td>'+esc(m.frequency)+'</td><td>'+m.score+'</td><td>'+esc(m.compat)+'</td><td>'+esc(m.status)+'</td>' +
+        '<td>'+(m.status==="Active" ? '<button type="button" class="end-mentorship" data-id="'+m.id+'">End</button>' : "")+'</td></tr>';
+    }).join("");
+
+    var suggestions = MENTOR.suggest(state);
+    var suggestRows = suggestions.slice(0,25).map(function(s){
+      var mentor = byId[s.mentorId], mentee = byId[s.menteeId];
+      return '<tr><td>'+esc(mentor.name)+'</td><td>'+esc(mentee.name)+'</td><td>'+s.pairScore+'</td><td>'+esc(s.compat)+'</td>'+
+        '<td>skill '+Math.round(s.breakdown.skillGapValue)+' / seniority '+s.breakdown.seniorityDeltaValue+' / discipline '+s.breakdown.disciplineValue+' / spare '+Math.round(s.breakdown.mentorSpareCapacityValue)+'</td>' +
+        '<td><button type="button" class="create-mentorship" data-mentor="'+s.mentorId+'" data-mentee="'+s.menteeId+'" data-skill="'+esc(s.focusSkillId)+'" data-score="'+s.pairScore+'" data-compat="'+s.compat+'">Create pairing</button></td></tr>';
+    }).join("");
+
+    root.innerHTML =
+      '<div class="card"><h2>Current pairings</h2><table><thead><tr><th>Mentor (load)</th><th>Mentee</th><th>Frequency</th><th>Score</th><th>Compat</th><th>Status</th><th>Actions</th></tr></thead>' +
+      '<tbody>'+(current||'<tr><td colspan="7">No mentorships yet.</td></tr>')+'</tbody></table></div>' +
+      '<div class="card"><h2>Suggested pairings</h2><table><thead><tr><th>Mentor</th><th>Mentee</th><th>Score</th><th>Compat</th><th>Breakdown</th><th>Actions</th></tr></thead>' +
+      '<tbody>'+(suggestRows||'<tr><td colspan="6">No suggestions available.</td></tr>')+'</tbody></table></div>';
+
+    $all(".end-mentorship", root).forEach(function(btn){
+      btn.onclick = function(){
+        var m = state.mentorships.find(function(x){return x.id===btn.dataset.id;});
+        m.status = "Ended";
+        STORE.upsert("mentorships", m);
+        renderMentorship(); toast("Mentorship ended");
+      };
+    });
+    $all(".create-mentorship", root).forEach(function(btn){
+      btn.onclick = function(){
+        var rec = ROE.model.newMentorship({ mentorId: btn.dataset.mentor, menteeId: btn.dataset.mentee, focusSkillId: btn.dataset.skill, frequency:"Monthly", score: parseInt(btn.dataset.score,10), compat: btn.dataset.compat, status:"Active" });
+        STORE.upsert("mentorships", rec);
+        renderMentorship(); toast("Mentorship created");
+      };
+    });
+  }
+
+  /* =========================== TIMELINE =========================== */
+  function renderTimeline(){
+    var state = STORE.getState();
+    var root = $("#panel-timeline");
+    var idx = STORE.getIndexes();
+    var months = U.monthKeys(state.settings.horizonStart, state.settings.horizonMonths);
+    var mode = uiState.timeline.mode;
+
+    function band(pct){
+      if (pct > 115) return "cell-critical";
+      if (pct > 100) return "cell-over";
+      if (pct >= 60) return "cell-target";
+      return "cell-under";
+    }
+
+    var rowsHtml;
+    if (mode === "employee"){
+      rowsHtml = state.employees.filter(function(e){return e.active;}).map(function(e){
+        var cells = months.map(function(m){
+          var c = CALC.committed(e.id, m, idx);
+          var projs = Array.from((idx.byEmployeeMonth.get(e.id)||new Map()).get(m)?.projectIds || []);
+          var names = projs.map(function(pid){ var p=state.projects.find(function(x){return x.id===pid;}); return p?p.name:pid; }).join(", ");
+          return '<td class="'+band(c)+'" title="'+esc(names)+'">'+Math.round(c)+'%</td>';
+        }).join("");
+        return '<tr><td>'+esc(e.name)+'</td>'+cells+'</tr>';
+      }).join("");
+    } else {
+      rowsHtml = state.projects.map(function(p){
+        var cells = months.map(function(m){
+          var rec = (idx.byProjectMonth.get(p.id)||new Map()).get(m);
+          var pct = rec ? rec.pct : 0;
+          var size = rec ? rec.employeeIds.size : 0;
+          return '<td class="'+band(pct)+'" title="'+size+' employee(s)">'+Math.round(pct)+'%</td>';
+        }).join("");
+        return '<tr><td>'+esc(p.name)+'</td>'+cells+'</tr>';
+      }).join("");
+    }
+
+    root.innerHTML =
+      '<div class="card"><div class="toolbar">' +
+        '<label>Rows<select id="tl-mode"><option value="employee" '+(mode==="employee"?"selected":"")+'>Employees</option><option value="project" '+(mode==="project"?"selected":"")+'>Projects</option></select></label>' +
+      '</div><div style="overflow-x:auto;"><table><thead><tr><th>'+(mode==="employee"?"Employee":"Project")+'</th>'+months.map(function(m){return '<th>'+m+'</th>';}).join("")+'</tr></thead><tbody>'+rowsHtml+'</tbody></table></div></div>' +
+      '<div class="card"><h2>Context-switch tax by month</h2><canvas id="chart-ctxtax" height="90"></canvas></div>';
+
+    $("#tl-mode", root).onchange = function(){ uiState.timeline.mode = this.value; renderTimeline(); };
+
+    if (window.Chart){
+      var activeEmployees = state.employees.filter(function(e){return e.active;});
+      var concurrentSeries = months.map(function(m){ return U.mean(activeEmployees.map(function(e){ return CALC.concurrentProjectsAt(e.id, m, idx); })); });
+      var taxSeries = months.map(function(m){ return U.mean(activeEmployees.map(function(e){ return CALC.ctxTaxPct(CALC.concurrentProjectsAt(e.id,m,idx), state.settings); })); });
+      var ctx = $("#chart-ctxtax").getContext("2d");
+      if (root._chart) root._chart.destroy();
+      root._chart = new Chart(ctx, {
+        type: "line",
+        data: { labels: months, datasets: [
+          { label:"Avg concurrent projects", data: concurrentSeries, borderColor:"#4f8cff", yAxisID:"y" },
+          { label:"Avg ctx-tax %", data: taxSeries, borderColor:"#f2994a", yAxisID:"y1" }
+        ]},
+        options: { responsive:true, scales:{ y:{ position:"left" }, y1:{ position:"right", grid:{drawOnChartArea:false} } } }
+      });
+    } else {
+      $("#chart-ctxtax", root).outerHTML = '<p class="hint">Chart.js unavailable - chart disabled.</p>';
+    }
+  }
+
+  /* =========================== ALERTS =========================== */
+  function renderAlerts(){
+    var state = STORE.getState();
+    var root = $("#panel-alerts");
+    var th = state.settings.alertThresholds;
+    var results = uiState.alerts.results || ALERTS.scan(state, th);
+    uiState.alerts.results = results;
+
+    var f = uiState.alerts;
+    var byId = {}; state.employees.forEach(function(e){ byId[e.id]=e; });
+    var filtered = results.filter(function(a){
+      if (f.severity && a.severity !== f.severity) return false;
+      if (f.rule && a.ruleId !== f.rule) return false;
+      if (f.text){
+        var subj = a.subjectType==="employee" ? (byId[a.subjectId]||{}).name : a.subjectId;
+        if ((subj||"").toLowerCase().indexOf(f.text.toLowerCase()) === -1 && a.message.toLowerCase().indexOf(f.text.toLowerCase()) === -1) return false;
+      }
+      return true;
+    });
+
+    var order = { CRITICAL:0, HIGH:1, MEDIUM:2, LOW:3 };
+    filtered.sort(function(a,b){ return order[a.severity]-order[b.severity]; });
+
+    var rules = Array.from(new Set(results.map(function(a){return a.ruleId;})));
+    var rows = filtered.map(function(a, i){
+      return '<tr><td><span class="pill sev-'+a.severity+'">'+a.severity+'</span></td><td>'+esc(a.ruleId)+'</td><td>'+esc(a.subjectType)+'</td>'+
+        '<td>'+esc(a.message)+'</td><td><button type="button" class="alert-open" data-i="'+i+'">Details</button></td></tr>';
+    }).join("");
+
+    root.innerHTML =
+      '<div class="card"><div class="toolbar">' +
+        '<button type="button" id="btn-run-scan" class="primary">Run live scan</button>' +
+        '<div id="scan-progress" class="bar-track" style="width:120px;display:none;"><div class="bar-fill" id="scan-progress-fill" style="width:0%"></div></div>' +
+        fieldSelect("al-severity","Severity", ["","CRITICAL","HIGH","MEDIUM","LOW"], f.severity) +
+        fieldSelect("al-rule","Rule", [""].concat(rules), f.rule) +
+        '<label>Search<input type="text" id="al-text" value="'+esc(f.text)+'"></label>' +
+      '</div>' +
+      '<fieldset><legend>Thresholds</legend><div class="row">' +
+        thresholdInput("overallocPct","Overalloc %",th.overallocPct) + thresholdInput("sustainedMonths","Sustained months",th.sustainedMonths) +
+        thresholdInput("targetSlackPct","Target slack %",th.targetSlackPct) + thresholdInput("benchGapPct","Bench gap %",th.benchGapPct) + thresholdInput("benchMonths","Bench months",th.benchMonths) +
+      '</div></fieldset>' +
+      '<table><thead><tr><th>Severity</th><th>Rule</th><th>Subject</th><th>Message</th><th>Actions</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5">No alerts.</td></tr>')+'</tbody></table>' +
+      '</div>';
+
+    $("#al-severity", root).onchange = function(){ f.severity=this.value; renderAlerts(); };
+    $("#al-rule", root).onchange = function(){ f.rule=this.value; renderAlerts(); };
+    $("#al-text", root).oninput = function(){ f.text=this.value; renderAlerts(); };
+    $all(".threshold-input", root).forEach(function(inp){
+      inp.onchange = function(){
+        var patch = {}; patch[inp.dataset.key] = U.parseNum(inp.value, th[inp.dataset.key]);
+        STORE.setSettings({ alertThresholds: Object.assign({}, state.settings.alertThresholds, patch) });
+        uiState.alerts.results = null;
+        renderAlerts();
+      };
+    });
+    $("#btn-run-scan", root).onclick = function(){ runScanWithProgress(); };
+    $all(".alert-open", root).forEach(function(btn){
+      btn.onclick = function(){
+        var a = filtered[parseInt(btn.dataset.i,10)];
+        var subjLabel = a.subjectType==="employee" ? (byId[a.subjectId]||{}).name : (a.subjectType==="project" ? (state.projects.find(function(p){return p.id===a.subjectId;})||{}).name : (state.demands.find(function(d){return d.id===a.subjectId;})||{}).title);
+        openModal(
+          '<h2>'+esc(a.ruleId)+' - '+esc(a.severity)+'</h2><p>'+esc(a.message)+'</p><p><strong>Subject:</strong> '+esc(subjLabel||a.subjectId)+'</p>'+
+          '<p><strong>Suggested action:</strong> '+esc(a.suggestedAction)+'</p>' +
+          '<div class="row" style="justify-content:flex-end;"><button type="button" id="m-goto">Go to '+esc(a.subjectType)+'</button><button type="button" id="m-close">Close</button></div>',
+          function(modal){
+            $("#m-close",modal).onclick = closeModal;
+            $("#m-goto",modal).onclick = function(){
+              closeModal();
+              if (a.subjectType==="employee") navigate("skills");
+              else if (a.subjectType==="project") navigate("projects");
+              else navigate("projects");
+            };
+          }
+        );
+      };
+    });
+  }
+  function thresholdInput(key,label,value){
+    return '<label>'+label+'<input type="number" class="threshold-input" data-key="'+key+'" value="'+value+'"></label>';
+  }
+  function runScanWithProgress(){
+    var root = $("#panel-alerts");
+    var bar = $("#scan-progress", root), fill = $("#scan-progress-fill", root);
+    bar.style.display = "block";
+    var pct = 0;
+    var timer = setInterval(function(){
+      pct += 25; fill.style.width = Math.min(100,pct) + "%";
+      if (pct >= 100){
+        clearInterval(timer);
+        uiState.alerts.results = ALERTS.scan(STORE.getState(), STORE.getState().settings.alertThresholds);
+        renderAlerts();
+        toast("Scan complete: " + uiState.alerts.results.length + " alert(s)");
+      }
+    }, 80);
+  }
+
+  /* =========================== DATA & SETTINGS =========================== */
+  function renderSettings(){
+    var state = STORE.getState();
+    var root = $("#panel-settings");
+    var s = state.settings;
+    var v = vendorsOk();
+
+    root.innerHTML =
+      '<div class="card"><h2>Import</h2>' +
+        '<label>Workbook file (.xlsx)<input type="file" id="import-file" accept=".xlsx" '+(v.xlsx?'':'disabled')+'></label>' +
+        (v.xlsx ? '' : '<p class="hint">SheetJS did not load from the CDN, so import is disabled. CSV import is not available in this build; retry when online.</p>') +
+        '<div id="import-preview"></div>' +
+      '</div>' +
+      '<div class="card"><h2>Export</h2>' +
+        '<button type="button" id="btn-export-xlsx" '+(v.xlsx?'':'disabled')+'>Export .xlsx</button> ' +
+        '<button type="button" id="btn-export-csv" '+(v.xlsx?'':'disabled')+'>Export CSV (per sheet)</button> ' +
+        '<button type="button" id="btn-export-template" '+(v.xlsx?'':'disabled')+'>Download blank template</button>' +
+      '</div>' +
+      '<div class="card"><h2>Horizon</h2><div class="row">' +
+        '<label>Horizon start<input type="text" id="set-horizonStart" value="'+esc(s.horizonStart)+'" placeholder="YYYY-MM"></label>' +
+        '<label>Horizon months<input type="number" id="set-horizonMonths" min="6" max="36" value="'+s.horizonMonths+'"></label>' +
+      '</div></div>' +
+      '<div class="card"><h2>Context-switch tax</h2><div class="row">' +
+        '<label>Per extra project ('+s.ctxTaxPerExtraProject+')<input type="range" id="set-ctxRate" min="5" max="15" value="'+s.ctxTaxPerExtraProject+'"></label>' +
+        '<label>Cap %<input type="number" id="set-ctxCapPct" value="'+s.ctxTaxCapPct+'"></label>' +
+        '<label>ctxCap (projects)<input type="number" id="set-ctxCap" value="'+s.ctxCap+'"></label>' +
+      '</div><label><input type="checkbox" id="set-requireMin" '+(s.requireMinSkillLevels?'checked':'')+'> Require minimum skill levels (disqualify below-minimum candidates)</label></div>' +
+      '<div class="card"><h2>Session &amp; privacy</h2>' +
+        '<label><input type="checkbox" id="set-sessionOnly" '+(s.sessionOnly?'checked':'')+'> Session only - do not persist to IndexedDB</label>' +
+        '<p class="hint">'+ (ROE.db.isAvailable() ? "IndexedDB is available." : "IndexedDB is not available in this context; session-only mode is forced.") +'</p>' +
+        '<button type="button" id="btn-clear-all-2" class="danger">Clear all data</button>' +
+      '</div>' +
+      '<div class="card"><h2>API connector</h2>' +
+        '<div class="row">' +
+          '<label>Base URL<input type="text" id="api-baseUrl" value="'+esc(s.api.baseUrl)+'"></label>' +
+          fieldSelect("api-authMode","Auth mode", ["none","apiKey","bearer"], s.api.authMode) +
+          '<label>Auth header name<input type="text" id="api-authHeader" value="'+esc(s.api.authHeaderName)+'"></label>' +
+          '<label>Token (session only, not saved)<input type="password" id="api-token" placeholder="never persisted"></label>' +
+        '</div>' +
+        '<p class="hint">Calls are made directly from your browser. The target API must return <code>Access-Control-Allow-Origin</code> (and allow your auth header via <code>Access-Control-Allow-Headers</code>) or the browser will block the request. There is no proxy - this app has no server component.'+
+        (location.protocol === "file:" ? ' Note: this page is open via file:// - the API connector requires serving over http(s) to work.' : '')+'</p>' +
+        '<div class="toolbar"><button type="button" id="api-pull">Pull employees (preview)</button><button type="button" id="api-push">Push employees (preview)</button></div>' +
+        '<div id="api-preview"></div>' +
+      '</div>' +
+      '<div class="card"><h2>About</h2><p>ROE is a single-file, client-only staffing optimizer. No backend, no accounts. Charts by Chart.js, workbook I/O by SheetJS, both loaded from a CDN; if either fails to load this app disables the corresponding feature and keeps working. No cost/PTO/location data is used in scoring. API tokens live in memory for the session only.</p></div>';
+
+    $("#set-horizonStart", root).onchange = function(){ STORE.setSettings({ horizonStart: this.value }); };
+    $("#set-horizonMonths", root).onchange = function(){ STORE.setSettings({ horizonMonths: U.clamp(parseInt(this.value,10)||12,6,36) }); };
+    $("#set-ctxRate", root).oninput = function(){ STORE.setSettings({ ctxTaxPerExtraProject: parseInt(this.value,10) }); renderSettings(); };
+    $("#set-ctxCapPct", root).onchange = function(){ STORE.setSettings({ ctxTaxCapPct: parseInt(this.value,10) }); };
+    $("#set-ctxCap", root).onchange = function(){ STORE.setSettings({ ctxCap: parseInt(this.value,10) }); };
+    $("#set-requireMin", root).onchange = function(){ STORE.setSettings({ requireMinSkillLevels: this.checked }); };
+    $("#set-sessionOnly", root).onchange = function(){ STORE.setSessionOnly(this.checked); updateSessionBadge(); toast(this.checked ? "Session-only mode ON" : "Session-only mode OFF"); };
+    $("#btn-clear-all-2", root).onclick = clearAllFlow;
+    $("#btn-export-xlsx", root).onclick = function(){ try { IO.exportWorkbookFile(STORE.getState(), "roe-export.xlsx"); } catch(e){ toast(String(e.message||e)); } };
+    $("#btn-export-template", root).onclick = function(){ try { IO.exportTemplateFile(STORE.getState().settings, "roe-template.xlsx"); } catch(e){ toast(String(e.message||e)); } };
+    $("#btn-export-csv", root).onclick = function(){
+      var sheets = IO.buildWorkbookSheets(STORE.getState());
+      Object.keys(sheets).forEach(function(name){ downloadText("roe-" + name + ".csv", IO.buildCsvForSheet(sheets[name]), "text/csv"); });
+    };
+    $("#import-file", root).onchange = function(e){ handleImportFile(e.target.files[0]); };
+    $("#api-authMode", root).onchange = function(){ STORE.setSettings({ api: Object.assign({}, s.api, { authMode: this.value }) }); };
+    $("#api-baseUrl", root).onchange = function(){ STORE.setSettings({ api: Object.assign({}, s.api, { baseUrl: this.value }) }); };
+    $("#api-authHeader", root).onchange = function(){ STORE.setSettings({ api: Object.assign({}, s.api, { authHeaderName: this.value }) }); };
+    $("#api-token", root).onchange = function(){ API.setToken(this.value); toast("Token set for this session only"); };
+    $("#api-pull", root).onclick = function(){ apiPullPreview(); };
+    $("#api-push", root).onclick = function(){ apiPushPreview(); };
+  }
+
+  function clearAllFlow(){
+    var input = prompt('Type CLEAR to permanently erase all data (this cannot be undone):');
+    if (input !== "CLEAR"){ toast("Clear cancelled"); return; }
+    STORE.clearAll().then(function(){
+      uiState.alerts.results = null;
+      renderAll();
+      toast("All data cleared");
+    });
+  }
+
+  function handleImportFile(file){
+    if (!file) return;
+    var root = $("#import-preview");
+    IO.readWorkbookFile(file).then(function(sheets){
+      uiState.importSession.sheets = sheets;
+      var state = STORE.getState();
+      var mappings = {};
+      var needsMappingHtml = "";
+      Object.keys(IO.COLUMNS).forEach(function(sheetName){
+        if (sheetName === "Meta" || !sheets[sheetName]) return;
+        var headers = sheets[sheetName][0] || [];
+        var detected = IO.detectMapping(sheetName, headers);
+        var unresolved = Object.keys(detected).filter(function(f){ return !detected[f]; });
+        mappings[sheetName] = {};
+        Object.keys(detected).forEach(function(f){ mappings[sheetName][f] = detected[f]; });
+        if (unresolved.length){
+          needsMappingHtml += '<div class="card"><h3>'+sheetName+' - map columns</h3>' + unresolved.map(function(f){
+            var options = ['<option value="">&lt;ignore&gt;</option>'].concat(headers.map(function(h){ return '<option value="'+esc(h)+'">'+esc(h)+'</option>'; }));
+            return '<label>'+f+'<select class="map-select" data-sheet="'+sheetName+'" data-field="'+f+'">'+options.join("")+'</select></label>';
+          }).join("") + '</div>';
+        }
+      });
+      uiState.importSession.mappings = mappings;
+      root.innerHTML = needsMappingHtml + '<button type="button" id="btn-preview-import">Preview import</button>';
+      $all(".map-select", root).forEach(function(sel){
+        sel.onchange = function(){ uiState.importSession.mappings[sel.dataset.sheet][sel.dataset.field] = sel.value || null; };
+      });
+      $("#btn-preview-import", root).onclick = function(){ previewImport(); };
+    }).catch(function(err){ toast("Failed to read workbook: " + (err.message||err)); });
+  }
+
+  function previewImport(){
+    var root = $("#import-preview");
+    var state = STORE.getState();
+    var parsed = IO.parseWorkbook(uiState.importSession.sheets, state.settings, uiState.importSession.mappings);
+    uiState.importSession.parsed = parsed;
+    var summary = IO.diffAgainstState(state, parsed);
+    var rows = Object.keys(summary).map(function(sheet){
+      var s = summary[sheet];
+      return '<tr><td>'+sheet+'</td><td>'+s.insert+'</td><td>'+s.update+'</td><td>'+s.skipped+'</td><td>'+s.errors+'</td></tr>';
+    }).join("");
+    var errorList = [];
+    Object.keys(parsed.bySheet).forEach(function(sheet){ parsed.bySheet[sheet].errors.forEach(function(e){ errorList.push(sheet+" row "+e.row+" ["+e.field+"]: "+e.message); }); });
+    var warnHtml = parsed.monthWarnings.length ? ('<p class="hint">Out-of-horizon month columns skipped: ' + parsed.monthWarnings.map(function(w){return w.sheet+": "+w.headers.join(", ");}).join(" | ") + '</p>') : "";
+    root.insertAdjacentHTML("beforeend",
+      '<div class="card"><h3>Preview</h3><table><thead><tr><th>Sheet</th><th>Insert</th><th>Update</th><th>Skip</th><th>Errors</th></tr></thead><tbody>'+rows+'</tbody></table>' +
+      warnHtml +
+      (errorList.length ? ('<div class="hint">'+errorList.slice(0,50).map(esc).join("<br>")+'</div>') : "") +
+      '<button type="button" id="btn-apply-import" class="primary">Apply import</button></div>'
+    );
+    $("#btn-apply-import", root).onclick = applyImport;
+  }
+
+  function applyImport(){
+    var parsed = uiState.importSession.parsed;
+    if (!parsed) return;
+    var map = { Employees:"employees", Skills:"skills", Projects:"projects", ProjectDemands:"demands", Assignments:"assignments", Mentorships:"mentorships" };
+    Object.keys(map).forEach(function(sheet){
+      var r = parsed.bySheet[sheet];
+      if (!r) return;
+      r.records.forEach(function(rec){ STORE.upsert(map[sheet], rec); });
+    });
+    if (parsed.bySheet.EmployeeSkills){
+      parsed.bySheet.EmployeeSkills.records.forEach(function(rec){ STORE.upsertEmployeeSkill(rec); });
+    }
+    $("#import-preview").innerHTML = "";
+    renderAll();
+    toast("Import applied");
+  }
+
+  function apiPullPreview(){
+    var state = STORE.getState();
+    var s = state.settings;
+    API.pull(s.api, "employees", s.api.fieldMappings.employees || {}).then(function(remote){
+      var snap = STORE.getLastPulledSnapshot("employees");
+      var diff = API.diffPull(state.employees, remote, snap, "id");
+      var root = $("#api-preview");
+      root.innerHTML = '<div class="card"><h3>Pull preview - employees</h3>' +
+        '<p>'+diff.adds.length+' add(s), '+diff.updates.length+' update(s), '+diff.unchanged.length+' unchanged.</p>' +
+        '<button type="button" id="api-apply-pull" class="primary">Apply</button> <button type="button" id="api-cancel-pull">Cancel</button></div>';
+      $("#api-cancel-pull", root).onclick = function(){ root.innerHTML = ""; toast("Pull cancelled - nothing changed"); };
+      $("#api-apply-pull", root).onclick = function(){
+        diff.adds.forEach(function(a){ STORE.upsert("employees", ROE.model.newEmployee(Object.assign({ id:a.id }, a.remote))); });
+        diff.updates.filter(function(u){ return u.applyRemote; }).forEach(function(u){
+          var emp = state.employees.find(function(e){return e.id===u.id;});
+          var patch = {}; u.fields.forEach(function(f){ patch[f.field] = f.after; });
+          STORE.upsert("employees", Object.assign({}, emp, patch, { id: u.id }));
+        });
+        var byId = {}; remote.forEach(function(r){ byId[r.id] = r; });
+        STORE.setLastPulledSnapshot("employees", byId);
+        root.innerHTML = "";
+        renderAll();
+        toast("Pull applied");
+      };
+    }).catch(function(err){
+      toast((err && err.isCors ? "CORS error: " : "Pull failed: ") + (err.message||err));
+    });
+  }
+
+  function apiPushPreview(){
+    var state = STORE.getState();
+    var s = state.settings;
+    var snap = STORE.getLastPulledSnapshot("employees");
+    var diff = API.diffPush(state.employees, snap, "id");
+    var root = $("#api-preview");
+    root.innerHTML = '<div class="card"><h3>Push preview - employees</h3><p>'+diff.toCreate.length+' to create, '+diff.toUpdate.length+' to update.</p>'+
+      '<button type="button" id="api-send-push" class="primary">Send</button></div>';
+    $("#api-send-push", root).onclick = function(){
+      API.push(s.api, "employees", diff.toCreate.concat(diff.toUpdate)).then(function(){
+        toast("Push complete"); root.innerHTML = "";
+      }).catch(function(err){ toast((err && err.isCors ? "CORS error: " : "Push failed: ") + (err.message||err)); });
+    };
+  }
+
+  /* =========================== BOOTSTRAP =========================== */
+  function wireTopbar(){
+    $("#btn-load-demo").onclick = function(){
+      STORE.loadDemoData();
+      uiState.alerts.results = null;
+      renderAll();
+      toast("Demo data loaded");
+    };
+    $("#btn-clear-all").onclick = clearAllFlow;
+  }
+
+  function wireNav(){
+    $all("#nav a").forEach(function(a){
+      a.addEventListener("click", function(e){ e.preventDefault(); navigate(a.dataset.panel); });
+    });
+    window.addEventListener("hashchange", function(){ navigate(location.hash.slice(1)); });
+  }
+
+  function boot(){
+    updateVendorBanner();
+    wireTopbar();
+    wireNav();
+    STORE.load().then(function(res){
+      updateSessionBadge();
+      var initial = location.hash ? location.hash.slice(1) : "overview";
+      navigate(initial);
+      if (res && res.fellBackToSessionOnly){
+        toast("IndexedDB unavailable - running in session-only mode");
+      }
+    });
+  }
+
+  if (document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
+
+  return {
+    navigate: navigate, renderAll: renderAll, toast: toast,
+    openEmployeeModal: openEmployeeModal, openProjectModal: openProjectModal,
+    _uiState: uiState
+  };
+})();
+</script>
+</body>
+</html>
