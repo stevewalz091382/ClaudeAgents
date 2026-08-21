@@ -2274,7 +2274,11 @@ ROE.store = (function(){
     state.demands = demo.demands;
     state.assignments = demo.assignments;
     state.mentorships = demo.mentorships;
-    state.settings = Object.assign(U.clone(state.settings), demo.settings);
+    // Adopt the demo's horizon/weights/thresholds, but never clobber the user's own
+    // session-only choice or theme - loading demo data is not a settings reset.
+    var sessionOnly = state.settings.sessionOnly;
+    var theme = state.settings.theme;
+    state.settings = Object.assign(U.clone(state.settings), demo.settings, { sessionOnly: sessionOnly, theme: theme });
     markDirty(); notify(); scheduleSave();
   }
 
@@ -2566,19 +2570,6 @@ ROE.ui = (function(){
     root.innerHTML =
       '<div class="card">' +
         '<div class="toolbar">' +
-          labelSelect("Discipline", "f-discipline", ["", ""].concat(0), "") + // placeholder replaced below
-        '</div>' +
-      '</div>';
-
-    // Build the toolbar manually (labelSelect above was a placeholder; construct directly for clarity/control).
-    var toolbarHtml =
-      '<div class="toolbar">' +
-        selectField("f-discipline", "Discipline", ["",""].slice(0,0).concat(["", C.DISCIPLINES.join("||")]), f.discipline) +
-        '</div>';
-    // Simpler: build filter controls explicitly.
-    root.innerHTML =
-      '<div class="card">' +
-        '<div class="toolbar">' +
           fieldSelect("f-discipline","Discipline", [""].concat(C.DISCIPLINES), f.discipline) +
           fieldSelect("f-office","Office", [""].concat(offices), f.office) +
           fieldSelect("f-bg","Business group", [""].concat(C.BUSINESS_GROUPS), f.businessGroup) +
@@ -2639,8 +2630,6 @@ ROE.ui = (function(){
   function fieldNumber(id, label, value, min, max){
     return '<label>'+esc(label)+'<input type="number" id="'+id+'" value="'+esc(value)+'" min="'+min+'" max="'+max+'"></label>';
   }
-  function labelSelect(){ return ""; } // unused placeholder kept for readability of earlier draft; harmless no-op.
-
   function pagination(page, totalPages, total){
     if (totalPages <= 1) return '<div class="pagination hint">'+total+' record(s)</div>';
     var btns = "";

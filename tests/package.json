@@ -1,0 +1,13 @@
+{
+  "name": "roe-tests",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Dev-only Playwright harness for the Resource Optimization Engine (index.html). Not part of the runtime artifact.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.45.0"
+  }
+}

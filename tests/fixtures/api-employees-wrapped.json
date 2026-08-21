@@ -1,0 +1,8 @@
+{
+  "data": {
+    "items": [
+      { "id": "remote_emp_1", "full_name": "Remote One", "contact": { "email": "remote1@example.com" }, "utilization": { "target": 80 } },
+      { "id": "remote_emp_2", "full_name": "Remote Two", "contact": { "email": "remote2@example.com" }, "utilization": { "target": 90 } }
+    ]
+  }
+}

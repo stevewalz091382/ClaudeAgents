@@ -1,0 +1,38 @@
+{
+  "_comment": "A small, hand-built canonical state for unit-ish page.evaluate() tests against ROE.calc / ROE.score / ROE.alerts / ROE.mentor / ROE.io. Not used by the runtime app.",
+  "settings": {
+    "schemaVersion": 1,
+    "horizonStart": "2026-01",
+    "horizonMonths": 3,
+    "weights": { "skill": 0.35, "availability": 0.30, "seniority": 0.15, "discipline": 0.20 },
+    "presets": [],
+    "ctxTaxPerExtraProject": 7,
+    "ctxTaxCapPct": 30,
+    "ctxCap": 4,
+    "alertThresholds": { "overallocPct": 100, "sustainedMonths": 2, "targetSlackPct": 10, "benchGapPct": 25, "benchMonths": 3 },
+    "requireMinSkillLevels": false,
+    "sessionOnly": false,
+    "theme": "dark"
+  },
+  "skills": [
+    { "id": "skl_civil3d", "code": "CIVIL3D", "name": "Civil 3D", "category": "Design", "updatedAt": "2026-01-01T00:00:00.000Z" }
+  ],
+  "employees": [
+    { "id": "fx_emp_1", "name": "Fixture Alpha", "email": "alpha@example.com", "level": "Mid-Level", "discipline": "Civil", "office": "Test City, ST", "businessGroup": "Transportation", "targetUtil": 85, "mentorRole": "None", "active": true, "notes": "", "updatedAt": "2026-01-01T00:00:00.000Z" },
+    { "id": "fx_emp_2", "name": "Fixture Beta", "email": "beta@example.com", "level": "Senior", "discipline": "Civil", "office": "Test City, ST", "businessGroup": "Transportation", "targetUtil": 85, "mentorRole": "None", "active": true, "notes": "", "updatedAt": "2026-01-01T00:00:00.000Z" }
+  ],
+  "employeeSkills": [
+    { "employeeId": "fx_emp_1", "skillId": "skl_civil3d", "level": 3 },
+    { "employeeId": "fx_emp_2", "skillId": "skl_civil3d", "level": 4 }
+  ],
+  "projects": [
+    { "id": "fx_prj_1", "name": "Fixture Project", "client": "Fixture Client", "market": "Transportation", "discipline": "Civil", "phase": "CD", "budget": 1000000, "bimLevel": "BIM Level 1", "teamMin": 1, "teamMax": 5, "priority": 1, "status": "Active", "software": ["skl_civil3d"], "notes": "", "updatedAt": "2026-01-01T00:00:00.000Z" }
+  ],
+  "demands": [
+    { "id": "fx_dem_1", "projectId": "fx_prj_1", "title": "Civil Designer", "discipline": "Civil", "minLevel": "Mid-Level",
+      "requiredSkills": [ { "skillId": "skl_civil3d", "minLevel": 2, "weight": 2 } ],
+      "openings": 1, "allocationByMonth": { "2026-01": 50, "2026-02": 50, "2026-03": 50 }, "updatedAt": "2026-01-01T00:00:00.000Z" }
+  ],
+  "assignments": [],
+  "mentorships": []
+}
