@@ -2201,6 +2201,16 @@ ROE.store = (function(){
   var saveTimer = null;
   var lastPulledSnapshots = {}; // entityName -> {id: record} - for the API diff/push flow
 
+  // True only once in-memory state genuinely reflects IndexedDB (or has been explicitly wiped in
+  // sync with it, e.g. clearAll). False while in-memory state was populated by the session-only
+  // skip-load branch of load() (real IndexedDB data may still exist on disk but was never read into
+  // memory) or before the very first load() completes. Writes must never run while this is false -
+  // that is exactly the condition that let scheduleSave/persist clobber real IndexedDB data with an
+  // empty in-memory array (fix-loop-2 CRITICAL regression). Turning session-only back OFF flips the
+  // persisted preference immediately but does NOT set this true - only a real reload (which re-runs
+  // load() and reads the now-off preference) rehydrates memory from disk and sets it true again.
+  var hydrated = false;
+
   function notify(){ listeners.forEach(function(fn){ fn(state); }); }
   function subscribe(fn){
     listeners.push(fn);
@@ -2226,12 +2236,14 @@ ROE.store = (function(){
 
   function scheduleSave(){
     if (state.settings.sessionOnly) return;
+    if (!hydrated) return; // never schedule a write against not-yet-rehydrated in-memory state
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(function(){ persist(); }, 400);
   }
 
   function persist(){
     if (state.settings.sessionOnly) return Promise.resolve();
+    if (!hydrated) return Promise.resolve(); // guard against clobbering IndexedDB with stale/empty memory
     if (!DB.isAvailable()) return Promise.resolve();
     return Promise.all([
       DB.replaceAll("employees", state.employees),
@@ -2249,6 +2261,7 @@ ROE.store = (function(){
   function load(){
     if (!DB.isAvailable()){
       state.settings.sessionOnly = true;
+      hydrated = false;
       markDirty(); notify();
       return Promise.resolve({ fellBackToSessionOnly: true, empty: true });
     }
@@ -2268,6 +2281,7 @@ ROE.store = (function(){
         state.settings = U.clone(C.DEFAULT_SETTINGS);
         state.settings.sessionOnly = true;
         if (pref.theme) state.settings.theme = pref.theme;
+        hydrated = false; // real IndexedDB data (if any) was deliberately not read into memory
         markDirty(); notify();
         return { empty: true, sessionOnly: true };
       }
@@ -2285,12 +2299,14 @@ ROE.store = (function(){
         state.settings = settingsRec ? Object.assign(U.clone(C.DEFAULT_SETTINGS), settingsRec) : U.clone(C.DEFAULT_SETTINGS);
         state.settings.sessionOnly = false;
         if (pref && pref.theme) state.settings.theme = pref.theme;
+        hydrated = true; // in-memory state now genuinely reflects IndexedDB - safe to write again
         markDirty(); notify();
         return { empty: empty };
       });
     }).catch(function(err){
       console.error("ROE.store load failed, falling back to session-only mode", err);
       state.settings.sessionOnly = true;
+      hydrated = false;
       markDirty(); notify();
       return { fellBackToSessionOnly: true, empty: true };
     });
@@ -2314,19 +2330,18 @@ ROE.store = (function(){
   }
 
   function clearAll(){
+    // Full clean-slate reset per §9 ("leaves every object store empty"): every collection AND every
+    // settings/preference value - including sessionOnly and theme - reverts to defaults. Nothing is
+    // re-written to any store after the wipe, including the out-of-band preference record.
     state.employees = []; state.skills = []; state.employeeSkills = [];
     state.projects = []; state.demands = []; state.assignments = []; state.mentorships = [];
-    var sessionOnly = state.settings.sessionOnly;
     state.settings = U.clone(C.DEFAULT_SETTINGS);
-    state.settings.sessionOnly = sessionOnly;
     lastPulledSnapshots = {};
+    // In-memory state now genuinely matches the (empty) disk state, so it's safe to resume writes.
+    hydrated = true;
     markDirty(); notify();
     if (DB.isAvailable()){
-      return DB.clearAll().then(function(){
-        // Re-establish the out-of-band preference record so the user's sessionOnly choice survives
-        // a "Clear all data" the same way it survives a normal reload.
-        return DB.savePreference({ sessionOnly: sessionOnly, theme: state.settings.theme });
-      });
+      return DB.clearAll();
     }
     return Promise.resolve();
   }
@@ -3289,7 +3304,7 @@ ROE.ui = (function(){
       '<div class="card"><h2>Horizon</h2><div class="row">' +
         '<label>Horizon start<input type="text" id="set-horizonStart" value="'+esc(s.horizonStart)+'" placeholder="YYYY-MM"></label>' +
         '<label>Horizon months<input type="number" id="set-horizonMonths" min="6" max="36" value="'+s.horizonMonths+'"></label>' +
-      '</div><p class="hint" id="horizonStart-error" style="display:none;color:var(--critical);">Horizon start must match YYYY-MM (e.g. 2026-01).</p></div>' +
+      '</div><p class="hint" id="horizonStart-error" style="display:none;color:var(--critical);">Horizon start must match YYYY-MM with a month between 01 and 12 (e.g. 2026-01).</p></div>' +
       '<div class="card"><h2>Context-switch tax</h2><div class="row">' +
         '<label>Per extra project ('+s.ctxTaxPerExtraProject+')<input type="range" id="set-ctxRate" min="5" max="15" value="'+s.ctxTaxPerExtraProject+'"></label>' +
         '<label>Cap %<input type="number" id="set-ctxCapPct" value="'+s.ctxTaxCapPct+'"></label>' +
@@ -3298,7 +3313,7 @@ ROE.ui = (function(){
       '<div class="card"><h2>Session &amp; privacy</h2>' +
         '<label><input type="checkbox" id="set-sessionOnly" '+(s.sessionOnly?'checked':'')+'> Session only - do not persist to IndexedDB</label>' +
         '<p class="hint">'+ (ROE.db.isAvailable() ? "IndexedDB is available." : "IndexedDB is not available in this context; session-only mode is forced.") +
-        ' Turning this ON takes effect immediately for new writes. Turning it OFF resumes loading from IndexedDB on the next reload - reload the page to fully switch modes.</p>' +
+        ' Turning this ON takes effect immediately for new writes and blocks saving right away. Turning it OFF does NOT immediately resume saving or load your existing data back in - nothing is written to IndexedDB until you reload the page. Reload after turning it OFF to load your saved data from IndexedDB and resume normal saving.</p>' +
         '<button type="button" id="btn-clear-all-2" class="danger">Clear all data</button>' +
       '</div>' +
       '<div class="card"><h2>API connector</h2>' +
@@ -3318,7 +3333,9 @@ ROE.ui = (function(){
     $("#set-horizonStart", root).onchange = function(){
       var val = this.value;
       var errEl = $("#horizonStart-error", root);
-      if (!/^\d{4}-\d{2}$/.test(val)){
+      var m = /^(\d{4})-(\d{2})$/.exec(val);
+      var monthNum = m ? parseInt(m[2], 10) : NaN;
+      if (!m || monthNum < 1 || monthNum > 12){
         errEl.style.display = "block";
         this.value = STORE.getState().settings.horizonStart; // revert to the last valid value
         return;
