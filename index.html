@@ -1632,7 +1632,7 @@ ROE.io = (function(){
     customDefs.forEach(function(def, i){
       var ci = leftoverForCustom[i];
       if (ci === undefined) return;
-      if (String(headers[ci]) === String(def.label)) claimed[ci] = true;
+      if (U.normalizeHeader(headers[ci]) === U.normalizeHeader(def.label)) claimed[ci] = true;
     });
 
     var fuzzyCandidates = headers.filter(function(h, i){ return !claimed[i]; });
@@ -1740,7 +1740,7 @@ ROE.io = (function(){
         var ci = leftover[i];
         if (ci === undefined) return; // no column present in this file for this def at all
         var headerText = headers[ci];
-        if (String(headerText === undefined || headerText === null ? "" : headerText) !== String(def.label)){
+        if (U.normalizeHeader(headerText) !== U.normalizeHeader(def.label)){
           // Structural edit shifted columns out of alignment (inserted/removed column, reordered
           // CustomFieldDefs rows, etc.) - do not guess-assign. Report and leave the key untouched.
           result.errors.push({ sheet: sheetName, row: rowNum, field: def.label, message: "Expected custom column '" + def.label + "' but found '" + (headerText === undefined || headerText === null ? "" : headerText) + "' at that position - value not imported (column order may have changed; re-export or fix the sheet layout)" });
