@@ -33,7 +33,7 @@ Keep `.claude/` out of `.gitignore`. The web session needs these files committed
 A strictly browser-based reporting tool (no server, no backend) that turns a
 list of initiatives into an executive-style status report, and exports it to
 PDF. Files: `index.html`, `styles.css`, `app.js`, `sample-data.js`, and the
-vendored `vendor/xlsx.full.min.js` (SheetJS, MIT licensed — see
+vendored `vendor/xlsx.core.min.js` (SheetJS, MIT licensed — see
 `vendor/LICENSE-xlsx.txt`).
 
 ### Use it
