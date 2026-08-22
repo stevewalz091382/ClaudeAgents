@@ -705,6 +705,17 @@
     showImportStatus(`Imported ${rows.length} initiative${rows.length === 1 ? '' : 's'} from ${sourceLabel}.`, false);
   }
 
+  function checkXlsxAvailable() {
+    if (typeof XLSX !== 'undefined') return true;
+    ['btnExportXlsx', 'btnTemplateXlsx'].forEach(id => {
+      const btn = document.getElementById(id);
+      btn.disabled = true;
+      btn.title = 'The XLSX library failed to load (no internet connection?). CSV import/export still works.';
+    });
+    showImportStatus('The XLSX library could not be loaded (no internet connection?). CSV import/export still works; XLSX buttons are disabled for this session.', true);
+    return false;
+  }
+
   function init() {
     load();
     renderEditor();
@@ -713,6 +724,7 @@
     renderSettingsForm();
     wireSettingsForm();
     renderReport();
+    checkXlsxAvailable();
 
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => switchTab(btn.dataset.view));
@@ -807,6 +819,11 @@
       const file = e.target.files && e.target.files[0];
       if (!file) return;
       const isXlsx = /\.xlsx?$/i.test(file.name);
+      if (isXlsx && typeof XLSX === 'undefined') {
+        showImportStatus('The XLSX library is unavailable (no internet connection?). Save the file as CSV and import that instead.', true);
+        e.target.value = '';
+        return;
+      }
       const reader = new FileReader();
       reader.onerror = () => showImportStatus(`Could not read ${file.name}.`, true);
       reader.onload = () => {

@@ -30,18 +30,25 @@ Keep `.claude/` out of `.gitignore`. The web session needs these files committed
 
 ## Program Status Report Builder
 
-A strictly browser-based reporting tool (no server, no backend) that turns a
-list of initiatives into an executive-style status report, and exports it to
-PDF. Files: `index.html`, `styles.css`, `app.js`, `sample-data.js`, and the
-vendored `vendor/xlsx.core.min.js` (SheetJS, MIT licensed — see
-`vendor/LICENSE-xlsx.txt`).
+A strictly browser-based reporting tool (no server, no backend, no
+database) that turns a list of initiatives into an executive-style status
+report, and exports it to PDF. Files: `index.html`, `styles.css`, `app.js`,
+`sample-data.js`.
 
 ### Use it
 
 Open `index.html` directly in a browser (double-click, or serve the folder
-with any static file server — e.g. `python3 -m http.server`). Everything
+with any static file server — e.g. `python3 -m http.server`). All app logic
 runs client-side; data is kept only in the browser's local storage and in
-files you explicitly export.
+files you explicitly export — nothing is uploaded anywhere.
+
+The XLSX import/export/template features load the
+[SheetJS](https://sheetjs.com) library from a CDN (`cdn.jsdelivr.net`, with
+a Subresource Integrity hash pinned in `index.html`), so those specific
+buttons need one outbound request on first load. Everything else — the
+editor, the report, PDF export, and CSV import/export — works fully offline
+even without that request succeeding; the app detects a failed load and
+disables just the XLSX buttons with an explanatory message.
 
 - **Data Editor** — an editable table of initiatives: Strategic Pillar,
   Project Name, Accomplishments/Updates, Approximate Completion Percentage,
