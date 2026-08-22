@@ -123,7 +123,14 @@ window.ROE = window.ROE || {};
 /* ===================== BLOCK 1: ROE.const ===================== */
 /* Pure. No DOM. No I/O. Enums, adjacency table, defaults, schema version. */
 ROE.const = (function(){
-  var SCHEMA_VERSION = 1;
+  // Bumped 1 -> 2 by BUILD_PLAN_ADDENDUM_1.md (customFieldDefs store). Migrated through the
+  // migration ladder in ROE.db (see §2.6 / addendum §"Migration"); existing v1 installs are
+  // untouched except gaining the new empty store.
+  var SCHEMA_VERSION = 2;
+
+  // BUILD_PLAN_ADDENDUM_1.md CF-1: the 6 entity types custom fields can be defined on.
+  var CUSTOM_FIELD_ENTITY_TYPES = ["Employee","Project","Demand","Assignment","Mentorship","Skill"];
+  var CUSTOM_FIELD_TYPES = ["text","number"];
 
   var DISCIPLINES = ["Civil","Architecture","MEP","Structural","Environmental","VDC","Data/Analytics","Landscape","Geotechnical"];
 
@@ -217,6 +224,8 @@ ROE.const = (function(){
 
   return {
     SCHEMA_VERSION: SCHEMA_VERSION,
+    CUSTOM_FIELD_ENTITY_TYPES: CUSTOM_FIELD_ENTITY_TYPES,
+    CUSTOM_FIELD_TYPES: CUSTOM_FIELD_TYPES,
     DISCIPLINES: DISCIPLINES,
     ADJACENCY: ADJACENCY,
     EMP_LEVELS: EMP_LEVELS,
@@ -401,10 +410,96 @@ ROE.model = (function(){
     }
   }
 
+  // ---- Custom fields (BUILD_PLAN_ADDENDUM_1.md CF-1..CF-4) ----
+  // record.custom is always optional/absent-is-valid (CF-4). Only fields with a matching def of
+  // type "number" are validated (must parse as a number if present); unknown keys - e.g. left over
+  // from a field def that was since removed elsewhere - are always permitted, never invalidate a
+  // record. This function is called from every validate<Entity> below.
+  function validateCustomFields(errors, rec, fieldDefs, entityType){
+    if (rec.custom === undefined || rec.custom === null) return;
+    if (typeof rec.custom !== "object" || Array.isArray(rec.custom)){
+      errors.push({ field:"custom", message:"Custom fields must be an object" });
+      return;
+    }
+    var numberDefs = (fieldDefs || []).filter(function(d){ return d.entityType === entityType && d.type === "number"; });
+    numberDefs.forEach(function(def){
+      var v = rec.custom[def.key];
+      if (v === undefined || v === null || v === "") return; // absent is valid, never required
+      var n = typeof v === "number" ? v : parseFloat(v);
+      if (isNaN(n)) errors.push({ field: "custom."+def.key, message: "'" + (def.label||def.key) + "' must be a number" });
+    });
+  }
+
+  // Attaches `custom` to a record factory's output ONLY if it has at least one key - unset custom
+  // fields must never be stored as a stray `custom: {}` (CF-3 acceptance criterion).
+  function withCustom(rec, custom){
+    if (custom && typeof custom === "object" && Object.keys(custom).length > 0) rec.custom = custom;
+    return rec;
+  }
+
+  var CUSTOM_FIELD_ENTITY_TYPES = C.CUSTOM_FIELD_ENTITY_TYPES;
+  var CUSTOM_FIELD_TYPES = C.CUSTOM_FIELD_TYPES;
+
+  // Generates a stable, URL-safe key from a label (lowercase, non-alphanumerics -> "_", trimmed).
+  // Per CF-1, the key is fixed at creation time; renaming the label later never changes it.
+  function keyFromLabel(label){
+    var k = String(label||"").trim().toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");
+    return k || "field";
+  }
+
+  function newCustomFieldDef(p){
+    p = p || {};
+    return {
+      id: p.id || U.genId("cfd"),
+      entityType: p.entityType || CUSTOM_FIELD_ENTITY_TYPES[0],
+      key: p.key || keyFromLabel(p.label),
+      label: p.label || "",
+      type: p.type || "text",
+      createdAt: p.createdAt || U.nowIso()
+    };
+  }
+
+  function validateCustomFieldDef(rec, existingDefs){
+    var errors = [];
+    req(errors, rec, "id", "Field ID");
+    req(errors, rec, "key", "Key");
+    req(errors, rec, "label", "Label");
+    oneOf(errors, rec, "entityType", CUSTOM_FIELD_ENTITY_TYPES, "Entity type");
+    oneOf(errors, rec, "type", CUSTOM_FIELD_TYPES, "Type");
+    if (existingDefs){
+      var dup = existingDefs.some(function(d){ return d.entityType === rec.entityType && d.key === rec.key && d.id !== rec.id; });
+      if (dup) errors.push({ field:"key", message:"A field with this key already exists for " + rec.entityType });
+    }
+    return ok(errors);
+  }
+
+  function listFieldDefs(defs, entityType){
+    return (defs || []).filter(function(d){ return d.entityType === entityType; });
+  }
+
+  // Adds a new field def for `entityType`, auto-suffixing the generated key (_2, _3, ...) if the
+  // label collides with an existing def's key for the same entity type. Pure: returns a new array.
+  function addFieldDef(defs, entityType, label, type){
+    defs = defs || [];
+    var baseKey = keyFromLabel(label);
+    var key = baseKey, n = 1;
+    while (defs.some(function(d){ return d.entityType === entityType && d.key === key; })){
+      n += 1; key = baseKey + "_" + n;
+    }
+    var def = newCustomFieldDef({ entityType: entityType, key: key, label: label, type: type });
+    return defs.concat([def]);
+  }
+
+  // Removes a field def by id. Per CF-2, this NEVER touches any record's stored `custom[key]`
+  // values - it only stops the key from being shown/editable going forward.
+  function removeFieldDef(defs, id){
+    return (defs || []).filter(function(d){ return d.id !== id; });
+  }
+
   // ---- Employee ----
   function newEmployee(p){
     p = p || {};
-    return {
+    return withCustom({
       id: p.id || U.genId("emp"),
       name: p.name || "",
       email: p.email || "",
@@ -417,10 +512,10 @@ ROE.model = (function(){
       active: p.active !== undefined ? p.active : true,
       notes: p.notes || "",
       updatedAt: p.updatedAt || U.nowIso()
-    };
+    }, p.custom);
   }
 
-  function validateEmployee(rec){
+  function validateEmployee(rec, fieldDefs){
     var errors = [];
     req(errors, rec, "id", "Employee ID");
     req(errors, rec, "name", "Name");
@@ -431,26 +526,28 @@ ROE.model = (function(){
     if (rec.targetUtil !== undefined && (rec.targetUtil < 0 || rec.targetUtil > 100)){
       errors.push({ field:"targetUtil", message:"Target utilization must be 0-100" });
     }
+    validateCustomFields(errors, rec, fieldDefs, "Employee");
     return ok(errors);
   }
 
   // ---- Skill ----
   function newSkill(p){
     p = p || {};
-    return {
+    return withCustom({
       id: p.id || U.genId("skl"),
       code: p.code || "",
       name: p.name || "",
       category: p.category || "",
       updatedAt: p.updatedAt || U.nowIso()
-    };
+    }, p.custom);
   }
 
-  function validateSkill(rec){
+  function validateSkill(rec, fieldDefs){
     var errors = [];
     req(errors, rec, "id", "Skill ID");
     req(errors, rec, "code", "Code");
     req(errors, rec, "name", "Name");
+    validateCustomFields(errors, rec, fieldDefs, "Skill");
     return ok(errors);
   }
 
@@ -490,7 +587,7 @@ ROE.model = (function(){
   // ---- Project ----
   function newProject(p){
     p = p || {};
-    return {
+    return withCustom({
       id: p.id || U.genId("prj"),
       name: p.name || "",
       client: p.client || "",
@@ -506,10 +603,10 @@ ROE.model = (function(){
       software: p.software || [],
       notes: p.notes || "",
       updatedAt: p.updatedAt || U.nowIso()
-    };
+    }, p.custom);
   }
 
-  function validateProject(rec){
+  function validateProject(rec, fieldDefs){
     var errors = [];
     req(errors, rec, "id", "Project ID");
     req(errors, rec, "name", "Name");
@@ -524,13 +621,14 @@ ROE.model = (function(){
     if (rec.teamMin !== undefined && rec.teamMax !== undefined && rec.teamMin > rec.teamMax){
       errors.push({ field:"teamMin", message:"teamMin cannot exceed teamMax" });
     }
+    validateCustomFields(errors, rec, fieldDefs, "Project");
     return ok(errors);
   }
 
   // ---- Demand ----
   function newDemand(p){
     p = p || {};
-    return {
+    return withCustom({
       id: p.id || U.genId("dem"),
       projectId: p.projectId || "",
       title: p.title || "",
@@ -540,10 +638,10 @@ ROE.model = (function(){
       openings: p.openings !== undefined ? p.openings : 1,
       allocationByMonth: p.allocationByMonth || {},
       updatedAt: p.updatedAt || U.nowIso()
-    };
+    }, p.custom);
   }
 
-  function validateDemand(rec){
+  function validateDemand(rec, fieldDefs){
     var errors = [];
     req(errors, rec, "id", "Demand ID");
     req(errors, rec, "projectId", "Project ID");
@@ -563,13 +661,14 @@ ROE.model = (function(){
       var v = rec.allocationByMonth[m];
       if (v < 0 || v > 100) errors.push({ field:"allocationByMonth["+m+"]", message:"Pct must be 0-100" });
     }
+    validateCustomFields(errors, rec, fieldDefs, "Demand");
     return ok(errors);
   }
 
   // ---- Assignment ----
   function newAssignment(p){
     p = p || {};
-    return {
+    return withCustom({
       id: p.id || U.genId("asg"),
       projectId: p.projectId || "",
       employeeId: p.employeeId || "",
@@ -579,10 +678,10 @@ ROE.model = (function(){
       source: p.source || "manual",
       scoreSnapshot: p.scoreSnapshot !== undefined ? p.scoreSnapshot : null,
       updatedAt: p.updatedAt || U.nowIso()
-    };
+    }, p.custom);
   }
 
-  function validateAssignment(rec){
+  function validateAssignment(rec, fieldDefs){
     var errors = [];
     req(errors, rec, "id", "Assignment ID");
     req(errors, rec, "projectId", "Project ID");
@@ -593,13 +692,14 @@ ROE.model = (function(){
       var v = rec.allocationByMonth[m];
       if (v < 0 || v > 100) errors.push({ field:"allocationByMonth["+m+"]", message:"Pct must be 0-100" });
     }
+    validateCustomFields(errors, rec, fieldDefs, "Assignment");
     return ok(errors);
   }
 
   // ---- Mentorship ----
   function newMentorship(p){
     p = p || {};
-    return {
+    return withCustom({
       id: p.id || U.genId("men"),
       mentorId: p.mentorId || "",
       menteeId: p.menteeId || "",
@@ -610,10 +710,10 @@ ROE.model = (function(){
       compat: p.compat || "Low",
       status: p.status || "Active",
       updatedAt: p.updatedAt || U.nowIso()
-    };
+    }, p.custom);
   }
 
-  function validateMentorship(rec){
+  function validateMentorship(rec, fieldDefs){
     var errors = [];
     req(errors, rec, "id", "Mentorship ID");
     req(errors, rec, "mentorId", "Mentor ID");
@@ -621,6 +721,7 @@ ROE.model = (function(){
     oneOf(errors, rec, "frequency", C.MENTORSHIP_FREQ, "Frequency");
     oneOf(errors, rec, "compat", C.MENTORSHIP_COMPAT, "Compat");
     oneOf(errors, rec, "status", C.MENTORSHIP_STATUS, "Status");
+    validateCustomFields(errors, rec, fieldDefs, "Mentorship");
     return ok(errors);
   }
 
@@ -644,7 +745,12 @@ ROE.model = (function(){
     newDemand: newDemand, validateDemand: validateDemand,
     newAssignment: newAssignment, validateAssignment: validateAssignment,
     newMentorship: newMentorship, validateMentorship: validateMentorship,
-    newSettings: newSettings
+    newSettings: newSettings,
+    // ---- Custom fields (BUILD_PLAN_ADDENDUM_1.md) ----
+    newCustomFieldDef: newCustomFieldDef, validateCustomFieldDef: validateCustomFieldDef,
+    keyFromLabel: keyFromLabel, listFieldDefs: listFieldDefs,
+    addFieldDef: addFieldDef, removeFieldDef: removeFieldDef,
+    validateCustomFields: validateCustomFields
   };
 })();
 
@@ -1330,6 +1436,7 @@ ROE.io = (function(){
 
   var COLUMNS = {
     Meta: ["Key","Value"],
+    CustomFieldDefs: ["EntityType","Key","Label","Type"],
     Employees: ["EmployeeID","Name","Email","Level","Discipline","Office","BusinessGroup","TargetUtil","MentorRole","Active","Notes"],
     Skills: ["SkillID","Code","Name","Category"],
     EmployeeSkills: ["EmployeeID","SkillID","Level","LevelLabel"],
@@ -1339,7 +1446,51 @@ ROE.io = (function(){
     Mentorships: ["MentorshipID","MentorID","MenteeID","FocusSkillID","SharedProjectID","Frequency","Score","Compat","Status"]
   };
 
+  // Maps each entity sheet to its BUILD_PLAN_ADDENDUM_1.md custom-field entityType (§CF-1).
+  // EmployeeSkills/Meta/CustomFieldDefs are not entity types and never get custom columns.
+  var ENTITY_TYPE_BY_SHEET = {
+    Employees:"Employee", Skills:"Skill", Projects:"Project",
+    ProjectDemands:"Demand", Assignments:"Assignment", Mentorships:"Mentorship"
+  };
+
   function monthCols(settings){ return U.monthKeys(settings.horizonStart, settings.horizonMonths); }
+
+  // ---- Custom field helpers (IO-1) ----
+  function customDefsFor(customFieldDefs, entityType){
+    return (customFieldDefs || []).filter(function(d){ return d.entityType === entityType; });
+  }
+  function customCellsFor(rec, defs){
+    return defs.map(function(d){
+      var v = rec.custom ? rec.custom[d.key] : undefined;
+      return (v === undefined || v === null) ? "" : v;
+    });
+  }
+  // Parses the CustomFieldDefs sheet (EntityType | Key | Label | Type) into plain def-shaped rows.
+  function parseCustomFieldDefsSheet(aoa){
+    var result = { records: [], errors: [] };
+    if (!aoa || aoa.length === 0) return result;
+    var headers = aoa[0];
+    var iEntity = headers.indexOf("EntityType"), iKey = headers.indexOf("Key"), iLabel = headers.indexOf("Label"), iType = headers.indexOf("Type");
+    for (var r = 1; r < aoa.length; r++){
+      var row = aoa[r];
+      if (!row || row.every(function(c){ return c === undefined || c === "" || c === null; })) continue;
+      var entityType = iEntity !== -1 ? row[iEntity] : undefined;
+      var key = iKey !== -1 ? row[iKey] : undefined;
+      var label = iLabel !== -1 ? row[iLabel] : undefined;
+      var type = iType !== -1 ? row[iType] : undefined;
+      if (!entityType || !key){
+        result.errors.push({ sheet:"CustomFieldDefs", row:r+1, field:"Key", message:"EntityType and Key are required" });
+        continue;
+      }
+      if (C.CUSTOM_FIELD_ENTITY_TYPES.indexOf(entityType) === -1){
+        result.errors.push({ sheet:"CustomFieldDefs", row:r+1, field:"EntityType", message:"Unknown entity type '"+entityType+"'" });
+        continue;
+      }
+      if (C.CUSTOM_FIELD_TYPES.indexOf(type) === -1) type = "text";
+      result.records.push({ entityType: entityType, key: String(key), label: label || key, type: type });
+    }
+    return result;
+  }
 
   function encodeRequiredSkills(arr){
     return (arr || []).map(function(rs){ return rs.skillId + ":" + rs.minLevel + ":" + rs.weight; }).join(";");
@@ -1357,6 +1508,9 @@ ROE.io = (function(){
     var settings = state.settings;
     var months = monthCols(settings);
     var sheets = {};
+    var cfd = state.customFieldDefs || [];
+    var empDefs = customDefsFor(cfd,"Employee"), sklDefs = customDefsFor(cfd,"Skill"), prjDefs = customDefsFor(cfd,"Project"),
+        demDefs = customDefsFor(cfd,"Demand"), asgDefs = customDefsFor(cfd,"Assignment"), menDefs = customDefsFor(cfd,"Mentorship");
 
     sheets.Meta = [
       ["Key","Value"],
@@ -1366,43 +1520,54 @@ ROE.io = (function(){
       ["HorizonMonths", settings.horizonMonths]
     ];
 
-    sheets.Employees = [COLUMNS.Employees].concat((state.employees||[]).map(function(e){
-      return [e.id, e.name, e.email, e.level, e.discipline, e.office, e.businessGroup, e.targetUtil, e.mentorRole, e.active, e.notes];
+    // IO-1: one row per active custom field def, EntityType | Key | Label | Type.
+    sheets.CustomFieldDefs = [COLUMNS.CustomFieldDefs].concat(cfd.map(function(d){
+      return [d.entityType, d.key, d.label, d.type];
     }));
 
-    sheets.Skills = [COLUMNS.Skills].concat((state.skills||[]).map(function(s){
-      return [s.id, s.code, s.name, s.category];
+    sheets.Employees = [COLUMNS.Employees.concat(empDefs.map(function(d){return d.label;}))].concat((state.employees||[]).map(function(e){
+      return [e.id, e.name, e.email, e.level, e.discipline, e.office, e.businessGroup, e.targetUtil, e.mentorRole, e.active, e.notes].concat(customCellsFor(e, empDefs));
+    }));
+
+    sheets.Skills = [COLUMNS.Skills.concat(sklDefs.map(function(d){return d.label;}))].concat((state.skills||[]).map(function(s){
+      return [s.id, s.code, s.name, s.category].concat(customCellsFor(s, sklDefs));
     }));
 
     sheets.EmployeeSkills = [COLUMNS.EmployeeSkills].concat((state.employeeSkills||[]).map(function(es){
       return [es.employeeId, es.skillId, es.level, C.LEVEL_LABELS[es.level] || ""];
     }));
 
-    sheets.Projects = [COLUMNS.Projects].concat((state.projects||[]).map(function(p){
-      return [p.id, p.name, p.client, p.market, p.discipline, p.phase, p.budget, p.bimLevel, p.teamMin, p.teamMax, p.priority, p.status, (p.software||[]).join(";"), p.notes];
+    sheets.Projects = [COLUMNS.Projects.concat(prjDefs.map(function(d){return d.label;}))].concat((state.projects||[]).map(function(p){
+      return [p.id, p.name, p.client, p.market, p.discipline, p.phase, p.budget, p.bimLevel, p.teamMin, p.teamMax, p.priority, p.status, (p.software||[]).join(";"), p.notes].concat(customCellsFor(p, prjDefs));
     }));
 
-    sheets.ProjectDemands = [COLUMNS.ProjectDemands.concat(months)].concat((state.demands||[]).map(function(d){
+    sheets.ProjectDemands = [COLUMNS.ProjectDemands.concat(months).concat(demDefs.map(function(d){return d.label;}))].concat((state.demands||[]).map(function(d){
       var base = [d.id, d.projectId, d.title, d.discipline, d.minLevel, d.openings, encodeRequiredSkills(d.requiredSkills)];
       var monthVals = months.map(function(m){ return d.allocationByMonth && d.allocationByMonth[m] !== undefined ? d.allocationByMonth[m] : ""; });
-      return base.concat(monthVals);
+      return base.concat(monthVals).concat(customCellsFor(d, demDefs));
     }));
 
-    sheets.Assignments = [COLUMNS.Assignments.concat(months)].concat((state.assignments||[]).map(function(a){
+    sheets.Assignments = [COLUMNS.Assignments.concat(months).concat(asgDefs.map(function(d){return d.label;}))].concat((state.assignments||[]).map(function(a){
       var base = [a.id, a.projectId, a.employeeId, a.demandId || "", a.status, a.source, a.scoreSnapshot === null || a.scoreSnapshot === undefined ? "" : a.scoreSnapshot];
       var monthVals = months.map(function(m){ return a.allocationByMonth && a.allocationByMonth[m] !== undefined ? a.allocationByMonth[m] : ""; });
-      return base.concat(monthVals);
+      return base.concat(monthVals).concat(customCellsFor(a, asgDefs));
     }));
 
-    sheets.Mentorships = [COLUMNS.Mentorships].concat((state.mentorships||[]).map(function(m){
-      return [m.id, m.mentorId, m.menteeId, m.focusSkillId, m.sharedProjectId || "", m.frequency, m.score, m.compat, m.status];
+    sheets.Mentorships = [COLUMNS.Mentorships.concat(menDefs.map(function(d){return d.label;}))].concat((state.mentorships||[]).map(function(m){
+      return [m.id, m.mentorId, m.menteeId, m.focusSkillId, m.sharedProjectId || "", m.frequency, m.score, m.compat, m.status].concat(customCellsFor(m, menDefs));
     }));
 
     return sheets;
   }
 
-  function buildTemplateSheets(settings){
+  // `fieldDefs` (state.customFieldDefs) is optional for backward compatibility with any caller
+  // that still passes just `settings`; template then simply has no custom columns/sheet.
+  function buildTemplateSheets(settings, fieldDefs){
     var months = monthCols(settings);
+    var cfd = fieldDefs || [];
+    var empDefs = customDefsFor(cfd,"Employee"), sklDefs = customDefsFor(cfd,"Skill"), prjDefs = customDefsFor(cfd,"Project"),
+        demDefs = customDefsFor(cfd,"Demand"), asgDefs = customDefsFor(cfd,"Assignment"), menDefs = customDefsFor(cfd,"Mentorship");
+    function blanks(defs){ return defs.map(function(){ return ""; }); }
     var sheets = {};
     sheets.Meta = [
       ["Key","Value"],
@@ -1411,15 +1576,21 @@ ROE.io = (function(){
       ["HorizonStart", settings.horizonStart],
       ["HorizonMonths", settings.horizonMonths]
     ];
-    sheets.Skills = [COLUMNS.Skills].concat(C.SEED_SKILLS.map(function(s){
-      return ["skl_" + s.code.toLowerCase(), s.code, s.name, s.category];
+    sheets.CustomFieldDefs = [COLUMNS.CustomFieldDefs].concat(cfd.map(function(d){ return [d.entityType, d.key, d.label, d.type]; }));
+    sheets.Skills = [COLUMNS.Skills.concat(sklDefs.map(function(d){return d.label;}))].concat(C.SEED_SKILLS.map(function(s){
+      return ["skl_" + s.code.toLowerCase(), s.code, s.name, s.category].concat(blanks(sklDefs));
     }));
-    sheets.Employees = [COLUMNS.Employees, ["EXAMPLE-EMP-1","Jordan Example","jordan.example@example.com","Mid-Level","Civil","Example City, ST","Transportation",85,"None",true,"Example row - ignored on import"]];
+    sheets.Employees = [COLUMNS.Employees.concat(empDefs.map(function(d){return d.label;})),
+      ["EXAMPLE-EMP-1","Jordan Example","jordan.example@example.com","Mid-Level","Civil","Example City, ST","Transportation",85,"None",true,"Example row - ignored on import"].concat(blanks(empDefs))];
     sheets.EmployeeSkills = [COLUMNS.EmployeeSkills, ["EXAMPLE-EMP-1","skl_civil3d",3,"Proficient"]];
-    sheets.Projects = [COLUMNS.Projects, ["EXAMPLE-PRJ-1","Example Interchange Project","Example Client","Transportation","Civil","Planning",1000000,"BIM Level 2",4,10,3,"Active","skl_civil3d;skl_autocad","Example row - ignored on import"]];
-    sheets.ProjectDemands = [COLUMNS.ProjectDemands.concat(months), ["EXAMPLE-DEM-1","EXAMPLE-PRJ-1","Example Civil Designer","Civil","Mid-Level",1,"skl_civil3d:3:2;skl_autocad:2:1"].concat(months.map(function(m,i){ return i < 2 ? 50 : ""; }))];
-    sheets.Assignments = [COLUMNS.Assignments.concat(months), ["EXAMPLE-ASG-1","EXAMPLE-PRJ-1","EXAMPLE-EMP-1","EXAMPLE-DEM-1","Proposed","manual",""].concat(months.map(function(m,i){ return i < 2 ? 50 : ""; }))];
-    sheets.Mentorships = [COLUMNS.Mentorships, ["EXAMPLE-MEN-1","EXAMPLE-EMP-1","EXAMPLE-EMP-1","skl_civil3d","","Monthly",0,"Low","Pending"]];
+    sheets.Projects = [COLUMNS.Projects.concat(prjDefs.map(function(d){return d.label;})),
+      ["EXAMPLE-PRJ-1","Example Interchange Project","Example Client","Transportation","Civil","Planning",1000000,"BIM Level 2",4,10,3,"Active","skl_civil3d;skl_autocad","Example row - ignored on import"].concat(blanks(prjDefs))];
+    sheets.ProjectDemands = [COLUMNS.ProjectDemands.concat(months).concat(demDefs.map(function(d){return d.label;})),
+      ["EXAMPLE-DEM-1","EXAMPLE-PRJ-1","Example Civil Designer","Civil","Mid-Level",1,"skl_civil3d:3:2;skl_autocad:2:1"].concat(months.map(function(m,i){ return i < 2 ? 50 : ""; })).concat(blanks(demDefs))];
+    sheets.Assignments = [COLUMNS.Assignments.concat(months).concat(asgDefs.map(function(d){return d.label;})),
+      ["EXAMPLE-ASG-1","EXAMPLE-PRJ-1","EXAMPLE-EMP-1","EXAMPLE-DEM-1","Proposed","manual",""].concat(months.map(function(m,i){ return i < 2 ? 50 : ""; })).concat(blanks(asgDefs))];
+    sheets.Mentorships = [COLUMNS.Mentorships.concat(menDefs.map(function(d){return d.label;})),
+      ["EXAMPLE-MEN-1","EXAMPLE-EMP-1","EXAMPLE-EMP-1","skl_civil3d","","Monthly",0,"Low","Pending"].concat(blanks(menDefs))];
     return sheets;
   }
 
@@ -1446,6 +1617,10 @@ ROE.io = (function(){
   // Parses one sheet's AoA into canonical records.
   // opts: { mapping: {field:header}, monthKeys: [...horizon month keys...] }
   // Returns { records:[], errors:[{sheet,row,field,message}], skipped:count, monthWarnings:[headerName,...] }
+  // opts.customDefs (IO-1): defs (as recreated from the file's CustomFieldDefs sheet) for THIS
+  // sheet's entity type only. Empty/absent means "no CustomFieldDefs sheet in this file" (or an
+  // entity type with no custom columns) - old exports with no such sheet still import cleanly,
+  // custom values are simply never read.
   function parseSheet(sheetName, aoa, opts){
     opts = opts || {};
     var result = { records: [], errors: [], skipped: 0, monthWarnings: [] };
@@ -1453,6 +1628,7 @@ ROE.io = (function(){
     var headers = aoa[0];
     var mapping = opts.mapping || detectMapping(sheetName, headers);
     var horizonMonths = opts.monthKeys || [];
+    var customDefs = opts.customDefs || [];
     var isWideMonths = sheetName === "ProjectDemands" || sheetName === "Assignments";
     var monthHeaderCols = [];
     if (isWideMonths){
@@ -1471,6 +1647,31 @@ ROE.io = (function(){
       return idx === -1 ? undefined : row[idx];
     }
 
+    // Reads this row's custom-field columns (matched by header === def.label) into a plain
+    // object keyed by def.key. A non-numeric value under a "number" def is reported as a row
+    // error (same sheet/row/field shape as every other validation error) rather than silently
+    // dropped or silently stored.
+    function readCustom(row, rowNum){
+      var custom = {};
+      customDefs.forEach(function(def){
+        var ci = headers.indexOf(def.label);
+        if (ci === -1) return;
+        var raw = row[ci];
+        if (raw === undefined || raw === "" || raw === null) return;
+        if (def.type === "number"){
+          var n = typeof raw === "number" ? raw : parseFloat(raw);
+          if (isNaN(n)){
+            result.errors.push({ sheet: sheetName, row: rowNum, field: def.label, message: "'" + def.label + "' must be a number" });
+            return;
+          }
+          custom[def.key] = n;
+        } else {
+          custom[def.key] = String(raw);
+        }
+      });
+      return custom;
+    }
+
     for (var r = 1; r < aoa.length; r++){
       var row = aoa[r];
       if (!row || row.every(function(c){ return c === undefined || c === "" || c === null; })) continue;
@@ -1478,6 +1679,7 @@ ROE.io = (function(){
       var idField = COLUMNS[sheetName][0];
       var idVal = get(row, idField);
       if (idVal && String(idVal).indexOf("EXAMPLE-") === 0){ result.skipped += 1; continue; }
+      var customVals = readCustom(row, rowNum);
 
       var rec, valid;
       if (sheetName === "Employees"){
@@ -1486,12 +1688,12 @@ ROE.io = (function(){
           discipline: get(row,"Discipline"), office: get(row,"Office"), businessGroup: get(row,"BusinessGroup"),
           targetUtil: U.parseNum(get(row,"TargetUtil"), 85), mentorRole: get(row,"MentorRole") || "None",
           active: get(row,"Active") === undefined ? true : (get(row,"Active") === true || get(row,"Active") === "true" || get(row,"Active") === 1 || get(row,"Active") === "TRUE"),
-          notes: get(row,"Notes")
+          notes: get(row,"Notes"), custom: customVals
         });
-        valid = M.validateEmployee(rec);
+        valid = M.validateEmployee(rec, customDefs);
       } else if (sheetName === "Skills"){
-        rec = M.newSkill({ id: idVal || undefined, code: get(row,"Code"), name: get(row,"Name"), category: get(row,"Category") });
-        valid = M.validateSkill(rec);
+        rec = M.newSkill({ id: idVal || undefined, code: get(row,"Code"), name: get(row,"Name"), category: get(row,"Category"), custom: customVals });
+        valid = M.validateSkill(rec, customDefs);
       } else if (sheetName === "EmployeeSkills"){
         rec = M.newEmployeeSkill({ employeeId: get(row,"EmployeeID"), skillId: get(row,"SkillID"), level: M.normalizeSkillLevel(get(row,"Level")) });
         valid = M.validateEmployeeSkill(rec);
@@ -1502,9 +1704,9 @@ ROE.io = (function(){
           discipline: get(row,"Discipline"), phase: get(row,"Phase"), budget: U.parseNum(get(row,"Budget"),0),
           bimLevel: get(row,"BIMLevel"), teamMin: U.parseNum(get(row,"TeamMin"),1), teamMax: U.parseNum(get(row,"TeamMax"),10),
           priority: U.parseNum(get(row,"Priority"),3), status: get(row,"Status"),
-          software: swRaw ? String(swRaw).split(";").filter(Boolean) : [], notes: get(row,"Notes")
+          software: swRaw ? String(swRaw).split(";").filter(Boolean) : [], notes: get(row,"Notes"), custom: customVals
         });
-        valid = M.validateProject(rec);
+        valid = M.validateProject(rec, customDefs);
       } else if (sheetName === "ProjectDemands"){
         var alloc = {};
         monthHeaderCols.forEach(function(mc){
@@ -1514,9 +1716,9 @@ ROE.io = (function(){
         rec = M.newDemand({
           id: idVal || undefined, projectId: get(row,"ProjectID"), title: get(row,"Title"), discipline: get(row,"Discipline"),
           minLevel: get(row,"MinLevel"), openings: U.parseNum(get(row,"Openings"),1),
-          requiredSkills: decodeRequiredSkills(get(row,"RequiredSkills")), allocationByMonth: alloc
+          requiredSkills: decodeRequiredSkills(get(row,"RequiredSkills")), allocationByMonth: alloc, custom: customVals
         });
-        valid = M.validateDemand(rec);
+        valid = M.validateDemand(rec, customDefs);
       } else if (sheetName === "Assignments"){
         var alloc2 = {};
         monthHeaderCols.forEach(function(mc){
@@ -1527,16 +1729,16 @@ ROE.io = (function(){
           id: idVal || undefined, projectId: get(row,"ProjectID"), employeeId: get(row,"EmployeeID"),
           demandId: get(row,"DemandID") || null, status: get(row,"Status") || "Proposed", source: get(row,"Source") || "import",
           scoreSnapshot: get(row,"ScoreSnapshot") === "" || get(row,"ScoreSnapshot") === undefined ? null : U.parseNum(get(row,"ScoreSnapshot"), null),
-          allocationByMonth: alloc2
+          allocationByMonth: alloc2, custom: customVals
         });
-        valid = M.validateAssignment(rec);
+        valid = M.validateAssignment(rec, customDefs);
       } else if (sheetName === "Mentorships"){
         rec = M.newMentorship({
           id: idVal || undefined, mentorId: get(row,"MentorID"), menteeId: get(row,"MenteeID"), focusSkillId: get(row,"FocusSkillID"),
           sharedProjectId: get(row,"SharedProjectID") || null, frequency: get(row,"Frequency"),
-          score: U.parseNum(get(row,"Score"),0), compat: get(row,"Compat"), status: get(row,"Status")
+          score: U.parseNum(get(row,"Score"),0), compat: get(row,"Compat"), status: get(row,"Status"), custom: customVals
         });
-        valid = M.validateMentorship(rec);
+        valid = M.validateMentorship(rec, customDefs);
       } else {
         continue;
       }
@@ -1552,15 +1754,35 @@ ROE.io = (function(){
     return result;
   }
 
-  // Parses a full workbook (object of sheetName -> AoA). mappings: optional per-sheet mapping override.
-  function parseWorkbook(sheetsAoA, settings, mappings){
+  // Parses a full workbook (object of sheetName -> AoA). mappings: optional per-sheet mapping
+  // override. `existingFieldDefs` (state.customFieldDefs) is used only to decide which defs found
+  // in the file's CustomFieldDefs sheet are new locally (out.fieldDefs.toAdd) - per IO-1, a local
+  // def is NEVER deleted just because the file doesn't have it.
+  // IO-1 backward compatibility: if the file has no CustomFieldDefs sheet at all (older export),
+  // out.fieldDefs.fromFile stays empty and no entity sheet's custom columns are read at all - this
+  // is "no custom values", not an error.
+  function parseWorkbook(sheetsAoA, settings, mappings, existingFieldDefs){
+    existingFieldDefs = existingFieldDefs || [];
     var horizonMonths = U.monthKeys(settings.horizonStart, settings.horizonMonths);
-    var out = { bySheet: {}, monthWarnings: [] };
+    var out = { bySheet: {}, monthWarnings: [], fieldDefs: { fromFile: [], toAdd: [], errors: [] } };
+
+    if (sheetsAoA.CustomFieldDefs){
+      var cfdParsed = parseCustomFieldDefsSheet(sheetsAoA.CustomFieldDefs);
+      out.fieldDefs.fromFile = cfdParsed.records;
+      out.fieldDefs.errors = cfdParsed.errors;
+      cfdParsed.records.forEach(function(fd){
+        var existsLocally = existingFieldDefs.some(function(ed){ return ed.entityType === fd.entityType && ed.key === fd.key; });
+        if (!existsLocally) out.fieldDefs.toAdd.push(fd);
+      });
+    }
+
     Object.keys(COLUMNS).forEach(function(sheetName){
-      if (sheetName === "Meta") return;
+      if (sheetName === "Meta" || sheetName === "CustomFieldDefs") return;
       var aoa = sheetsAoA[sheetName];
       if (!aoa) return;
-      var r = parseSheet(sheetName, aoa, { mapping: mappings && mappings[sheetName], monthKeys: horizonMonths });
+      var entityType = ENTITY_TYPE_BY_SHEET[sheetName];
+      var customDefs = entityType ? out.fieldDefs.fromFile.filter(function(d){ return d.entityType === entityType; }) : [];
+      var r = parseSheet(sheetName, aoa, { mapping: mappings && mappings[sheetName], monthKeys: horizonMonths, customDefs: customDefs });
       out.bySheet[sheetName] = r;
       if (r.monthWarnings.length) out.monthWarnings.push({ sheet: sheetName, headers: r.monthWarnings });
     });
@@ -1586,14 +1808,18 @@ ROE.io = (function(){
       }
       summary[sheetName] = { insert: inserts, update: updates, skipped: r.skipped, errors: r.errors.length };
     });
+    if (parsed.fieldDefs){
+      summary.CustomFieldDefs = { insert: parsed.fieldDefs.toAdd.length, update: 0, skipped: 0, errors: parsed.fieldDefs.errors.length };
+    }
     return summary;
   }
 
   return {
-    COLUMNS: COLUMNS, monthCols: monthCols,
+    COLUMNS: COLUMNS, monthCols: monthCols, ENTITY_TYPE_BY_SHEET: ENTITY_TYPE_BY_SHEET,
     encodeRequiredSkills: encodeRequiredSkills, decodeRequiredSkills: decodeRequiredSkills,
     buildWorkbookSheets: buildWorkbookSheets, buildTemplateSheets: buildTemplateSheets,
     buildCsvForSheet: buildCsvForSheet, detectMapping: detectMapping,
+    customDefsFor: customDefsFor, customCellsFor: customCellsFor, parseCustomFieldDefsSheet: parseCustomFieldDefsSheet,
     parseSheet: parseSheet, parseWorkbook: parseWorkbook, diffAgainstState: diffAgainstState,
 
     // ---- Thin SheetJS adapters (impure: touch window.XLSX / trigger downloads) ----
@@ -1610,9 +1836,9 @@ ROE.io = (function(){
       window.XLSX.writeFile(wb, filename || "roe-export.xlsx");
     },
 
-    exportTemplateFile: function(settings, filename){
+    exportTemplateFile: function(settings, fieldDefs, filename){
       if (!window.XLSX) throw new Error("XLSX library is not available");
-      var sheets = buildTemplateSheets(settings);
+      var sheets = buildTemplateSheets(settings, fieldDefs);
       var wb = window.XLSX.utils.book_new();
       Object.keys(sheets).forEach(function(name){
         var ws = window.XLSX.utils.aoa_to_sheet(sheets[name]);
@@ -2043,7 +2269,13 @@ ROE.api = (function(){
 /* Impure, isolated: IndexedDB wrapper. Database "roe", version 1. */
 ROE.db = (function(){
   var DB_NAME = "roe";
-  var DB_VERSION = 1;
+  // Bumped 1 -> 2 by BUILD_PLAN_ADDENDUM_1.md for the new `customFieldDefs` store. Per §2.6's
+  // migration ladder: IndexedDB's own onupgradeneeded (below) generically creates any STORE_DEFS
+  // entry an existing installation is missing, regardless of what version it was opened at, so
+  // every v1 install gains the empty `customFieldDefs` store with zero changes to its existing
+  // data. MIGRATIONS below covers any additional data-shaping a future bump might need; v1 -> v2
+  // needs none (existing records simply have no `custom` key yet, which ROE.model treats as valid).
+  var DB_VERSION = 2;
   // Note: an `employeeSkills` store is added beyond §2.6's literal list because EmployeeSkill
   // records are part of the canonical model (§3) and must survive reload (N-6); everything else
   // matches §2.6 exactly (out-of-line keyed stores for settings/meta/employeeSkills).
@@ -2055,9 +2287,31 @@ ROE.db = (function(){
     { name:"mentorships", opts:{ keyPath:"id" } },
     { name:"skills", opts:{ keyPath:"id" } },
     { name:"employeeSkills", opts:{} },
+    { name:"customFieldDefs", opts:{ keyPath:"id" } },
     { name:"settings", opts:{} },
     { name:"meta", opts:{} }
   ];
+
+  // ---- Migration ladder (BUILD_PLAN.md §2.6 / BUILD_PLAN_ADDENDUM_1.md "Migration") ----
+  // Keyed by target schemaVersion. Each step runs once, in order, the first time an install's
+  // stored meta.schemaVersion is found to be behind DB_VERSION (see runMigrationLadder / ROE.store.load).
+  var MIGRATIONS = {
+    2: function(){
+      // v1 -> v2: the customFieldDefs object store itself is already created generically above
+      // (onupgradeneeded creates any STORE_DEFS entry not yet present). No existing record needs
+      // to change shape: `record.custom` absent is valid, not a defect, per CF-4. No-op.
+      return Promise.resolve();
+    }
+  };
+
+  function runMigrationLadder(fromVersion){
+    var from = fromVersion || 0;
+    var steps = [];
+    for (var v = from + 1; v <= DB_VERSION; v++){
+      if (MIGRATIONS[v]) steps.push(MIGRATIONS[v]);
+    }
+    return steps.reduce(function(p, fn){ return p.then(fn); }, Promise.resolve());
+  }
 
   var _dbPromise = null;
 
@@ -2177,11 +2431,12 @@ ROE.db = (function(){
   function loadPreference(){ return getRecord("settings", "prefs"); }
 
   return {
-    STORE_DEFS: STORE_DEFS, isAvailable: isAvailable, open: open,
+    STORE_DEFS: STORE_DEFS, DB_VERSION: DB_VERSION, isAvailable: isAvailable, open: open,
     readAll: readAll, getRecord: getRecord, putRecord: putRecord,
     replaceAll: replaceAll, replaceAllKeyed: replaceAllKeyed,
     clearAll: clearAll, deleteDatabase: deleteDatabase,
-    savePreference: savePreference, loadPreference: loadPreference
+    savePreference: savePreference, loadPreference: loadPreference,
+    runMigrationLadder: runMigrationLadder
   };
 })();
 
@@ -2192,6 +2447,7 @@ ROE.store = (function(){
 
   var state = {
     employees: [], skills: [], employeeSkills: [], projects: [], demands: [], assignments: [], mentorships: [],
+    customFieldDefs: [],
     settings: U.clone(C.DEFAULT_SETTINGS)
   };
 
@@ -2257,6 +2513,7 @@ ROE.store = (function(){
       DB.replaceAll("mentorships", state.mentorships),
       DB.replaceAll("skills", state.skills),
       DB.replaceAllKeyed("employeeSkills", state.employeeSkills, function(r){ return r.employeeId + "|" + r.skillId; }),
+      DB.replaceAll("customFieldDefs", state.customFieldDefs),
       DB.putRecord("settings", whitelistSettings(state.settings), "app"),
       DB.putRecord("meta", { schemaVersion: C.SCHEMA_VERSION }, "schemaVersion")
     ]).catch(function(err){ console.error("ROE.store persist failed", err); });
@@ -2281,7 +2538,7 @@ ROE.store = (function(){
         // whatever is already sitting there - no silent destructive purge, just don't load it.
         state.employees = []; state.projects = []; state.demands = [];
         state.assignments = []; state.mentorships = []; state.skills = [];
-        state.employeeSkills = [];
+        state.employeeSkills = []; state.customFieldDefs = [];
         state.settings = U.clone(C.DEFAULT_SETTINGS);
         state.settings.sessionOnly = true;
         if (pref.theme) state.settings.theme = pref.theme;
@@ -2292,20 +2549,35 @@ ROE.store = (function(){
       return Promise.all([
         DB.readAll("employees"), DB.readAll("projects"), DB.readAll("demands"),
         DB.readAll("assignments"), DB.readAll("mentorships"), DB.readAll("skills"),
-        DB.readAll("employeeSkills"), DB.getRecord("settings", "app"), DB.getRecord("meta", "schemaVersion")
+        DB.readAll("employeeSkills"), DB.readAll("customFieldDefs"),
+        DB.getRecord("settings", "app"), DB.getRecord("meta", "schemaVersion")
       ]).then(function(results){
         var employees=results[0], projects=results[1], demands=results[2], assignments=results[3],
-            mentorships=results[4], skills=results[5], employeeSkills=results[6], settingsRec=results[7];
+            mentorships=results[4], skills=results[5], employeeSkills=results[6], customFieldDefs=results[7],
+            settingsRec=results[8], metaRec=results[9];
         var empty = employees.length === 0 && projects.length === 0 && !settingsRec;
         state.employees = employees; state.projects = projects; state.demands = demands;
         state.assignments = assignments; state.mentorships = mentorships; state.skills = skills;
-        state.employeeSkills = employeeSkills;
+        state.employeeSkills = employeeSkills; state.customFieldDefs = customFieldDefs || [];
         state.settings = settingsRec ? Object.assign(U.clone(C.DEFAULT_SETTINGS), settingsRec) : U.clone(C.DEFAULT_SETTINGS);
         state.settings.sessionOnly = false;
         if (pref && pref.theme) state.settings.theme = pref.theme;
         hydrated = true; // in-memory state now genuinely reflects IndexedDB - safe to write again
         markDirty(); notify();
-        return { empty: empty };
+        // Migration ladder (BUILD_PLAN.md §2.6 / addendum "Migration"): the customFieldDefs store
+        // itself is already created by ROE.db's onupgradeneeded regardless of the stored
+        // meta.schemaVersion below, so this only needs to run any additional data-shaping steps and
+        // then record the new version - it runs at most once per install, the next load() will see
+        // metaRec.schemaVersion already at C.SCHEMA_VERSION and skip it.
+        var storedVersion = metaRec ? metaRec.schemaVersion : undefined;
+        if (empty || storedVersion === C.SCHEMA_VERSION){
+          return { empty: empty };
+        }
+        return DB.runMigrationLadder(storedVersion || 0).then(function(){
+          return DB.putRecord("meta", { schemaVersion: C.SCHEMA_VERSION }, "schemaVersion");
+        }).then(function(){
+          return { empty: empty, migrated: true, migratedFrom: storedVersion || 0 };
+        });
       });
     }).catch(function(err){
       console.error("ROE.store load failed, falling back to session-only mode", err);
@@ -2339,6 +2611,7 @@ ROE.store = (function(){
     // re-written to any store after the wipe, including the out-of-band preference record.
     state.employees = []; state.skills = []; state.employeeSkills = [];
     state.projects = []; state.demands = []; state.assignments = []; state.mentorships = [];
+    state.customFieldDefs = [];
     state.settings = U.clone(C.DEFAULT_SETTINGS);
     lastPulledSnapshots = {};
     // In-memory state now genuinely matches the (empty) disk state, so it's safe to resume writes.
@@ -2411,12 +2684,41 @@ ROE.store = (function(){
   function getLastPulledSnapshot(entityName){ return lastPulledSnapshots[entityName] || {}; }
   function setLastPulledSnapshot(entityName, byId){ lastPulledSnapshots[entityName] = byId; }
 
+  // ---- Custom field defs (BUILD_PLAN_ADDENDUM_1.md CF-1/CF-2) ----
+  // Not routed through the generic upsert() above: CustomFieldDef has no `updatedAt` in its schema
+  // (just `createdAt`), and key generation/uniqueness needs ROE.model's pure helpers.
+  function listFieldDefs(entityType){ return ROE.model.listFieldDefs(state.customFieldDefs, entityType); }
+  function addFieldDef(entityType, label, type){
+    state.customFieldDefs = ROE.model.addFieldDef(state.customFieldDefs, entityType, label, type);
+    markDirty(); notify(); scheduleSave();
+    return state.customFieldDefs[state.customFieldDefs.length - 1];
+  }
+  // Removes a field def by id. Per CF-2, values already stored under its key in existing records
+  // are never touched here - they simply stop being shown/editable once the def is gone.
+  function removeFieldDef(id){
+    state.customFieldDefs = ROE.model.removeFieldDef(state.customFieldDefs, id);
+    markDirty(); notify(); scheduleSave();
+  }
+  // Used by workbook import (IO-1): recreates any defs found in an imported file's CustomFieldDefs
+  // sheet that don't already exist locally (matched by entityType+key), preserving their exact key
+  // (never regenerated from the label) so already-encoded record.custom[key] values keep matching.
+  // Never removes a local def just because the file doesn't list it.
+  function restoreFieldDefs(list){
+    (list || []).forEach(function(fd){
+      var exists = state.customFieldDefs.some(function(d){ return d.entityType === fd.entityType && d.key === fd.key; });
+      if (exists) return;
+      state.customFieldDefs = state.customFieldDefs.concat([ROE.model.newCustomFieldDef({ entityType: fd.entityType, key: fd.key, label: fd.label, type: fd.type })]);
+    });
+    markDirty(); notify(); scheduleSave();
+  }
+
   return {
     getState: getState, subscribe: subscribe, getIndexes: getIndexes, markDirty: markDirty,
     load: load, persist: persist, scheduleSave: scheduleSave,
     loadDemoData: loadDemoData, clearAll: clearAll, setSessionOnly: setSessionOnly,
     isPersistenceActive: isPersistenceActive,
     upsert: upsert, remove: remove, upsertEmployeeSkill: upsertEmployeeSkill,
+    listFieldDefs: listFieldDefs, addFieldDef: addFieldDef, removeFieldDef: removeFieldDef, restoreFieldDefs: restoreFieldDefs,
     setSettings: setSettings, setWeightPreset: setWeightPreset,
     getLastPulledSnapshot: getLastPulledSnapshot, setLastPulledSnapshot: setLastPulledSnapshot,
     whitelistSettings: whitelistSettings
@@ -2671,13 +2973,15 @@ ROE.ui = (function(){
           fieldSelect("f-skill","Skill", [""].concat(state.skills.map(function(s){return s.id+"::"+s.code;})), f.skillId ? f.skillId+"::"+(state.skills.find(function(s){return s.id===f.skillId;})||{}).code : "", true) +
           fieldNumber("f-skillmin","Min skill level", f.skillMin, 0, 5) +
           '<button type="button" id="btn-add-employee" class="primary">Add employee</button>' +
+          '<button type="button" id="btn-manage-emp-fields">Manage employee fields</button>' +
         '</div>' +
         '<table><thead><tr>' +
           sortTh("Name","name") + sortTh("Level","level") + sortTh("Discipline","discipline") + sortTh("Office","office") + sortTh("Business group","businessGroup") +
           skillCols + '<th>Actions</th>' +
         '</tr></thead><tbody>' + (rows || '<tr><td colspan="99">No employees match the current filters.</td></tr>') + '</tbody></table>' +
         pagination(uiState.skills.page, totalPages, filtered.length) +
-      '</div>';
+      '</div>' +
+      renderSkillsCatalogCard(state);
 
     // wiring
     $("#f-discipline", root).onchange = function(){ f.discipline = this.value; uiState.skills.page=1; renderSkills(); };
@@ -2687,6 +2991,8 @@ ROE.ui = (function(){
     $("#f-skill", root).onchange = function(){ f.skillId = this.value ? this.value.split("::")[0] : ""; uiState.skills.page=1; renderSkills(); };
     $("#f-skillmin", root).onchange = function(){ f.skillMin = this.value; uiState.skills.page=1; renderSkills(); };
     $("#btn-add-employee", root).onclick = function(){ openEmployeeModal(null); };
+    $("#btn-manage-emp-fields", root).onclick = function(){ openManageFieldsModal("Employee", renderSkills); };
+    wireSkillsCatalogCard(root);
     $all("th[data-sort]", root).forEach(function(th){
       th.onclick = function(){
         var k = th.dataset.sort;
@@ -2731,6 +3037,94 @@ ROE.ui = (function(){
     return '<div class="pagination">'+btns+'<span class="hint">'+total+' record(s)</span></div>';
   }
 
+  /* =========================== SKILLS CATALOG (NEW-2: manual Skill CRUD) =========================== */
+  // Counts how many EmployeeSkill rows and Demand.requiredSkills entries reference `skillId`, used
+  // to warn (with a count) before a delete - deletion proceeds only on confirm, and never
+  // cascade-deletes those references (they render as "Unknown skill" afterward instead).
+  function countSkillReferences(state, skillId){
+    var empRefs = state.employeeSkills.filter(function(es){ return es.skillId === skillId; }).length;
+    var demandRefs = 0;
+    state.demands.forEach(function(d){
+      (d.requiredSkills||[]).forEach(function(rs){ if (rs.skillId === skillId) demandRefs += 1; });
+    });
+    return empRefs + demandRefs;
+  }
+
+  function renderSkillsCatalogCard(state){
+    var rows = state.skills.map(function(s){
+      var refCount = countSkillReferences(state, s.id);
+      return '<tr><td>'+esc(s.code)+'</td><td>'+esc(s.name)+'</td><td>'+esc(s.category)+'</td><td>'+refCount+'</td>' +
+        '<td><button type="button" class="edit-skill" data-id="'+s.id+'">Edit</button> <button type="button" class="delete-skill danger" data-id="'+s.id+'">Delete</button></td></tr>';
+    }).join("");
+    return '<div class="card"><h2>Skills catalog</h2><div class="toolbar">' +
+      '<button type="button" id="btn-add-skill" class="primary">Add skill</button>' +
+      '<button type="button" id="btn-manage-skill-fields">Manage skill fields</button>' +
+      '</div><table><thead><tr><th>Code</th><th>Name</th><th>Category</th><th># references</th><th>Actions</th></tr></thead>' +
+      '<tbody>'+(rows||'<tr><td colspan="5">No skills yet.</td></tr>')+'</tbody></table></div>';
+  }
+
+  function wireSkillsCatalogCard(root){
+    $("#btn-add-skill", root).onclick = function(){ openSkillModal(null); };
+    $("#btn-manage-skill-fields", root).onclick = function(){ openManageFieldsModal("Skill", renderSkills); };
+    $all(".edit-skill", root).forEach(function(btn){ btn.onclick = function(){ openSkillModal(btn.dataset.id); }; });
+    $all(".delete-skill", root).forEach(function(btn){
+      btn.onclick = function(){
+        var state = STORE.getState();
+        var refCount = countSkillReferences(state, btn.dataset.id);
+        var msg = refCount > 0
+          ? ("This skill is referenced by " + refCount + " employee skill / required-skill record(s). Deleting it will leave those references as \"Unknown skill\" rather than removing them. Continue?")
+          : "Delete this skill?";
+        if (!confirm(msg)) return;
+        STORE.remove("skills", btn.dataset.id);
+        renderSkills();
+        toast("Skill deleted");
+      };
+    });
+  }
+
+  function openSkillModal(id){
+    var state = STORE.getState();
+    var skl = id ? state.skills.find(function(s){ return s.id===id; }) : ROE.model.newSkill({});
+    openModal(
+      '<h2>'+(id?'Edit':'Add')+' skill</h2>' +
+      '<div class="row">' + field("code","Code","text",skl.code) + field("name","Name","text",skl.name) + field("category","Category","text",skl.category) + '</div>' +
+      customFieldInputsHtml("Skill", skl) +
+      '<div class="row" style="justify-content:flex-end;">' +
+        '<button type="button" id="m-manage-fields">Manage fields</button>' +
+        (id? '<button type="button" id="m-delete" class="danger">Delete</button>' : '') +
+        '<button type="button" id="m-cancel">Cancel</button><button type="button" id="m-save" class="primary">Save</button>' +
+      '</div>',
+      function(modal){
+        $("#m-cancel", modal).onclick = closeModal;
+        $("#m-manage-fields", modal).onclick = function(){ openManageFieldsModal("Skill", function(){ openSkillModal(id); }); };
+        $("#m-save", modal).onclick = function(){
+          var cfErrors = validateCustomFieldInputsUI(modal, "Skill");
+          if (cfErrors.length){ toast("Fix errors: " + cfErrors.join("; ")); return; }
+          var code = ($("#m-code",modal).value || "").trim().toUpperCase();
+          var dup = state.skills.some(function(s){ return s.code === code && s.id !== skl.id; });
+          if (!code){ toast("Code is required"); return; }
+          if (dup){ toast("A skill with code '" + code + "' already exists"); return; }
+          var rec = ROE.model.newSkill({
+            id: skl.id, code: code, name: $("#m-name",modal).value, category: $("#m-category",modal).value,
+            custom: readCustomFieldValues(modal, "Skill", skl.custom)
+          });
+          var valid = ROE.model.validateSkill(rec, STORE.getState().customFieldDefs);
+          if (!valid.ok){ toast("Fix errors: " + valid.errors.map(function(e){return e.message;}).join("; ")); return; }
+          STORE.upsert("skills", rec);
+          closeModal(); renderAll(); toast("Skill saved");
+        };
+        if (id) $("#m-delete", modal).onclick = function(){
+          var refCount = countSkillReferences(state, id);
+          var msg = refCount > 0
+            ? ("This skill is referenced by " + refCount + " employee skill / required-skill record(s). Deleting it will leave those references as \"Unknown skill\" rather than removing them. Continue?")
+            : "Delete this skill?";
+          if (!confirm(msg)) return;
+          STORE.remove("skills", id); closeModal(); renderAll(); toast("Skill deleted");
+        };
+      }
+    );
+  }
+
   function openEmployeeModal(id){
     var state = STORE.getState();
     var emp = id ? state.employees.find(function(e){ return e.id===id; }) : ROE.model.newEmployee({});
@@ -2747,21 +3141,27 @@ ROE.ui = (function(){
       '</div><div class="row">' +
         '<label>Active <input type="checkbox" id="m-active" '+(emp.active?'checked':'')+'></label>' +
       '</div><div class="row"><label>Notes<textarea id="m-notes" rows="2">'+esc(emp.notes)+'</textarea></label></div>' +
+      customFieldInputsHtml("Employee", emp) +
       '<div class="row" style="justify-content:flex-end;">' +
+        '<button type="button" id="m-manage-fields">Manage fields</button>' +
         (id? '<button type="button" id="m-delete" class="danger">Delete</button>' : '') +
         '<button type="button" id="m-cancel">Cancel</button><button type="button" id="m-save" class="primary">Save</button>' +
       '</div>',
       function(modal){
         $("#m-cancel", modal).onclick = closeModal;
+        $("#m-manage-fields", modal).onclick = function(){ openManageFieldsModal("Employee", function(){ openEmployeeModal(id); }); };
         $("#m-save", modal).onclick = function(){
+          var cfErrors = validateCustomFieldInputsUI(modal, "Employee");
+          if (cfErrors.length){ toast("Fix errors: " + cfErrors.join("; ")); return; }
           var rec = ROE.model.newEmployee({
             id: emp.id, name: $("#m-name",modal).value, email: $("#m-email",modal).value,
             level: $("#m-level",modal).value, discipline: $("#m-discipline",modal).value,
             office: $("#m-office",modal).value, businessGroup: $("#m-businessGroup",modal).value,
             targetUtil: U.parseNum($("#m-targetUtil",modal).value,85), mentorRole: $("#m-mentorRole",modal).value,
-            active: $("#m-active",modal).checked, notes: $("#m-notes",modal).value
+            active: $("#m-active",modal).checked, notes: $("#m-notes",modal).value,
+            custom: readCustomFieldValues(modal, "Employee", emp.custom)
           });
-          var valid = ROE.model.validateEmployee(rec);
+          var valid = ROE.model.validateEmployee(rec, STORE.getState().customFieldDefs);
           if (!valid.ok){ toast("Fix errors: " + valid.errors.map(function(e){return e.message;}).join("; ")); return; }
           STORE.upsert("employees", rec);
           closeModal(); renderAll(); toast("Employee saved");
@@ -2776,6 +3176,102 @@ ROE.ui = (function(){
   }
   function selectRow(name,label,options,value){
     return '<label>'+esc(label)+'<select id="m-'+name+'">'+options.map(function(o){return '<option value="'+esc(o)+'" '+(o===value?'selected':'')+'>'+esc(o)+'</option>';}).join("")+'</select></label>';
+  }
+
+  /* =========================== CUSTOM FIELDS (BUILD_PLAN_ADDENDUM_1.md CF-1..CF-4) =========================== */
+  // Renders the current custom-field defs for `entityType` as extra form inputs (CF-3), reading
+  // their current value out of `rec.custom[key]`. Returns "" (renders nothing) if there are no
+  // defs for this entity type yet.
+  // `extraAttrs` (optional, e.g. ' data-demand="dem_1"') disambiguates repeated per-record inputs
+  // within a single modal (e.g. one custom-field block per demand card in the Project modal).
+  function customFieldInputsHtml(entityType, rec, extraAttrs){
+    extraAttrs = extraAttrs || "";
+    var defs = ROE.model.listFieldDefs(STORE.getState().customFieldDefs, entityType);
+    if (!defs.length) return "";
+    var rows = defs.map(function(d){
+      var val = (rec && rec.custom) ? rec.custom[d.key] : undefined;
+      if (val === undefined || val === null) val = "";
+      var inputType = d.type === "number" ? "number" : "text";
+      return '<label>'+esc(d.label)+' <span class="hint">('+d.type+')</span><input type="'+inputType+'" class="custom-field-input" data-entity="'+esc(entityType)+'" data-key="'+esc(d.key)+'" data-type="'+d.type+'"'+extraAttrs+' value="'+esc(val)+'"></label>';
+    }).join("");
+    return '<fieldset><legend>Custom fields</legend><div class="row">'+rows+'</div></fieldset>';
+  }
+
+  // Validates the number-typed custom-field inputs currently in `root` for `entityType`.
+  // Returns an array of human-readable error messages (empty = all good). Called before save so a
+  // non-numeric entry in a Number field blocks the save with a clear message (CF-3).
+  function validateCustomFieldInputsUI(root, entityType){
+    var defs = ROE.model.listFieldDefs(STORE.getState().customFieldDefs, entityType);
+    var errors = [];
+    defs.forEach(function(d){
+      if (d.type !== "number") return;
+      var input = root.querySelector('.custom-field-input[data-entity="'+entityType+'"][data-key="'+d.key+'"]');
+      if (!input) return;
+      var raw = input.value;
+      if (raw === "" || raw === undefined || raw === null) return;
+      if (isNaN(parseFloat(raw))) errors.push("'" + d.label + "' must be a number");
+    });
+    return errors;
+  }
+
+  // Reads the current custom-field inputs in `root` for `entityType` into a fresh `custom` object,
+  // starting from `existingCustom` so that values stored under a key whose def has since been
+  // removed (and therefore has no input in this form) are preserved untouched (CF-2). A field left
+  // blank in the form is deleted from the result rather than stored as "" (CF-3).
+  function readCustomFieldValues(root, entityType, existingCustom){
+    var defs = ROE.model.listFieldDefs(STORE.getState().customFieldDefs, entityType);
+    var custom = Object.assign({}, existingCustom || {});
+    defs.forEach(function(d){
+      var input = root.querySelector('.custom-field-input[data-entity="'+entityType+'"][data-key="'+d.key+'"]');
+      if (!input) return;
+      var raw = input.value;
+      if (raw === "" || raw === undefined || raw === null){ delete custom[d.key]; return; }
+      custom[d.key] = d.type === "number" ? parseFloat(raw) : raw;
+    });
+    return custom;
+  }
+
+  // Reusable "Manage fields" modal (CF-2): add a field (label + type; key is generated from the
+  // label and shown read-only), remove a field. Removing never deletes stored values, it only
+  // stops them from being shown here or in the entity's form going forward.
+  function openManageFieldsModal(entityType, onChange){
+    function render(){
+      var defs = ROE.model.listFieldDefs(STORE.getState().customFieldDefs, entityType);
+      var rows = defs.map(function(d){
+        return '<tr><td>'+esc(d.label)+'</td><td class="mono">'+esc(d.key)+'</td><td>'+esc(d.type)+'</td>'+
+          '<td><button type="button" class="mf-remove" data-id="'+d.id+'">Remove</button></td></tr>';
+      }).join("");
+      return '<h2>Manage custom fields - '+esc(entityType)+'</h2>'+
+        '<table><thead><tr><th>Label</th><th>Key</th><th>Type</th><th>Actions</th></tr></thead><tbody>'+
+        (rows || '<tr><td colspan="4">No custom fields yet.</td></tr>')+'</tbody></table>'+
+        '<div class="row"><label>New field label<input type="text" id="mf-label"></label>'+
+        selectRow("mf-type","Type",C.CUSTOM_FIELD_TYPES,"text")+
+        '<button type="button" id="mf-add" class="primary">Add field</button></div>'+
+        '<p class="hint">Removing a field never deletes values already stored under it in existing records - it just stops showing/editing them here.</p>'+
+        '<div class="row" style="justify-content:flex-end;"><button type="button" id="mf-close">Close</button></div>';
+    }
+    function wire(modal){
+      $("#mf-close", modal).onclick = function(){ closeModal(); if (onChange) onChange(); };
+      $("#mf-add", modal).onclick = function(){
+        var label = $("#mf-label", modal).value.trim();
+        if (!label){ toast("Enter a label"); return; }
+        var type = $("#m-mf-type", modal).value;
+        STORE.addFieldDef(entityType, label, type || "text");
+        modal.innerHTML = render();
+        wire(modal);
+        toast("Field added");
+      };
+      $all(".mf-remove", modal).forEach(function(btn){
+        btn.onclick = function(){
+          if (!confirm("Remove this field definition? Existing stored values are kept but will no longer be shown or editable.")) return;
+          STORE.removeFieldDef(btn.dataset.id);
+          modal.innerHTML = render();
+          wire(modal);
+          toast("Field removed");
+        };
+      });
+    }
+    openModal(render(), wire);
   }
 
   /* =========================== PROJECTS =========================== */
@@ -2794,10 +3290,14 @@ ROE.ui = (function(){
         '<td><button type="button" class="edit-prj" data-id="'+p.id+'">Open</button></td></tr>';
     }).join("");
     root.innerHTML =
-      '<div class="card"><div class="toolbar"><button type="button" id="btn-add-project" class="primary">Add project</button></div>' +
+      '<div class="card"><div class="toolbar">' +
+        '<button type="button" id="btn-add-project" class="primary">Add project</button>' +
+        '<button type="button" id="btn-manage-prj-fields">Manage project fields</button>' +
+      '</div>' +
       '<table><thead><tr><th>Name</th><th>Client</th><th>Market</th><th>Discipline</th><th>Phase</th><th>Priority</th><th>Status</th><th>Avg demand fill</th><th>Actions</th></tr></thead>' +
       '<tbody>'+(rows||'<tr><td colspan="9">No projects yet.</td></tr>')+'</tbody></table></div>';
     $("#btn-add-project", root).onclick = function(){ openProjectModal(null); };
+    $("#btn-manage-prj-fields", root).onclick = function(){ openManageFieldsModal("Project", renderProjects); };
     $all(".edit-prj", root).forEach(function(btn){ btn.onclick = function(){ openProjectModal(btn.dataset.id); }; });
   }
 
@@ -2829,8 +3329,29 @@ ROE.ui = (function(){
           '<button type="button" class="fa-apply" data-id="'+d.id+'">Apply range</button></div>' +
           '<div style="overflow-x:auto;"><table><thead><tr><th>Month</th>'+months.map(function(m){return '<th>'+m+'</th>';}).join("")+'</tr></thead>' +
           '<tbody><tr><td>Pct/opening</td>'+monthCells+'</tr><tr><td>Fill %</td>'+fill.map(function(f){return '<td>'+f+'%</td>';}).join("")+'</tr></tbody></table></div>' +
+          customFieldInputsHtml("Demand", d, ' data-demand="'+d.id+'"') +
         '</div>';
-      }).join("") + '<button type="button" id="btn-add-demand">Add demand</button>';
+      }).join("") + '<button type="button" id="btn-add-demand">Add demand</button> <button type="button" id="btn-manage-demand-fields">Manage demand fields</button>';
+    }
+
+    function assignmentsHtml(){
+      var state2 = STORE.getState();
+      var asgs = state2.assignments.filter(function(a){ return a.projectId === id; });
+      var byId = {}; state2.employees.forEach(function(e){ byId[e.id]=e; });
+      var demandById = {}; state2.demands.forEach(function(d){ demandById[d.id]=d; });
+      var rows = asgs.map(function(a){
+        var emp = byId[a.employeeId];
+        var demand = a.demandId ? demandById[a.demandId] : null;
+        var totalPct = 0; for (var m in a.allocationByMonth) totalPct += a.allocationByMonth[m] || 0;
+        return '<tr><td>'+esc(emp?emp.name:"Unknown employee")+'</td><td>'+esc(demand?demand.title:"(none)")+'</td>'+
+          '<td>'+esc(a.status)+'</td><td>'+esc(a.source)+'</td><td>'+totalPct+'</td>' +
+          '<td><button type="button" class="edit-asg" data-id="'+a.id+'">Edit</button> <button type="button" class="delete-asg danger" data-id="'+a.id+'">Delete</button></td></tr>';
+      }).join("");
+      return '<div class="card"><h2>Assignments</h2><div class="toolbar">' +
+        '<button type="button" id="btn-add-assignment" class="primary">Add assignment</button>' +
+        '<button type="button" id="btn-manage-asg-fields">Manage assignment fields</button>' +
+        '</div><table><thead><tr><th>Employee</th><th>Demand</th><th>Status</th><th>Source</th><th>Total alloc (sum of months)</th><th>Actions</th></tr></thead>' +
+        '<tbody>'+(rows||'<tr><td colspan="6">No assignments on this project yet.</td></tr>')+'</tbody></table></div>';
     }
 
     openModal(
@@ -2840,12 +3361,15 @@ ROE.ui = (function(){
       '<div class="row">' + field("p-budget","Budget","number",prj.budget) + selectRow("p-bimLevel","BIM level",C.BIM_LEVELS,prj.bimLevel) + selectRow("p-status","Status",C.PROJECT_STATUS,prj.status) + '</div>' +
       '<div class="row">' + field("p-teamMin","Team min","number",prj.teamMin) + field("p-teamMax","Team max","number",prj.teamMax) + field("p-priority","Priority (1-5)","number",prj.priority) + '</div>' +
       '<div class="row"><label>Notes<textarea id="p-notes" rows="2">'+esc(prj.notes)+'</textarea></label></div>' +
-      (id ? '<h2>Demands</h2><div id="demands-editor">'+demandsHtml()+'</div>' : '<p class="hint">Save the project first, then reopen it to manage demands.</p>') +
+      customFieldInputsHtml("Project", prj) +
+      (id ? '<h2>Demands</h2><div id="demands-editor">'+demandsHtml()+'</div>' : '<p class="hint">Save the project first, then reopen it to manage demands and assignments.</p>') +
+      (id ? '<div id="assignments-editor">'+assignmentsHtml()+'</div>' : '') +
       '<div class="row" style="justify-content:flex-end;">' +
+        '<button type="button" id="m-manage-fields">Manage fields</button>' +
         (id? '<button type="button" id="m-delete" class="danger">Delete project</button>' : '') +
         '<button type="button" id="m-cancel">Cancel</button><button type="button" id="m-save" class="primary">Save</button>' +
       '</div>',
-      function(modal){ wireProjectModal(modal, id, prj); }
+      function(modal){ wireProjectModal(modal, id, prj); if (id) wireAssignmentsEditor(modal, id); }
     );
   }
 
@@ -2855,15 +3379,19 @@ ROE.ui = (function(){
 
   function wireProjectModal(modal, id, prj){
     $("#m-cancel", modal).onclick = closeModal;
+    $("#m-manage-fields", modal).onclick = function(){ openManageFieldsModal("Project", function(){ openProjectModal(id); }); };
     $("#m-save", modal).onclick = function(){
+      var cfErrors = validateCustomFieldInputsUI(modal, "Project");
+      if (cfErrors.length){ toast("Fix errors: " + cfErrors.join("; ")); return; }
       var rec = ROE.model.newProject({
         id: prj.id, name: $("#p-name",modal).value, client: $("#p-client",modal).value, market: $("#p-market",modal).value,
         discipline: $("#p-discipline",modal).value, phase: $("#p-phase",modal).value, budget: U.parseNum($("#p-budget",modal).value,0),
         bimLevel: $("#p-bimLevel",modal).value, status: $("#p-status",modal).value,
         teamMin: U.parseNum($("#p-teamMin",modal).value,1), teamMax: U.parseNum($("#p-teamMax",modal).value,10),
-        priority: U.parseNum($("#p-priority",modal).value,3), software: prj.software, notes: $("#p-notes",modal).value
+        priority: U.parseNum($("#p-priority",modal).value,3), software: prj.software, notes: $("#p-notes",modal).value,
+        custom: readCustomFieldValues(modal, "Project", prj.custom)
       });
-      var valid = ROE.model.validateProject(rec);
+      var valid = ROE.model.validateProject(rec, STORE.getState().customFieldDefs);
       if (!valid.ok){ toast("Fix errors: " + valid.errors.map(function(e){return e.message;}).join("; ")); return; }
       STORE.upsert("projects", rec);
       closeModal(); renderAll(); toast("Project saved");
@@ -2886,6 +3414,25 @@ ROE.ui = (function(){
       STORE.upsert("demands", d);
       openProjectModal(projectId);
     };
+    $("#btn-manage-demand-fields", editor).onclick = function(){ openManageFieldsModal("Demand", function(){ openProjectModal(projectId); }); };
+    $all('.custom-field-input[data-entity="Demand"]', editor).forEach(function(inp){
+      inp.onchange = function(){
+        var d = STORE.getState().demands.find(function(x){ return x.id === inp.dataset.demand; });
+        if (!d) return;
+        var key = inp.dataset.key, type = inp.dataset.type, raw = inp.value;
+        var custom = Object.assign({}, d.custom || {});
+        if (raw === ""){ delete custom[key]; }
+        else if (type === "number"){
+          var n = parseFloat(raw);
+          if (isNaN(n)){ toast("'" + key + "' must be a number"); return; }
+          custom[key] = n;
+        } else {
+          custom[key] = raw;
+        }
+        if (Object.keys(custom).length === 0) delete d.custom; else d.custom = custom;
+        STORE.upsert("demands", d);
+      };
+    });
     $all(".demand-month-input", editor).forEach(function(inp){
       inp.onchange = function(){
         var d = STORE.getState().demands.find(function(x){return x.id===this.dataset.demand;}.bind(this));
@@ -2917,6 +3464,144 @@ ROE.ui = (function(){
         toast("Applied " + val + "% across " + (ei-si+1) + " month(s)");
       };
     });
+  }
+
+  /* =========================== ASSIGNMENTS (NEW-1: manual Assignment CRUD) =========================== */
+  function wireAssignmentsEditor(modal, projectId){
+    var editor = $("#assignments-editor", modal);
+    if (!editor) return;
+    $("#btn-add-assignment", editor).onclick = function(){ openAssignmentModal(projectId, null); };
+    $("#btn-manage-asg-fields", editor).onclick = function(){ openManageFieldsModal("Assignment", function(){ openProjectModal(projectId); }); };
+    $all(".edit-asg", editor).forEach(function(btn){ btn.onclick = function(){ openAssignmentModal(projectId, btn.dataset.id); }; });
+    $all(".delete-asg", editor).forEach(function(btn){
+      btn.onclick = function(){
+        if (!confirm("Delete this assignment?")) return;
+        STORE.remove("assignments", btn.dataset.id);
+        openProjectModal(projectId);
+        toast("Assignment deleted");
+      };
+    });
+  }
+
+  // NEW-1: project picker, employee picker, optional demand picker (filtered to this project's
+  // demands), a per-month allocation grid reusing the same fill-across pattern as the Demand
+  // editor, status, and custom fields. Warns (never blocks) if the manual allocation would push
+  // the employee over effectiveCapacity in any month - same preview/warn philosophy used
+  // elsewhere (optimizer/auto-staff) rather than silently blocking the save.
+  function openAssignmentModal(defaultProjectId, assignmentId){
+    var initial = STORE.getState();
+    var asg = assignmentId ? initial.assignments.find(function(a){ return a.id === assignmentId; }) : ROE.model.newAssignment({ projectId: defaultProjectId, status: "Proposed" });
+    var months = U.monthKeys(initial.settings.horizonStart, initial.settings.horizonMonths);
+
+    function render(){
+      var st = STORE.getState();
+      var projectOptions = st.projects.map(function(p){ return '<option value="'+p.id+'" '+(p.id===asg.projectId?'selected':'')+'>'+esc(p.name)+'</option>'; }).join("");
+      var employeeOptions = st.employees.map(function(e){ return '<option value="'+e.id+'" '+(e.id===asg.employeeId?'selected':'')+'>'+esc(e.name)+'</option>'; }).join("");
+      var projectDemands = st.demands.filter(function(d){ return d.projectId === asg.projectId; });
+      var demandOptions = '<option value="">(none)</option>' + projectDemands.map(function(d){ return '<option value="'+d.id+'" '+(d.id===asg.demandId?'selected':'')+'>'+esc(d.title)+'</option>'; }).join("");
+      var monthCells = months.map(function(m){
+        var v = asg.allocationByMonth[m] !== undefined ? asg.allocationByMonth[m] : "";
+        return '<td><input type="number" min="0" max="100" style="width:56px;" value="'+v+'" data-month="'+m+'" class="asg-month-input" aria-label="Allocation '+m+'"></td>';
+      }).join("");
+      return '<h2>'+(assignmentId?'Edit':'Add')+' assignment</h2>' +
+        '<div class="row">' +
+          '<label>Project<select id="a-project">'+projectOptions+'</select></label>' +
+          '<label>Employee<select id="a-employee">'+employeeOptions+'</select></label>' +
+          '<label>Demand (optional)<select id="a-demand">'+demandOptions+'</select></label>' +
+          selectRow("a-status","Status",C.ASSIGNMENT_STATUS,asg.status) +
+        '</div>' +
+        '<div class="hint">Fill-across: <input type="text" id="a-fa-start" placeholder="start YYYY-MM" style="width:100px;"> to ' +
+        '<input type="text" id="a-fa-end" placeholder="end YYYY-MM" style="width:100px;"> value ' +
+        '<input type="number" id="a-fa-val" min="0" max="100" style="width:60px;"> ' +
+        '<button type="button" id="a-fa-apply">Apply range</button></div>' +
+        '<div style="overflow-x:auto;"><table><thead><tr><th>Month</th>'+months.map(function(m){return '<th>'+m+'</th>';}).join("")+'</tr></thead>' +
+        '<tbody><tr><td>Allocation %</td>'+monthCells+'</tr></tbody></table></div>' +
+        customFieldInputsHtml("Assignment", asg) +
+        '<div class="row" style="justify-content:flex-end;">' +
+          '<button type="button" id="m-manage-fields">Manage fields</button>' +
+          (assignmentId ? '<button type="button" id="m-delete" class="danger">Delete</button>' : '') +
+          '<button type="button" id="m-cancel">Cancel</button><button type="button" id="m-save" class="primary">Save</button>' +
+        '</div>';
+    }
+
+    function currentAllocFromForm(modal){
+      var alloc = {};
+      $all(".asg-month-input", modal).forEach(function(inp){
+        var v = U.clamp(parseInt(inp.value,10)||0, 0, 100);
+        if (v > 0) alloc[inp.dataset.month] = v;
+      });
+      return alloc;
+    }
+
+    function wire(modal){
+      $("#m-cancel", modal).onclick = function(){ openProjectModal(defaultProjectId); };
+      $("#m-manage-fields", modal).onclick = function(){ openManageFieldsModal("Assignment", function(){ openAssignmentModal(defaultProjectId, assignmentId); }); };
+      $("#a-project", modal).onchange = function(){ asg.projectId = this.value; asg.demandId = null; modal.innerHTML = render(); wire(modal); };
+      $("#a-fa-apply", modal).onclick = function(){
+        var start = $("#a-fa-start", modal).value.trim();
+        var end = $("#a-fa-end", modal).value.trim();
+        var val = U.clamp(parseInt($("#a-fa-val", modal).value,10)||0, 0, 100);
+        if (!U.isMonthKey(start) || !U.isMonthKey(end)){ toast("Enter valid YYYY-MM start/end months"); return; }
+        var si = months.indexOf(start), ei = months.indexOf(end);
+        if (si === -1 || ei === -1 || ei < si){ toast("Range must be within the horizon and start <= end"); return; }
+        $all(".asg-month-input", modal).forEach(function(inp){
+          var mi = months.indexOf(inp.dataset.month);
+          if (mi >= si && mi <= ei) inp.value = val;
+        });
+      };
+      if (assignmentId){
+        $("#m-delete", modal).onclick = function(){
+          if (!confirm("Delete this assignment?")) return;
+          STORE.remove("assignments", assignmentId);
+          openProjectModal(defaultProjectId);
+          toast("Assignment deleted");
+        };
+      }
+      $("#m-save", modal).onclick = function(){
+        var cfErrors = validateCustomFieldInputsUI(modal, "Assignment");
+        if (cfErrors.length){ toast("Fix errors: " + cfErrors.join("; ")); return; }
+        var projectId = $("#a-project", modal).value;
+        var employeeId = $("#a-employee", modal).value;
+        var demandId = $("#a-demand", modal).value || null;
+        var status = $("#m-a-status", modal).value;
+        var alloc = currentAllocFromForm(modal);
+        var rec = ROE.model.newAssignment({
+          id: asg.id, projectId: projectId, employeeId: employeeId, demandId: demandId,
+          allocationByMonth: alloc, status: status, source: assignmentId ? asg.source : "manual",
+          scoreSnapshot: asg.scoreSnapshot,
+          custom: readCustomFieldValues(modal, "Assignment", asg.custom)
+        });
+        var valid = ROE.model.validateAssignment(rec, STORE.getState().customFieldDefs);
+        if (!valid.ok){ toast("Fix errors: " + valid.errors.map(function(e){return e.message;}).join("; ")); return; }
+        if (!employeeId){ toast("Pick an employee"); return; }
+
+        // Warn (never block) if this manual allocation would push the employee over
+        // effectiveCapacity in any month - same preview/warn philosophy as the optimizer/
+        // auto-staff, which never silently over-allocate but never hard-block a manual save.
+        var st = STORE.getState();
+        var otherAssignments = st.assignments.filter(function(a){ return a.id !== rec.id; });
+        var idx = CALC.buildIndexes(Object.assign({}, st, { assignments: otherAssignments }));
+        var emp = st.employees.find(function(e){ return e.id === employeeId; });
+        var overMonths = [];
+        if (emp){
+          for (var m in alloc){
+            var existing = CALC.committed(employeeId, m, idx);
+            var cap = CALC.effectiveCapacity(emp, m, idx, st.settings);
+            if (existing + alloc[m] > cap) overMonths.push(m + " (" + Math.round(existing + alloc[m]) + "% > " + Math.round(cap) + "% capacity)");
+          }
+        }
+
+        STORE.upsert("assignments", rec);
+        if (overMonths.length){
+          toast("Saved, but this exceeds " + (emp?emp.name:"the employee") + "'s effective capacity in: " + overMonths.join(", "));
+        } else {
+          toast("Assignment saved");
+        }
+        openProjectModal(projectId);
+      };
+    }
+
+    openModal(render(), wire);
   }
 
   /* =========================== OPTIMIZER =========================== */
@@ -3106,7 +3791,9 @@ ROE.ui = (function(){
       var load = MENTOR.activeMenteeCount(state, m.mentorId);
       return '<tr><td>'+esc(mentor?mentor.name:m.mentorId)+' ('+load+'/2)</td><td>'+esc(mentee?mentee.name:m.menteeId)+'</td>'+
         '<td>'+esc(m.frequency)+'</td><td>'+m.score+'</td><td>'+esc(m.compat)+'</td><td>'+esc(m.status)+'</td>' +
-        '<td>'+(m.status==="Active" ? '<button type="button" class="end-mentorship" data-id="'+m.id+'">End</button>' : "")+'</td></tr>';
+        '<td><button type="button" class="edit-mentorship" data-id="'+m.id+'">Edit</button> '+
+        (m.status==="Active" ? '<button type="button" class="end-mentorship" data-id="'+m.id+'">End</button>' : "")+
+        ' <button type="button" class="delete-mentorship danger" data-id="'+m.id+'">Delete</button></td></tr>';
     }).join("");
 
     var suggestions = MENTOR.suggest(state);
@@ -3118,11 +3805,24 @@ ROE.ui = (function(){
     }).join("");
 
     root.innerHTML =
-      '<div class="card"><h2>Current pairings</h2><table><thead><tr><th>Mentor (load)</th><th>Mentee</th><th>Frequency</th><th>Score</th><th>Compat</th><th>Status</th><th>Actions</th></tr></thead>' +
+      '<div class="card"><h2>Current pairings</h2><div class="toolbar">' +
+        '<button type="button" id="btn-add-mentorship" class="primary">Add mentorship</button>' +
+        '<button type="button" id="btn-manage-mentorship-fields">Manage fields</button>' +
+      '</div><table><thead><tr><th>Mentor (load)</th><th>Mentee</th><th>Frequency</th><th>Score</th><th>Compat</th><th>Status</th><th>Actions</th></tr></thead>' +
       '<tbody>'+(current||'<tr><td colspan="7">No mentorships yet.</td></tr>')+'</tbody></table></div>' +
       '<div class="card"><h2>Suggested pairings</h2><table><thead><tr><th>Mentor</th><th>Mentee</th><th>Score</th><th>Compat</th><th>Breakdown</th><th>Actions</th></tr></thead>' +
       '<tbody>'+(suggestRows||'<tr><td colspan="6">No suggestions available.</td></tr>')+'</tbody></table></div>';
 
+    $("#btn-add-mentorship", root).onclick = function(){ openMentorshipModal(null); };
+    $("#btn-manage-mentorship-fields", root).onclick = function(){ openManageFieldsModal("Mentorship", renderMentorship); };
+    $all(".edit-mentorship", root).forEach(function(btn){ btn.onclick = function(){ openMentorshipModal(btn.dataset.id); }; });
+    $all(".delete-mentorship", root).forEach(function(btn){
+      btn.onclick = function(){
+        if (!confirm("Delete this mentorship?")) return;
+        STORE.remove("mentorships", btn.dataset.id);
+        renderMentorship(); toast("Mentorship deleted");
+      };
+    });
     $all(".end-mentorship", root).forEach(function(btn){
       btn.onclick = function(){
         var m = state.mentorships.find(function(x){return x.id===btn.dataset.id;});
@@ -3138,6 +3838,61 @@ ROE.ui = (function(){
         renderMentorship(); toast("Mentorship created");
       };
     });
+  }
+
+  // Manual add/edit form for Mentorship (extended per CF-3; this form previously only existed
+  // implicitly via "Create pairing" from a suggestion and "End" - this adds real create/edit/delete).
+  function openMentorshipModal(id){
+    var state = STORE.getState();
+    var men = id ? state.mentorships.find(function(m){ return m.id===id; }) : ROE.model.newMentorship({});
+    var mentorOptions = state.employees.map(function(e){ return '<option value="'+e.id+'" '+(e.id===men.mentorId?'selected':'')+'>'+esc(e.name)+'</option>'; }).join("");
+    var menteeOptions = state.employees.map(function(e){ return '<option value="'+e.id+'" '+(e.id===men.menteeId?'selected':'')+'>'+esc(e.name)+'</option>'; }).join("");
+    var skillOptions = '<option value="">(none)</option>' + state.skills.map(function(s){ return '<option value="'+s.id+'" '+(s.id===men.focusSkillId?'selected':'')+'>'+esc(s.code)+'</option>'; }).join("");
+    var projectOptions = '<option value="">(none)</option>' + state.projects.map(function(p){ return '<option value="'+p.id+'" '+(p.id===men.sharedProjectId?'selected':'')+'>'+esc(p.name)+'</option>'; }).join("");
+    openModal(
+      '<h2>'+(id?'Edit':'Add')+' mentorship</h2>' +
+      '<div class="row">' +
+        '<label>Mentor<select id="me-mentor">'+mentorOptions+'</select></label>' +
+        '<label>Mentee<select id="me-mentee">'+menteeOptions+'</select></label>' +
+        '<label>Focus skill<select id="me-skill">'+skillOptions+'</select></label>' +
+      '</div><div class="row">' +
+        '<label>Shared project<select id="me-project">'+projectOptions+'</select></label>' +
+        selectRow("me-frequency","Frequency",C.MENTORSHIP_FREQ,men.frequency) +
+        field("me-score","Score (0-100)","number",men.score) +
+        selectRow("me-status","Status",C.MENTORSHIP_STATUS,men.status) +
+      '</div>' +
+      customFieldInputsHtml("Mentorship", men) +
+      '<div class="row" style="justify-content:flex-end;">' +
+        '<button type="button" id="m-manage-fields">Manage fields</button>' +
+        (id? '<button type="button" id="m-delete" class="danger">Delete</button>' : '') +
+        '<button type="button" id="m-cancel">Cancel</button><button type="button" id="m-save" class="primary">Save</button>' +
+      '</div>',
+      function(modal){
+        $("#m-cancel", modal).onclick = closeModal;
+        $("#m-manage-fields", modal).onclick = function(){ openManageFieldsModal("Mentorship", function(){ openMentorshipModal(id); }); };
+        $("#m-save", modal).onclick = function(){
+          var cfErrors = validateCustomFieldInputsUI(modal, "Mentorship");
+          if (cfErrors.length){ toast("Fix errors: " + cfErrors.join("; ")); return; }
+          var mentorId = $("#me-mentor",modal).value, menteeId = $("#me-mentee",modal).value;
+          if (mentorId === menteeId){ toast("Mentor and mentee must be different employees"); return; }
+          var score = U.clamp(U.parseNum($("#me-score",modal).value,0), 0, 100);
+          var rec = ROE.model.newMentorship({
+            id: men.id, mentorId: mentorId, menteeId: menteeId, focusSkillId: $("#me-skill",modal).value || "",
+            sharedProjectId: $("#me-project",modal).value || null, frequency: $("#me-frequency",modal).value,
+            score: score, compat: MENTOR.compatFor(score), status: $("#me-status",modal).value,
+            custom: readCustomFieldValues(modal, "Mentorship", men.custom)
+          });
+          var valid = ROE.model.validateMentorship(rec, STORE.getState().customFieldDefs);
+          if (!valid.ok){ toast("Fix errors: " + valid.errors.map(function(e){return e.message;}).join("; ")); return; }
+          STORE.upsert("mentorships", rec);
+          closeModal(); renderAll(); toast("Mentorship saved");
+        };
+        if (id) $("#m-delete", modal).onclick = function(){
+          if (!confirm("Delete this mentorship?")) return;
+          STORE.remove("mentorships", id); closeModal(); renderAll(); toast("Mentorship deleted");
+        };
+      }
+    );
   }
 
   /* =========================== TIMELINE =========================== */
@@ -3370,7 +4125,7 @@ ROE.ui = (function(){
     $("#set-sessionOnly", root).onchange = function(){ STORE.setSessionOnly(this.checked); updateSessionBadge(); toast((this.checked ? "Session-only mode ON" : "Session-only mode OFF") + " - reload the page to apply. Saving behavior is unchanged until then."); };
     $("#btn-clear-all-2", root).onclick = clearAllFlow;
     $("#btn-export-xlsx", root).onclick = function(){ try { IO.exportWorkbookFile(STORE.getState(), "roe-export.xlsx"); } catch(e){ toast(String(e.message||e)); } };
-    $("#btn-export-template", root).onclick = function(){ try { IO.exportTemplateFile(STORE.getState().settings, "roe-template.xlsx"); } catch(e){ toast(String(e.message||e)); } };
+    $("#btn-export-template", root).onclick = function(){ try { IO.exportTemplateFile(STORE.getState().settings, STORE.getState().customFieldDefs, "roe-template.xlsx"); } catch(e){ toast(String(e.message||e)); } };
     $("#btn-export-csv", root).onclick = function(){
       var sheets = IO.buildWorkbookSheets(STORE.getState());
       Object.keys(sheets).forEach(function(name){ downloadText("roe-" + name + ".csv", IO.buildCsvForSheet(sheets[name]), "text/csv"); });
@@ -3517,7 +4272,7 @@ ROE.ui = (function(){
       var mappings = {};
       var needsMappingHtml = "";
       Object.keys(IO.COLUMNS).forEach(function(sheetName){
-        if (sheetName === "Meta" || !sheets[sheetName]) return;
+        if (sheetName === "Meta" || sheetName === "CustomFieldDefs" || !sheets[sheetName]) return;
         var headers = sheets[sheetName][0] || [];
         var detected = IO.detectMapping(sheetName, headers);
         var unresolved = Object.keys(detected).filter(function(f){ return !detected[f]; });
@@ -3542,7 +4297,7 @@ ROE.ui = (function(){
   function previewImport(){
     var root = $("#import-preview");
     var state = STORE.getState();
-    var parsed = IO.parseWorkbook(uiState.importSession.sheets, state.settings, uiState.importSession.mappings);
+    var parsed = IO.parseWorkbook(uiState.importSession.sheets, state.settings, uiState.importSession.mappings, state.customFieldDefs);
     uiState.importSession.parsed = parsed;
     var summary = IO.diffAgainstState(state, parsed);
     var rows = Object.keys(summary).map(function(sheet){
@@ -3564,6 +4319,12 @@ ROE.ui = (function(){
   function applyImport(){
     var parsed = uiState.importSession.parsed;
     if (!parsed) return;
+    // IO-1: recreate any custom field defs found in the file but missing locally FIRST, so the
+    // records applied right after already have a matching def to display under (a def missing
+    // locally never blocks/loses a record's custom values either way - CF-4 permits unknown keys).
+    if (parsed.fieldDefs && parsed.fieldDefs.toAdd.length){
+      STORE.restoreFieldDefs(parsed.fieldDefs.toAdd);
+    }
     var map = { Employees:"employees", Skills:"skills", Projects:"projects", ProjectDemands:"demands", Assignments:"assignments", Mentorships:"mentorships" };
     Object.keys(map).forEach(function(sheet){
       var r = parsed.bySheet[sheet];
