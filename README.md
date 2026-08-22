@@ -27,3 +27,20 @@ Copy `.claude/agents/` and `.claude/commands/` into `~/.claude/` (all projects) 
 ## Note
 
 Keep `.claude/` out of `.gitignore`. The web session needs these files committed to load them.
+
+## Weighted Decision Engine (`index.html`)
+
+Open `index.html` directly in a browser (double-click it, or `File > Open`) — no server,
+build step, or network connection required. It is a single self-contained page for weighing
+a decision: define weighted criteria, score options (including a built-in "Do Nothing" status
+quo) against them, and get a transparent, ranked recommendation with a per-criterion
+contribution breakdown. It also captures the load-bearing assumption behind the decision and
+the condition that should trigger a revisit, and can export the result as a Markdown decision
+record or a full-session JSON file. Everything is saved to `localStorage` automatically as you
+work.
+
+Self-tests for the calculation engine live at `index.html?selftest=1` (also linked from the
+page footer, and runnable from the browser console as `window.runSelfTests()`). They exercise
+weight normalization, direction inversion, unscored-cell handling, multi-rater aggregation,
+ranking/ties, the close-call threshold, export gating, and JSON import/migration safety,
+independent of the UI.

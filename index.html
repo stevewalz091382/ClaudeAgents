@@ -1,0 +1,1676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Weighted Decision Engine</title>
+<style>
+  :root {
+    --bg: #f7f7f8;
+    --fg: #1b1d1f;
+    --muted: #5b6168;
+    --border: #d3d7dc;
+    --card-bg: #ffffff;
+    --accent: #1a5fb4;
+    --accent-fg: #ffffff;
+    --danger: #a5150a;
+    --danger-bg: #fbe9e7;
+    --warn-bg: #fff4dd;
+    --warn-border: #e8c468;
+    --ok-bg: #e7f3e8;
+    font-size: 16px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); overflow-x: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+    line-height: 1.45;
+  }
+  #app { max-width: 980px; margin: 0 auto; padding: 0.5rem 1rem 3rem; }
+  a { color: var(--accent); }
+  .skip-link {
+    position: absolute; left: -9999px; top: 0; background: var(--accent); color: var(--accent-fg);
+    padding: 0.5rem 1rem; z-index: 100;
+  }
+  .skip-link:focus { left: 0.5rem; top: 0.5rem; }
+  .visually-hidden {
+    position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  }
+  h1, h2, h3 { line-height: 1.2; }
+  h1 { font-size: 1.4rem; margin: 0.5rem 0; }
+  h2 { font-size: 1.15rem; border-bottom: 1px solid var(--border); padding-bottom: 0.35rem; margin-top: 0; }
+  h3 { font-size: 1rem; }
+  section { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.1rem; margin-bottom: 1.1rem; }
+  label { font-weight: 600; font-size: 0.92rem; display: block; margin-bottom: 0.2rem; }
+  input, select, textarea, button {
+    font: inherit; color: inherit; background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.4rem 0.55rem; max-width: 100%;
+    transition: border-color 150ms ease, background-color 150ms ease;
+  }
+  textarea { width: 100%; resize: vertical; font-family: inherit; }
+  input[type="text"], input[type="date"], input[type="number"] { width: 100%; }
+  input[type="checkbox"], input[type="radio"] { width: auto; margin-right: 0.4rem; }
+  input[type="range"] { width: 100%; }
+  button { cursor: pointer; background: var(--card-bg); border-color: var(--border); }
+  button.primary, .export-actions button { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  button.btn-danger { background: var(--danger-bg); color: var(--danger); border-color: var(--danger); }
+  button.btn-clear { background: var(--bg); font-size: 0.75rem; padding: 0.15rem 0.4rem; margin-top: 0.2rem; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  :focus-visible { outline: 3px solid #ff8c00; outline-offset: 2px; }
+  .field { margin-bottom: 0.6rem; }
+  .field.inline { display: flex; align-items: center; gap: 0.4rem; }
+  .field.inline label { margin-bottom: 0; }
+  .field-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .field-row .field { flex: 1 1 200px; }
+  .readout { font-size: 0.85rem; color: var(--muted); margin-left: 0.4rem; }
+  .row, .card { border: 1px solid var(--border); border-radius: 8px; padding: 0.7rem 0.8rem; margin-bottom: 0.7rem; background: #fbfbfc; }
+  .row { display: flex; flex-wrap: wrap; gap: 0.8rem; align-items: flex-end; }
+  .row .field { margin-bottom: 0; min-width: 140px; }
+  .tag { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.05rem 0.35rem; }
+  .badge { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; background: var(--ok-bg); border: 1px solid #4a8a4f; color: #2a5c2e; border-radius: 4px; padding: 0.1rem 0.4rem; }
+  .badge-warning { font-size: 0.85rem; color: #7a5b00; background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: 4px; padding: 0.2rem 0.5rem; display: inline-block; }
+  .nudge { background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: 6px; padding: 0.5rem 0.7rem; }
+  .empty-state { color: var(--muted); font-style: italic; }
+  .banner { border-radius: 8px; padding: 0.7rem 0.9rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+  .banner-warning { background: var(--warn-bg); border: 1px solid var(--warn-border); }
+  .banner-danger { background: var(--danger-bg); border: 1px solid var(--danger); }
+  .banner-info { background: #e7eefc; border: 1px solid var(--accent); }
+  header#app-header { padding: 0.5rem 0; }
+  .header-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.4rem; }
+  .header-controls label { margin-bottom: 0; }
+  .header-controls > * { flex-shrink: 0; }
+  .app-name { flex: 1 1 auto; }
+  .save-status { font-size: 0.85rem; color: var(--muted); white-space: nowrap; }
+  table.matrix-table, table.breakdown-table { width: 100%; border-collapse: collapse; margin-top: 0.6rem; }
+  table.matrix-table th, table.matrix-table td, table.breakdown-table th, table.breakdown-table td {
+    border: 1px solid var(--border); padding: 0.4rem 0.5rem; text-align: left; vertical-align: top;
+  }
+  table.matrix-table thead th { background: var(--bg); }
+  table.matrix-table td input[type="number"] { width: 4.5rem; }
+  .blend-readout { display: block; font-size: 0.75rem; color: var(--muted); margin-top: 0.15rem; }
+  .contrib-bars { margin-top: 0.6rem; }
+  .contrib-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
+  .contrib-label { flex: 0 0 30%; font-size: 0.85rem; }
+  .contrib-bar-track { flex: 1 1 auto; background: var(--bg); border-radius: 4px; height: 0.8rem; overflow: hidden; border: 1px solid var(--border); }
+  .contrib-bar-fill { background: var(--accent); height: 100%; }
+  .contrib-value { flex: 0 0 3.5rem; text-align: right; font-size: 0.85rem; }
+  .result-card.recommended { border-color: var(--accent); border-width: 2px; }
+  .export-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; margin: 0.6rem 0; }
+  #markdown-preview { white-space: pre-wrap; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.8rem; max-height: 420px; overflow: auto; font-size: 0.85rem; }
+  #clipboard-fallback-textarea { width: 100%; height: 8rem; margin-top: 0.5rem; }
+  footer#app-footer { text-align: center; color: var(--muted); font-size: 0.85rem; padding: 1rem 0; }
+
+  @media (max-width: 720px) {
+    #app { padding: 0.5rem 0.6rem 3rem; }
+    .header-controls { flex-direction: column; align-items: stretch; }
+    table.matrix-table, table.matrix-table thead, table.matrix-table tbody,
+    table.matrix-table th, table.matrix-table td, table.matrix-table tr { display: block; width: 100%; }
+    table.matrix-table thead { position: absolute; left: -9999px; top: -9999px; }
+    table.matrix-table tbody tr { margin-bottom: 1rem; border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem; }
+    table.matrix-table tbody th[scope="row"] { border: none; font-size: 1rem; padding-bottom: 0.4rem; }
+    table.matrix-table tbody td { border: none; display: flex; justify-content: space-between; align-items: center; padding: 0.35rem 0; flex-wrap: wrap; }
+    table.matrix-table tbody td::before { content: attr(data-label); font-weight: 600; margin-right: 0.5rem; }
+  }
+
+  @media print {
+    body * { visibility: hidden; }
+    #markdown-preview, #markdown-preview * { visibility: visible; }
+    #markdown-preview { position: absolute; left: 0; top: 0; width: 100%; max-height: none; border: none; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+
+  <div id="corrupt-banner" class="banner banner-warning" hidden role="alert">
+    <p id="corrupt-banner-text"></p>
+    <button type="button" id="btn-dismiss-corrupt-banner">Dismiss</button>
+  </div>
+  <div id="quota-banner" class="banner banner-danger" hidden role="alert">
+    <p>Changes are no longer being saved &mdash; export your decision now.</p>
+    <button type="button" id="btn-quota-export">Export session JSON</button>
+  </div>
+
+  <header id="app-header">
+    <div class="header-row">
+      <h1 class="app-name">Weighted Decision Engine</h1>
+      <span id="save-status" class="save-status" aria-live="polite">Saved</span>
+    </div>
+    <div class="header-row header-controls">
+      <div class="field" style="margin-bottom:0;">
+        <label for="decision-title-input">Decision title</label>
+        <input type="text" id="decision-title-input">
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <label for="library-select">Switch decision</label>
+        <select id="library-select"></select>
+      </div>
+      <button type="button" id="btn-new-decision">New</button>
+      <button type="button" id="btn-duplicate-decision">Duplicate</button>
+      <button type="button" id="btn-delete-decision">Delete</button>
+      <label for="import-file-input" style="margin-bottom:0;">Import session JSON</label>
+      <input type="file" id="import-file-input" accept=".json" class="visually-hidden">
+    </div>
+    <div id="import-errors" class="banner banner-danger" role="alert" hidden></div>
+  </header>
+
+  <main id="main-content">
+    <section id="section-framing" data-section aria-labelledby="framing-heading">
+      <h2 id="framing-heading">1. Frame the decision</h2>
+      <fieldset style="border:none; padding:0; margin:0 0 0.6rem;">
+        <legend style="font-weight:600; padding:0;">Reversibility</legend>
+        <label style="display:inline-block; font-weight:normal; margin-right:1rem;">
+          <input type="radio" name="reversibility" id="reversibility-reversible" value="reversible"> Reversible
+        </label>
+        <label style="display:inline-block; font-weight:normal; margin-right:1rem;">
+          <input type="radio" name="reversibility" id="reversibility-hard" value="hard_to_reverse"> Hard to reverse
+        </label>
+        <label style="display:inline-block; font-weight:normal;">
+          <input type="radio" name="reversibility" id="reversibility-unset" value="" checked> Not stated
+        </label>
+      </fieldset>
+      <p id="reversibility-consequence" class="readout"></p>
+      <div class="field">
+        <label for="field-assumption">Load-bearing assumption</label>
+        <textarea id="field-assumption" rows="2"></textarea>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="field-trigger-condition">Revisit trigger &mdash; condition</label>
+          <input type="text" id="field-trigger-condition">
+        </div>
+        <div class="field">
+          <label for="field-trigger-date">Revisit trigger &mdash; date</label>
+          <input type="date" id="field-trigger-date">
+        </div>
+      </div>
+    </section>
+
+    <section id="section-criteria" data-section aria-labelledby="criteria-heading">
+      <h2 id="criteria-heading">2. Criteria</h2>
+      <p id="criteria-empty" class="empty-state" hidden>No criteria yet. Add at least two to rank options.</p>
+      <div id="criteria-list"></div>
+      <button type="button" id="btn-add-criterion">Add criterion</button>
+      <p id="criteria-cap-msg" class="badge-warning" hidden>Maximum of 12 criteria reached.</p>
+    </section>
+
+    <section id="section-options" data-section aria-labelledby="options-heading">
+      <h2 id="options-heading">3. Options</h2>
+      <p id="options-empty" class="empty-state" hidden>No options yet. Add at least two to compare, including a status quo.</p>
+      <p id="status-quo-nudge" class="nudge" hidden>No option is flagged as the status quo (&ldquo;Do Nothing&rdquo;). Consider flagging one for a fair baseline comparison.</p>
+      <div id="options-list"></div>
+      <button type="button" id="btn-add-option">Add option</button>
+      <p id="options-cap-msg" class="badge-warning" hidden>Maximum of 12 options reached.</p>
+    </section>
+
+    <section id="section-score" data-section aria-labelledby="score-heading">
+      <h2 id="score-heading">4. Score</h2>
+      <div class="field inline">
+        <input type="checkbox" id="toggle-multirater">
+        <label for="toggle-multirater">Multi-rater mode (voice vs vote)</label>
+      </div>
+      <div id="raters-panel" hidden>
+        <h3>Raters</h3>
+        <div id="raters-list"></div>
+        <button type="button" id="btn-add-rater">Add rater</button>
+        <div class="field">
+          <label for="select-scoring-as">Scoring as</label>
+          <select id="select-scoring-as"></select>
+        </div>
+      </div>
+      <div id="matrix-container"></div>
+    </section>
+
+    <section id="section-results" data-section aria-labelledby="results-heading">
+      <h2 id="results-heading">5. Result</h2>
+      <p id="results-summary" aria-live="polite"></p>
+      <div id="close-call-banner" class="banner banner-info" hidden>Too close to call &mdash; the top two options are within 5% of each other.</div>
+      <div id="results-list"></div>
+    </section>
+
+    <section id="section-record" data-section aria-labelledby="record-heading">
+      <h2 id="record-heading">6. Decision record</h2>
+      <div id="export-gating" class="banner banner-warning" hidden></div>
+      <div class="export-actions">
+        <button type="button" id="btn-export-md">Download Markdown</button>
+        <button type="button" id="btn-export-json">Download session JSON</button>
+        <button type="button" id="btn-copy-clipboard">Copy to clipboard</button>
+        <button type="button" id="btn-print">Print (Ctrl+P)</button>
+      </div>
+      <span id="copy-status" class="readout" aria-live="polite"></span>
+      <textarea id="clipboard-fallback-textarea" hidden readonly aria-label="Decision record &mdash; press Ctrl+C to copy"></textarea>
+      <pre id="markdown-preview"></pre>
+    </section>
+  </main>
+
+  <footer id="app-footer">
+    <p><a href="?selftest=1" id="selftest-link">Run self-tests</a></p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* =========================================================
+     Utilities
+  ========================================================= */
+  function clamp(n, min, max) { return Math.min(max, Math.max(min, n)); }
+  function escapeHtml(s) {
+    return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (ch) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+    });
+  }
+  function escapeAttr(s) { return escapeHtml(s); }
+  function slugify(s) {
+    var out = String(s || 'decision').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-+|-+$)/g, '');
+    return out || 'decision';
+  }
+  function focusLater(id) {
+    setTimeout(function () {
+      var el = document.getElementById(id);
+      if (el) el.focus();
+    }, 0);
+  }
+
+  /* =========================================================
+     Constants
+  ========================================================= */
+  var SCALE_MIN = 1, SCALE_MAX = 10, MIDPOINT = 5.5;
+
+  /* =========================================================
+     Factories / id generation / defaults
+  ========================================================= */
+  var Factories = {
+    uid: function (prefix) {
+      return prefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    },
+    makeCriterion: function (name, weight, direction) {
+      return { id: Factories.uid('c'), name: name || 'New criterion', weight: weight || 5, direction: direction || 'higher' };
+    },
+    makeOption: function (name, isStatusQuo, premortem) {
+      return { id: Factories.uid('o'), name: name || 'New option', isStatusQuo: !!isStatusQuo, premortem: premortem || '' };
+    },
+    makeRater: function (name, weight) {
+      return { id: Factories.uid('r'), name: name || 'Rater', weight: weight || 1 };
+    },
+    makeDecision: function (title) {
+      var c1 = Factories.makeCriterion('Cost', 5, 'lower');
+      var c2 = Factories.makeCriterion('Impact', 5, 'higher');
+      var statusQuo = Factories.makeOption('Do Nothing (status quo)', true, '');
+      var rater = { id: 'r_me', name: 'Me', weight: 1 };
+      var now = new Date().toISOString();
+      return {
+        id: Factories.uid('d'),
+        title: title || 'Untitled decision',
+        createdAt: now,
+        updatedAt: now,
+        reversibility: null,
+        loadBearingAssumption: '',
+        revisitTrigger: { condition: '', date: null },
+        multiRater: false,
+        raters: [rater],
+        criteria: [c1, c2],
+        options: [statusQuo],
+        scores: {}
+      };
+    },
+    makeLibrary: function () {
+      var d = Factories.makeDecision('My decision');
+      return { schemaVersion: 1, activeDecisionId: d.id, decisions: [d] };
+    }
+  };
+
+  function repairCriterion(c) {
+    return {
+      id: (c && c.id) || Factories.uid('c'),
+      name: (c && typeof c.name === 'string') ? c.name : 'Criterion',
+      weight: (c && Number.isFinite(c.weight)) ? clamp(Math.round(c.weight), 1, 10) : 5,
+      direction: (c && (c.direction === 'higher' || c.direction === 'lower')) ? c.direction : 'higher'
+    };
+  }
+  function repairOption(o) {
+    return {
+      id: (o && o.id) || Factories.uid('o'),
+      name: (o && typeof o.name === 'string') ? o.name : 'Option',
+      isStatusQuo: !!(o && o.isStatusQuo),
+      premortem: (o && typeof o.premortem === 'string') ? o.premortem : ''
+    };
+  }
+  function repairRater(r) {
+    return {
+      id: (r && r.id) || Factories.uid('r'),
+      name: (r && typeof r.name === 'string') ? r.name : 'Rater',
+      weight: (r && Number.isFinite(r.weight)) ? clamp(Math.round(r.weight), 1, 10) : 1
+    };
+  }
+  function repairDecision(raw) {
+    var d = (raw && typeof raw === 'object') ? raw : {};
+    var criteria = Array.isArray(d.criteria) ? d.criteria.map(repairCriterion) : [];
+    var options = Array.isArray(d.options) ? d.options.map(repairOption) : [];
+    var raters = Array.isArray(d.raters) ? d.raters.map(repairRater) : [];
+    if (!raters.length) raters = [{ id: 'r_me', name: 'Me', weight: 1 }];
+    var sqFound = false;
+    options.forEach(function (o) {
+      if (o.isStatusQuo) {
+        if (sqFound) o.isStatusQuo = false; else sqFound = true;
+      }
+    });
+    var validOptionIds = {}; options.forEach(function (o) { validOptionIds[o.id] = true; });
+    var validCritIds = {}; criteria.forEach(function (c) { validCritIds[c.id] = true; });
+    var validRaterIds = {}; raters.forEach(function (r) { validRaterIds[r.id] = true; });
+    var scores = {};
+    var rawScores = (d.scores && typeof d.scores === 'object') ? d.scores : {};
+    Object.keys(rawScores).forEach(function (optId) {
+      if (!validOptionIds[optId]) return;
+      var critMap = rawScores[optId];
+      if (!critMap || typeof critMap !== 'object') return;
+      Object.keys(critMap).forEach(function (critId) {
+        if (!validCritIds[critId]) return;
+        var raterMap = critMap[critId];
+        if (!raterMap || typeof raterMap !== 'object') return;
+        Object.keys(raterMap).forEach(function (raterId) {
+          if (!validRaterIds[raterId]) return;
+          var v = raterMap[raterId];
+          if (v === null || v === undefined) return;
+          if (typeof v === 'number' && v >= 1 && v <= 10) {
+            scores[optId] = scores[optId] || {};
+            scores[optId][critId] = scores[optId][critId] || {};
+            scores[optId][critId][raterId] = v;
+          }
+        });
+      });
+    });
+    var now = new Date().toISOString();
+    return {
+      id: (typeof d.id === 'string' && d.id) || Factories.uid('d'),
+      title: (typeof d.title === 'string' && d.title) || 'Untitled decision',
+      createdAt: (typeof d.createdAt === 'string' && d.createdAt) || now,
+      updatedAt: (typeof d.updatedAt === 'string' && d.updatedAt) || now,
+      reversibility: (d.reversibility === 'reversible' || d.reversibility === 'hard_to_reverse') ? d.reversibility : null,
+      loadBearingAssumption: typeof d.loadBearingAssumption === 'string' ? d.loadBearingAssumption : '',
+      revisitTrigger: {
+        condition: (d.revisitTrigger && typeof d.revisitTrigger.condition === 'string') ? d.revisitTrigger.condition : '',
+        date: (d.revisitTrigger && typeof d.revisitTrigger.date === 'string' && d.revisitTrigger.date) ? d.revisitTrigger.date : null
+      },
+      multiRater: !!d.multiRater,
+      raters: raters,
+      criteria: criteria,
+      options: options,
+      scores: scores
+    };
+  }
+  function repairLibrary(raw) {
+    var lib = (raw && typeof raw === 'object') ? raw : {};
+    var decisions = Array.isArray(lib.decisions) ? lib.decisions.map(repairDecision) : [];
+    if (!decisions.length) decisions = [Factories.makeDecision('My decision')];
+    var activeId = (typeof lib.activeDecisionId === 'string') ? lib.activeDecisionId : null;
+    var found = false;
+    decisions.forEach(function (d) { if (d.id === activeId) found = true; });
+    if (!activeId || !found) activeId = decisions[0].id;
+    return { schemaVersion: 1, activeDecisionId: activeId, decisions: decisions };
+  }
+
+  /* =========================================================
+     DecisionEngine — pure functions, no DOM access
+  ========================================================= */
+  var DecisionEngine = {
+    normalizeWeights: function (criteria) {
+      criteria = criteria || [];
+      var sum = 0;
+      criteria.forEach(function (c) { sum += c.weight; });
+      if (!sum) sum = 1;
+      var raw = criteria.map(function (c) { return { id: c.id, weight: c.weight, normalized: c.weight / sum }; });
+      var target = 1000; // tenths of a percent, so total displayed = 100.0
+      var shares = raw.map(function (r) { return r.normalized * target; });
+      var floors = shares.map(function (s) { return Math.floor(s); });
+      var allocated = 0;
+      floors.forEach(function (f) { allocated += f; });
+      var remainder = Math.round(target - allocated);
+      var order = shares.map(function (s, i) { return { i: i, frac: s - floors[i] }; })
+        .sort(function (a, b) { return b.frac - a.frac; });
+      var tenths = floors.slice();
+      for (var k = 0; k < remainder && order.length; k++) {
+        tenths[order[k % order.length].i]++;
+      }
+      return raw.map(function (r, i) {
+        return { id: r.id, weight: r.weight, normalized: r.normalized, percentDisplay: tenths[i] / 10 };
+      });
+    },
+
+    cellValue: function (decision, optionId, criterionId) {
+      var criterion = null;
+      (decision.criteria || []).forEach(function (c) { if (c.id === criterionId) criterion = c; });
+      if (!criterion) return { value: MIDPOINT, scored: false };
+      var raters = (decision.raters && decision.raters.length) ? decision.raters : [{ id: 'r_me', weight: 1 }];
+      var cellScores = (decision.scores[optionId] && decision.scores[optionId][criterionId]) || {};
+      var weightedSum = 0, weightTotal = 0, any = false;
+      raters.forEach(function (rater) {
+        var s = cellScores[rater.id];
+        if (s === null || s === undefined) return;
+        any = true;
+        var eff = (criterion.direction === 'lower') ? (11 - s) : s;
+        weightedSum += rater.weight * eff;
+        weightTotal += rater.weight;
+      });
+      if (!any || weightTotal === 0) return { value: MIDPOINT, scored: false };
+      return { value: weightedSum / weightTotal, scored: true };
+    },
+
+    scoreOption: function (decision, optionId) {
+      var norm = DecisionEngine.normalizeWeights(decision.criteria);
+      var normMap = {};
+      norm.forEach(function (n) { normMap[n.id] = n.normalized; });
+      var total = 0, unscoredCount = 0;
+      var contributions = (decision.criteria || []).map(function (c) {
+        var cv = DecisionEngine.cellValue(decision, optionId, c.id);
+        if (!cv.scored) unscoredCount++;
+        var normalized = normMap[c.id] || 0;
+        var contribution = normalized * cv.value;
+        total += contribution;
+        return { criterionId: c.id, normalized: normalized, value: cv.value, contribution: contribution };
+      });
+      var percent = ((total - 1) / 9) * 100;
+      return { optionId: optionId, total: total, percent: percent, contributions: contributions, unscoredCount: unscoredCount, criteriaCount: (decision.criteria || []).length };
+    },
+
+    rankOptions: function (decision) {
+      var options = decision.options || [];
+      var criteria = decision.criteria || [];
+      var sufficient = options.length >= 2 && criteria.length >= 2;
+      if (!sufficient) {
+        return { ranked: [], closeCall: false, margin: null, sufficient: false };
+      }
+      var withMeta = options.map(function (o, idx) {
+        var s = DecisionEngine.scoreOption(decision, o.id);
+        s._origIndex = idx;
+        s._isStatusQuo = !!o.isStatusQuo;
+        return s;
+      });
+      withMeta.sort(function (a, b) {
+        if (Math.abs(a.total - b.total) < 1e-9) {
+          if (a._isStatusQuo !== b._isStatusQuo) return a._isStatusQuo ? -1 : 1;
+          return a._origIndex - b._origIndex;
+        }
+        return b.total - a.total;
+      });
+      var ranked = [];
+      for (var i = 0; i < withMeta.length; i++) {
+        var r;
+        if (i === 0) r = 1;
+        else if (Math.abs(withMeta[i].total - withMeta[i - 1].total) < 1e-9) r = ranked[i - 1].rank;
+        else r = i + 1;
+        var item = {};
+        for (var key in withMeta[i]) item[key] = withMeta[i][key];
+        item.rank = r;
+        ranked.push(item);
+      }
+      var rankCounts = {};
+      ranked.forEach(function (r) { rankCounts[r.rank] = (rankCounts[r.rank] || 0) + 1; });
+      ranked.forEach(function (r) { r.tied = rankCounts[r.rank] > 1; });
+      var margin = null, closeCall = false;
+      if (ranked.length >= 2) {
+        var t1 = ranked[0].total, t2 = ranked[1].total;
+        margin = (t1 - t2) / t1;
+        closeCall = margin < 0.05;
+      }
+      return { ranked: ranked, closeCall: closeCall, margin: margin, sufficient: true };
+    },
+
+    validateForExport: function (decision) {
+      if (decision.reversibility !== 'hard_to_reverse') {
+        return { ok: true, missing: [] };
+      }
+      var missing = [];
+      if (!decision.loadBearingAssumption || !decision.loadBearingAssumption.trim()) {
+        missing.push({ field: 'loadBearingAssumption', label: 'Load-bearing assumption', elementId: 'field-assumption' });
+      }
+      var trig = decision.revisitTrigger || {};
+      var hasCondition = trig.condition && trig.condition.trim();
+      var hasDate = trig.date && String(trig.date).trim();
+      if (!hasCondition && !hasDate) {
+        missing.push({ field: 'revisitTrigger', label: 'Revisit trigger (condition or date)', elementId: 'field-trigger-condition' });
+      }
+      var rank = DecisionEngine.rankOptions(decision);
+      if (rank.sufficient && rank.ranked.length > 0) {
+        var top = rank.ranked[0];
+        var topOption = null;
+        (decision.options || []).forEach(function (o) { if (o.id === top.optionId) topOption = o; });
+        if (!topOption || !topOption.premortem || !topOption.premortem.trim()) {
+          missing.push({
+            field: 'topPremortem',
+            label: "Top-ranked option's premortem",
+            elementId: topOption ? ('opt-premortem-' + topOption.id) : 'section-options'
+          });
+        }
+      }
+      return { ok: missing.length === 0, missing: missing };
+    },
+
+    toMarkdown: function (decision) {
+      var lines = [];
+      var rank = DecisionEngine.rankOptions(decision);
+      var norm = DecisionEngine.normalizeWeights(decision.criteria);
+      var normMap = {}; norm.forEach(function (n) { normMap[n.id] = n; });
+
+      lines.push('# ' + decision.title);
+      lines.push('');
+      lines.push('Date: ' + new Date(decision.updatedAt || decision.createdAt || Date.now()).toISOString().slice(0, 10));
+      lines.push('');
+      lines.push('## Reversibility');
+      if (decision.reversibility === 'hard_to_reverse') {
+        lines.push('**Hard to reverse.** Assumption, trigger, and a premortem are required before you can export.');
+      } else if (decision.reversibility === 'reversible') {
+        lines.push('**Reversible.** Decide fast, keep it cheap and move.');
+      } else {
+        lines.push('Not stated.');
+      }
+      lines.push('');
+      lines.push('## Recommendation');
+      if (!rank.sufficient) {
+        lines.push('Not enough data yet: at least 2 criteria and 2 options are needed.');
+      } else {
+        var top = rank.ranked[0];
+        var topOption = null;
+        decision.options.forEach(function (o) { if (o.id === top.optionId) topOption = o; });
+        lines.push('**' + (topOption ? topOption.name : 'Unknown') + '** — total ' + top.total.toFixed(2) + '/10 (' + top.percent.toFixed(1) + '%)');
+        if (rank.margin !== null) lines.push('Margin over runner-up: ' + (rank.margin * 100).toFixed(1) + '%');
+        if (rank.closeCall) lines.push('');
+        if (rank.closeCall) lines.push('_Too close to call — the top two options are within 5% of each other._');
+      }
+      lines.push('');
+      lines.push('## Alternatives considered');
+      if (rank.sufficient) {
+        rank.ranked.forEach(function (r) {
+          var opt = null;
+          decision.options.forEach(function (o) { if (o.id === r.optionId) opt = o; });
+          lines.push('- ' + (r.tied ? 'T' : '') + r.rank + '. **' + opt.name + '**' + (opt.isStatusQuo ? ' (status quo)' : '') + ' — total ' + r.total.toFixed(2) + '/10, ' + r.percent.toFixed(1) + '%');
+          lines.push('  Premortem: ' + (opt.premortem ? opt.premortem : '_none recorded_'));
+        });
+      } else {
+        (decision.options || []).forEach(function (opt) {
+          lines.push('- **' + opt.name + '**' + (opt.isStatusQuo ? ' (status quo)' : ''));
+          lines.push('  Premortem: ' + (opt.premortem ? opt.premortem : '_none recorded_'));
+        });
+      }
+      lines.push('');
+      lines.push('## Criteria and weights');
+      lines.push('| Criterion | Weight | Normalized % | Direction |');
+      lines.push('|---|---|---|---|');
+      (decision.criteria || []).forEach(function (c) {
+        var n = normMap[c.id];
+        lines.push('| ' + c.name + ' | ' + c.weight + ' | ' + (n ? n.percentDisplay.toFixed(1) : '0.0') + '% | ' + (c.direction === 'lower' ? 'Lower is better' : 'Higher is better') + ' |');
+      });
+      lines.push('');
+      lines.push('## Full score matrix');
+      var header = '| Option | ' + (decision.criteria || []).map(function (c) { return c.name; }).join(' | ') + ' |';
+      lines.push(header);
+      var sep = '|---|';
+      for (var i = 0; i < (decision.criteria || []).length; i++) sep += '---|';
+      lines.push(sep);
+      (decision.options || []).forEach(function (opt) {
+        var cells = (decision.criteria || []).map(function (c) {
+          var cellScores = (decision.scores[opt.id] && decision.scores[opt.id][c.id]) || {};
+          var vals = [];
+          Object.keys(cellScores).forEach(function (k) { if (typeof cellScores[k] === 'number') vals.push(cellScores[k]); });
+          if (!vals.length) return '—';
+          var sumv = 0; vals.forEach(function (v) { sumv += v; });
+          return (sumv / vals.length).toFixed(1);
+        });
+        lines.push('| ' + opt.name + ' | ' + cells.join(' | ') + ' |');
+      });
+      lines.push('');
+      lines.push('## Load-bearing assumption');
+      lines.push(decision.loadBearingAssumption ? decision.loadBearingAssumption : '_none recorded_');
+      lines.push('');
+      lines.push('## Revisit trigger');
+      var trig = decision.revisitTrigger || {};
+      lines.push('Condition: ' + (trig.condition ? trig.condition : '_none recorded_'));
+      lines.push('Date: ' + (trig.date ? trig.date : '_none recorded_'));
+      if (decision.multiRater) {
+        lines.push('');
+        lines.push('## Raters');
+        lines.push('| Rater | Weight |');
+        lines.push('|---|---|');
+        (decision.raters || []).forEach(function (r) { lines.push('| ' + r.name + ' | ' + r.weight + ' |'); });
+      }
+      lines.push('');
+      lines.push('---');
+      lines.push('_Generated ' + new Date().toISOString() + '_');
+      return lines.join('\n');
+    },
+
+    toSessionJSON: function (decision) {
+      var payload = { schemaVersion: 1, kind: 'decisionEngineSession', exportedAt: new Date().toISOString(), decision: decision };
+      return JSON.stringify(payload, null, 2);
+    },
+
+    fromSessionJSON: function (text) {
+      try {
+        var obj = JSON.parse(text);
+        var raw = (obj && typeof obj === 'object' && obj.decision && typeof obj.decision === 'object') ? obj.decision : obj;
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+          return { ok: false, errors: ['File does not contain a decision object.'] };
+        }
+        if (!Array.isArray(raw.criteria) && !Array.isArray(raw.options)) {
+          return { ok: false, errors: ['File is missing criteria and options.'] };
+        }
+        var decision = repairDecision(raw);
+        return { ok: true, decision: decision };
+      } catch (e) {
+        return { ok: false, errors: ['Invalid JSON: ' + (e && e.message ? e.message : String(e))] };
+      }
+    },
+
+    migrate: function (rawLibrary) {
+      try {
+        return repairLibrary(rawLibrary);
+      } catch (e) {
+        return Factories.makeLibrary();
+      }
+    }
+  };
+  window.DecisionEngine = DecisionEngine;
+
+  /* =========================================================
+     Store — localStorage persistence
+  ========================================================= */
+  var STORAGE_KEY = 'decisionEngine.v1';
+  var Store = {
+    library: null,
+    saveTimer: null,
+    saveStatus: 'saved',
+    quotaError: false,
+    corruptionDetected: null,
+
+    init: function () {
+      this.load();
+      var self = this;
+      window.addEventListener('beforeunload', function () { self.flush(); });
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden) self.flush();
+      });
+    },
+
+    load: function () {
+      var raw = null;
+      try { raw = localStorage.getItem(STORAGE_KEY); } catch (e) { raw = null; }
+      if (!raw) {
+        this.library = Factories.makeLibrary();
+        return;
+      }
+      try {
+        var parsed = JSON.parse(raw);
+        this.library = DecisionEngine.migrate(parsed);
+      } catch (e) {
+        var backupKey = STORAGE_KEY + '.corrupt.' + Date.now();
+        try { localStorage.setItem(backupKey, raw); } catch (e2) { /* best effort */ }
+        this.library = Factories.makeLibrary();
+        this.corruptionDetected = backupKey;
+      }
+    },
+
+    scheduleSave: function () {
+      this.setStatus('saving');
+      if (this.saveTimer) clearTimeout(this.saveTimer);
+      var self = this;
+      this.saveTimer = setTimeout(function () { self.flush(); }, 300);
+    },
+
+    flush: function () {
+      if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = null; }
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.library));
+        this.quotaError = false;
+        this.setStatus('saved');
+      } catch (e) {
+        this.quotaError = true;
+        this.setStatus('error');
+        if (window.UI && UI.showQuotaBanner) UI.showQuotaBanner();
+      }
+    },
+
+    setStatus: function (s) {
+      this.saveStatus = s;
+      if (window.UI && UI.updateSaveStatus) UI.updateSaveStatus(s);
+    },
+
+    getActiveDecision: function () {
+      var lib = this.library;
+      if (!lib) return null;
+      var d = null;
+      lib.decisions.forEach(function (dec) { if (dec.id === lib.activeDecisionId) d = dec; });
+      if (!d && lib.decisions.length) { d = lib.decisions[0]; lib.activeDecisionId = d.id; }
+      return d;
+    }
+  };
+
+  function getActiveDecision() { return Store.getActiveDecision(); }
+
+  function pruneScores(d) {
+    var validOptionIds = {}; d.options.forEach(function (o) { validOptionIds[o.id] = true; });
+    var validCritIds = {}; d.criteria.forEach(function (c) { validCritIds[c.id] = true; });
+    var validRaterIds = {}; d.raters.forEach(function (r) { validRaterIds[r.id] = true; });
+    Object.keys(d.scores).forEach(function (optId) {
+      if (!validOptionIds[optId]) { delete d.scores[optId]; return; }
+      var critMap = d.scores[optId];
+      Object.keys(critMap).forEach(function (critId) {
+        if (!validCritIds[critId]) { delete critMap[critId]; return; }
+        var raterMap = critMap[critId];
+        Object.keys(raterMap).forEach(function (raterId) {
+          if (!validRaterIds[raterId]) delete raterMap[raterId];
+        });
+        if (Object.keys(raterMap).length === 0) delete critMap[critId];
+      });
+      if (Object.keys(critMap).length === 0) delete d.scores[optId];
+    });
+  }
+
+  function setCellScore(d, optId, critId, raterId, value) {
+    d.scores[optId] = d.scores[optId] || {};
+    d.scores[optId][critId] = d.scores[optId][critId] || {};
+    d.scores[optId][critId][raterId] = value;
+  }
+  function clearCellScore(d, optId, critId, raterId) {
+    if (d.scores[optId] && d.scores[optId][critId]) {
+      delete d.scores[optId][critId][raterId];
+      if (Object.keys(d.scores[optId][critId]).length === 0) delete d.scores[optId][critId];
+      if (Object.keys(d.scores[optId]).length === 0) delete d.scores[optId];
+    }
+  }
+
+  /* =========================================================
+     UI — transient state, DOM cache, render + events
+  ========================================================= */
+  var App = { scoringAsRaterId: null };
+  var EL = {};
+
+  function isProtectedFocus(container) {
+    var el = document.activeElement;
+    if (!el || !container || !container.contains(el)) return false;
+    var tag = el.tagName;
+    if (tag === 'TEXTAREA') return true;
+    if (tag === 'INPUT') {
+      var t = (el.type || 'text').toLowerCase();
+      return t === 'text' || t === 'number' || t === 'date' || t === 'search' || t === 'email' || t === 'range';
+    }
+    return false;
+  }
+
+  function getScoringAsRaterId(d) {
+    var exists = false;
+    d.raters.forEach(function (r) { if (r.id === App.scoringAsRaterId) exists = true; });
+    if (!App.scoringAsRaterId || !exists) {
+      App.scoringAsRaterId = d.raters[0].id;
+    }
+    return App.scoringAsRaterId;
+  }
+
+  var EL_IDS = [
+    'app-header', 'decision-title-input', 'library-select', 'btn-new-decision', 'btn-duplicate-decision',
+    'btn-delete-decision', 'save-status', 'import-file-input', 'import-errors',
+    'corrupt-banner', 'corrupt-banner-text', 'btn-dismiss-corrupt-banner', 'quota-banner', 'btn-quota-export',
+    'section-framing', 'reversibility-reversible', 'reversibility-hard', 'reversibility-unset',
+    'reversibility-consequence', 'field-assumption', 'field-trigger-condition', 'field-trigger-date',
+    'criteria-empty', 'criteria-list', 'btn-add-criterion', 'criteria-cap-msg',
+    'options-empty', 'status-quo-nudge', 'options-list', 'btn-add-option', 'options-cap-msg',
+    'toggle-multirater', 'raters-panel', 'raters-list', 'btn-add-rater', 'select-scoring-as', 'matrix-container',
+    'results-summary', 'close-call-banner', 'results-list',
+    'export-gating', 'btn-export-md', 'btn-export-json', 'btn-copy-clipboard', 'btn-print',
+    'copy-status', 'clipboard-fallback-textarea', 'markdown-preview'
+  ];
+
+  function cacheEls() {
+    EL_IDS.forEach(function (id) {
+      var key = id.replace(/-([a-z0-9])/g, function (_, c) { return c.toUpperCase(); });
+      EL[key] = document.getElementById(id);
+    });
+  }
+
+  var UI = {};
+
+  UI.onStateChange = function () {
+    var d = getActiveDecision();
+    if (d) d.updatedAt = new Date().toISOString();
+    Store.scheduleSave();
+    UI.renderAll();
+  };
+
+  UI.updateSaveStatus = function (status) {
+    var text = status === 'saving' ? 'Saving…' : status === 'error' ? 'Not saved — see warning' : 'Saved';
+    if (EL.saveStatus) EL.saveStatus.textContent = text;
+  };
+
+  UI.showQuotaBanner = function () {
+    if (EL.quotaBanner) EL.quotaBanner.hidden = false;
+  };
+
+  UI.showCorruptBanner = function (key) {
+    if (!EL.corruptBanner) return;
+    EL.corruptBanner.hidden = false;
+    EL.corruptBannerText.textContent = 'Your previous data could not be read, so a fresh session was started. ' +
+      'The original data has been kept under the key "' + key + '" in this browser\'s local storage.';
+  };
+
+  /* ---------- Header ---------- */
+  UI.renderHeader = function (d) {
+    if (!isProtectedFocus(EL.appHeader)) {
+      if (EL.decisionTitleInput.value !== d.title) EL.decisionTitleInput.value = d.title;
+    }
+    UI.renderLibrarySelect();
+  };
+  UI.renderLibrarySelect = function () {
+    var lib = Store.library;
+    EL.librarySelect.innerHTML = lib.decisions.map(function (dec) {
+      return '<option value="' + dec.id + '"' + (dec.id === lib.activeDecisionId ? ' selected' : '') + '>' + escapeHtml(dec.title) + '</option>';
+    }).join('');
+  };
+
+  /* ---------- Framing ---------- */
+  UI.renderFraming = function (d) {
+    if (isProtectedFocus(EL.sectionFraming)) return;
+    var val = d.reversibility || '';
+    EL.reversibilityReversible.checked = val === 'reversible';
+    EL.reversibilityHard.checked = val === 'hard_to_reverse';
+    EL.reversibilityUnset.checked = val === '';
+    EL.reversibilityConsequence.textContent = val === 'reversible'
+      ? 'Reversible: decide fast, keep it cheap and move.'
+      : val === 'hard_to_reverse'
+        ? 'Hard to reverse: assumption, trigger, and a premortem are required before you can export.'
+        : '';
+    if (EL.fieldAssumption.value !== d.loadBearingAssumption) EL.fieldAssumption.value = d.loadBearingAssumption;
+    if (EL.fieldTriggerCondition.value !== d.revisitTrigger.condition) EL.fieldTriggerCondition.value = d.revisitTrigger.condition;
+    var dateVal = d.revisitTrigger.date || '';
+    if (EL.fieldTriggerDate.value !== dateVal) EL.fieldTriggerDate.value = dateVal;
+  };
+
+  /* ---------- Criteria ---------- */
+  UI.buildCriteriaList = function (d) {
+    var norm = DecisionEngine.normalizeWeights(d.criteria);
+    var normMap = {}; norm.forEach(function (n) { normMap[n.id] = n; });
+    EL.criteriaEmpty.hidden = d.criteria.length > 0;
+    EL.criteriaList.innerHTML = d.criteria.map(function (c) {
+      var n = normMap[c.id];
+      return '' +
+        '<div class="row criterion-row" data-id="' + c.id + '">' +
+        '<div class="field">' +
+        '<label for="crit-name-' + c.id + '">Name</label>' +
+        '<input type="text" id="crit-name-' + c.id + '" value="' + escapeAttr(c.name) + '" data-role="criterion-name" data-id="' + c.id + '">' +
+        '</div>' +
+        '<div class="field">' +
+        '<label for="crit-weight-' + c.id + '">Weight</label>' +
+        '<input type="range" id="crit-weight-' + c.id + '" min="1" max="10" step="1" value="' + c.weight + '" data-role="criterion-weight" data-id="' + c.id + '">' +
+        '<span class="readout" id="crit-weight-readout-' + c.id + '">' + c.weight + '</span>' +
+        '</div>' +
+        '<div class="field">' +
+        '<span class="readout" id="crit-percent-' + c.id + '">' + n.percentDisplay.toFixed(1) + '%</span>' +
+        '</div>' +
+        '<div class="field">' +
+        '<label for="crit-dir-' + c.id + '">Direction</label>' +
+        '<select id="crit-dir-' + c.id + '" data-role="criterion-direction" data-id="' + c.id + '">' +
+        '<option value="higher"' + (c.direction === 'higher' ? ' selected' : '') + '>Higher is better</option>' +
+        '<option value="lower"' + (c.direction === 'lower' ? ' selected' : '') + '>Lower is better</option>' +
+        '</select>' +
+        '</div>' +
+        '<button type="button" class="btn-danger" data-role="delete-criterion" data-id="' + c.id + '" aria-label="Delete criterion ' + escapeAttr(c.name) + '">Delete</button>' +
+        '</div>';
+    }).join('');
+    EL.btnAddCriterion.disabled = d.criteria.length >= 12;
+    EL.criteriaCapMsg.hidden = d.criteria.length < 12;
+  };
+  UI.updateCriteriaLiveReadouts = function (d) {
+    var norm = DecisionEngine.normalizeWeights(d.criteria);
+    norm.forEach(function (n) {
+      var pctEl = document.getElementById('crit-percent-' + n.id);
+      if (pctEl) pctEl.textContent = n.percentDisplay.toFixed(1) + '%';
+      var wEl = document.getElementById('crit-weight-readout-' + n.id);
+      if (wEl) wEl.textContent = n.weight;
+    });
+  };
+
+  /* ---------- Options ---------- */
+  UI.buildOptionsList = function (d) {
+    EL.optionsEmpty.hidden = d.options.length > 0;
+    var hasStatusQuo = false;
+    d.options.forEach(function (o) { if (o.isStatusQuo) hasStatusQuo = true; });
+    EL.statusQuoNudge.hidden = d.options.length === 0 ? true : hasStatusQuo;
+    EL.optionsList.innerHTML = d.options.map(function (o) {
+      return '' +
+        '<div class="card option-card" data-id="' + o.id + '">' +
+        '<div class="field">' +
+        '<label for="opt-name-' + o.id + '">Name</label>' +
+        '<input type="text" id="opt-name-' + o.id + '" value="' + escapeAttr(o.name) + '" data-role="option-name" data-id="' + o.id + '">' +
+        '</div>' +
+        '<div class="field inline">' +
+        '<input type="checkbox" id="opt-sq-' + o.id + '" data-role="option-statusquo" data-id="' + o.id + '"' + (o.isStatusQuo ? ' checked' : '') + '>' +
+        '<label for="opt-sq-' + o.id + '">This is the status quo / do nothing</label>' +
+        '</div>' +
+        '<div class="field">' +
+        '<label for="opt-premortem-' + o.id + '">Premortem (if this fails, why)</label>' +
+        '<textarea id="opt-premortem-' + o.id + '" rows="2" data-role="option-premortem" data-id="' + o.id + '">' + escapeHtml(o.premortem) + '</textarea>' +
+        '</div>' +
+        '<button type="button" class="btn-danger" data-role="delete-option" data-id="' + o.id + '" aria-label="Delete option ' + escapeAttr(o.name) + '">Delete</button>' +
+        '</div>';
+    }).join('');
+    EL.btnAddOption.disabled = d.options.length >= 12;
+    EL.optionsCapMsg.hidden = d.options.length < 12;
+  };
+
+  /* ---------- Score matrix + raters ---------- */
+  UI.buildRatersPanel = function (d) {
+    EL.ratersList.innerHTML = d.raters.map(function (r) {
+      return '<div class="row rater-row" data-id="' + r.id + '">' +
+        '<div class="field"><label for="rater-name-' + r.id + '">Name</label>' +
+        '<input type="text" id="rater-name-' + r.id + '" value="' + escapeAttr(r.name) + '" data-role="rater-name" data-id="' + r.id + '"></div>' +
+        '<div class="field"><label for="rater-weight-' + r.id + '">Weight</label>' +
+        '<input type="range" min="1" max="10" step="1" id="rater-weight-' + r.id + '" value="' + r.weight + '" data-role="rater-weight" data-id="' + r.id + '">' +
+        '<span class="readout" id="rater-weight-readout-' + r.id + '">' + r.weight + '</span></div>' +
+        (d.raters.length > 1 ? '<button type="button" class="btn-danger" data-role="delete-rater" data-id="' + r.id + '">Delete</button>' : '') +
+        '</div>';
+    }).join('');
+    EL.selectScoringAs.innerHTML = d.raters.map(function (r) {
+      return '<option value="' + r.id + '"' + (r.id === getScoringAsRaterId(d) ? ' selected' : '') + '>' + escapeHtml(r.name) + '</option>';
+    }).join('');
+    EL.btnAddRater.disabled = d.raters.length >= 12;
+  };
+  UI.updateRatersLiveReadouts = function (d) {
+    d.raters.forEach(function (r) {
+      var wEl = document.getElementById('rater-weight-readout-' + r.id);
+      if (wEl) wEl.textContent = r.weight;
+    });
+  };
+
+  UI.buildMatrix = function (d) {
+    var norm = DecisionEngine.normalizeWeights(d.criteria);
+    var normMap = {}; norm.forEach(function (n) { normMap[n.id] = n; });
+    if (d.criteria.length === 0 || d.options.length === 0) {
+      EL.matrixContainer.innerHTML = '<p class="empty-state">Add at least one criterion and one option to start scoring.</p>';
+      return;
+    }
+    var raterId = getScoringAsRaterId(d);
+    var html = '<table class="matrix-table"><thead><tr><th scope="col">Option</th>';
+    d.criteria.forEach(function (c) {
+      var n = normMap[c.id];
+      html += '<th scope="col">' + escapeHtml(c.name) + '<br><span class="readout">' + n.percentDisplay.toFixed(1) + '% &middot; ' + (c.direction === 'lower' ? 'Lower is better ↓' : 'Higher is better ↑') + '</span></th>';
+    });
+    html += '</tr></thead><tbody>';
+    d.options.forEach(function (o) {
+      html += '<tr data-option-id="' + o.id + '"><th scope="row">' + escapeHtml(o.name) + (o.isStatusQuo ? ' <span class="tag">status quo</span>' : '') + '</th>';
+      d.criteria.forEach(function (c) {
+        var cellScores = (d.scores[o.id] && d.scores[o.id][c.id]) || {};
+        var raw = cellScores[raterId];
+        var displayVal = (typeof raw === 'number') ? raw : '';
+        var cellId = 'cell-' + o.id + '-' + c.id;
+        html += '<td data-label="' + escapeAttr(c.name) + '">' +
+          '<label class="visually-hidden" for="' + cellId + '">' + escapeAttr(o.name) + ' × ' + escapeAttr(c.name) + '</label>' +
+          '<input type="number" min="1" max="10" step="1" id="' + cellId + '" value="' + displayVal + '" placeholder="N/A" data-role="score-cell" data-option-id="' + o.id + '" data-criterion-id="' + c.id + '">' +
+          '<button type="button" class="btn-clear" data-role="clear-cell" data-option-id="' + o.id + '" data-criterion-id="' + c.id + '" aria-label="Clear score for ' + escapeAttr(o.name) + ' × ' + escapeAttr(c.name) + '">N/A</button>';
+        if (d.multiRater) {
+          var cv = DecisionEngine.cellValue(d, o.id, c.id);
+          html += '<span class="blend-readout" id="blend-' + o.id + '-' + c.id + '">' + (cv.scored ? 'Blended: ' + cv.value.toFixed(1) : 'Blended: unscored') + '</span>';
+        }
+        html += '</td>';
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    EL.matrixContainer.innerHTML = html;
+  };
+  UI.updateMatrixLiveReadouts = function (d) {
+    if (!d.multiRater) return;
+    d.options.forEach(function (o) {
+      d.criteria.forEach(function (c) {
+        var span = document.getElementById('blend-' + o.id + '-' + c.id);
+        if (!span) return;
+        var cv = DecisionEngine.cellValue(d, o.id, c.id);
+        span.textContent = cv.scored ? 'Blended: ' + cv.value.toFixed(1) : 'Blended: unscored';
+      });
+    });
+  };
+
+  UI.renderScoreSection = function (d) {
+    EL.toggleMultirater.checked = d.multiRater;
+    EL.ratersPanel.hidden = !d.multiRater;
+    if (d.multiRater) {
+      if (isProtectedFocus(EL.ratersPanel)) UI.updateRatersLiveReadouts(d);
+      else UI.buildRatersPanel(d);
+    }
+    if (isProtectedFocus(EL.matrixContainer)) UI.updateMatrixLiveReadouts(d);
+    else UI.buildMatrix(d);
+  };
+
+  /* ---------- Results ---------- */
+  UI.renderResultsSection = function (d) {
+    var rank = DecisionEngine.rankOptions(d);
+    if (!rank.sufficient) {
+      EL.resultsSummary.textContent = 'Add at least 2 criteria and 2 options to see a ranked recommendation.';
+      EL.closeCallBanner.hidden = true;
+      EL.resultsList.innerHTML = '<p class="empty-state">Not enough data yet.</p>';
+      return;
+    }
+    var top = rank.ranked[0];
+    var topOption = null;
+    d.options.forEach(function (o) { if (o.id === top.optionId) topOption = o; });
+    EL.resultsSummary.textContent = 'Recommended: ' + topOption.name + ' — total ' + top.total.toFixed(2) + '/10 (' + top.percent.toFixed(1) + '%).' + (rank.closeCall ? ' Too close to call with the runner-up.' : '');
+    EL.closeCallBanner.hidden = !rank.closeCall;
+    var normAll = DecisionEngine.normalizeWeights(d.criteria);
+    var normAllMap = {}; normAll.forEach(function (n) { normAllMap[n.id] = n; });
+    EL.resultsList.innerHTML = rank.ranked.map(function (r) {
+      var opt = null;
+      d.options.forEach(function (o) { if (o.id === r.optionId) opt = o; });
+      var isTop = r.rank === 1;
+      var rankLabel = (r.tied ? 'T' : '') + r.rank;
+      var barsHtml = r.contributions.map(function (c) {
+        var crit = null;
+        d.criteria.forEach(function (x) { if (x.id === c.criterionId) crit = x; });
+        var pct = r.total > 0 ? (c.contribution / r.total) * 100 : 0;
+        return '<div class="contrib-row">' +
+          '<span class="contrib-label">' + escapeHtml(crit ? crit.name : '?') + '</span>' +
+          '<div class="contrib-bar-track"><div class="contrib-bar-fill" style="width:' + pct.toFixed(1) + '%"></div></div>' +
+          '<span class="contrib-value">' + c.contribution.toFixed(2) + '</span>' +
+          '</div>';
+      }).join('');
+      var breakdownRows = r.contributions.map(function (c) {
+        var crit = null;
+        d.criteria.forEach(function (x) { if (x.id === c.criterionId) crit = x; });
+        var n = crit ? normAllMap[crit.id] : null;
+        return '<tr><th scope="row">' + escapeHtml(crit ? crit.name : '?') + '</th>' +
+          '<td>' + (n ? n.percentDisplay.toFixed(1) : '0.0') + '%</td>' +
+          '<td>' + c.value.toFixed(2) + '</td>' +
+          '<td>' + c.contribution.toFixed(3) + '</td></tr>';
+      }).join('');
+      return '<div class="card result-card' + (isTop ? ' recommended' : '') + '">' +
+        '<h3>' + (isTop ? '<span class="badge">Recommended</span> ' : '') + 'Rank ' + rankLabel + ': ' + escapeHtml(opt.name) + (opt.isStatusQuo ? ' <span class="tag">status quo</span>' : '') + '</h3>' +
+        '<p>Total: ' + r.total.toFixed(2) + '/10 (' + r.percent.toFixed(1) + '%)</p>' +
+        (r.unscoredCount > 0 ? '<p class="badge-warning">' + r.unscoredCount + ' of ' + r.criteriaCount + ' criteria unscored</p>' : '') +
+        '<div class="contrib-bars">' + barsHtml + '</div>' +
+        '<table class="breakdown-table"><thead><tr><th scope="col">Criterion</th><th scope="col">Weight %</th><th scope="col">Score</th><th scope="col">Contribution</th></tr></thead><tbody>' + breakdownRows + '</tbody></table>' +
+        '</div>';
+    }).join('');
+  };
+
+  /* ---------- Record / export ---------- */
+  UI.renderRecordSection = function (d) {
+    var val = DecisionEngine.validateForExport(d);
+    var disable = !val.ok;
+    [EL.btnExportMd, EL.btnExportJson, EL.btnCopyClipboard].forEach(function (btn) { btn.disabled = disable; });
+    if (disable) {
+      EL.exportGating.hidden = false;
+      EL.exportGating.innerHTML = '<div><p>Exports are blocked until:</p><ul>' + val.missing.map(function (m) {
+        return '<li><a href="#' + m.elementId + '" data-focus-target="' + m.elementId + '">' + escapeHtml(m.label) + '</a></li>';
+      }).join('') + '</ul></div>';
+    } else {
+      EL.exportGating.hidden = true;
+      EL.exportGating.innerHTML = '';
+    }
+    EL.markdownPreview.textContent = DecisionEngine.toMarkdown(d);
+  };
+
+  UI.setCopyStatus = function (msg) { EL.copyStatus.textContent = msg; };
+
+  /* ---------- Master render ---------- */
+  UI.renderAll = function () {
+    var d = getActiveDecision();
+    if (!d) return;
+    UI.renderHeader(d);
+    UI.renderFraming(d);
+    if (isProtectedFocus(EL.criteriaList)) UI.updateCriteriaLiveReadouts(d);
+    else UI.buildCriteriaList(d);
+    if (!isProtectedFocus(EL.optionsList)) UI.buildOptionsList(d);
+    UI.renderScoreSection(d);
+    UI.renderResultsSection(d);
+    UI.renderRecordSection(d);
+  };
+
+  /* ---------- Downloads ---------- */
+  function downloadBlob(content, filename, mime) {
+    var blob = new Blob([content], { type: mime });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  /* ---------- Event wiring ---------- */
+  function wireEvents() {
+    /* Header */
+    EL.decisionTitleInput.addEventListener('input', function () {
+      var d = getActiveDecision();
+      d.title = EL.decisionTitleInput.value;
+      UI.onStateChange();
+    });
+    EL.librarySelect.addEventListener('change', function () {
+      Store.library.activeDecisionId = EL.librarySelect.value;
+      App.scoringAsRaterId = null;
+      UI.onStateChange();
+    });
+    EL.btnNewDecision.addEventListener('click', function () {
+      var d = Factories.makeDecision('Untitled decision');
+      Store.library.decisions.push(d);
+      Store.library.activeDecisionId = d.id;
+      App.scoringAsRaterId = null;
+      UI.onStateChange();
+    });
+    EL.btnDuplicateDecision.addEventListener('click', function () {
+      var d = getActiveDecision();
+      var copy = JSON.parse(JSON.stringify(d));
+      copy.id = Factories.uid('d');
+      copy.title = d.title + ' (copy)';
+      var now = new Date().toISOString();
+      copy.createdAt = now; copy.updatedAt = now;
+      Store.library.decisions.push(copy);
+      Store.library.activeDecisionId = copy.id;
+      App.scoringAsRaterId = null;
+      UI.onStateChange();
+    });
+    EL.btnDeleteDecision.addEventListener('click', function () {
+      var lib = Store.library;
+      if (lib.decisions.length <= 1) { alert('At least one decision must remain.'); return; }
+      var d = getActiveDecision();
+      if (!window.confirm('Delete decision "' + d.title + '"? This cannot be undone.')) return;
+      lib.decisions = lib.decisions.filter(function (x) { return x.id !== d.id; });
+      lib.activeDecisionId = lib.decisions[0].id;
+      App.scoringAsRaterId = null;
+      UI.onStateChange();
+    });
+
+    /* Corrupt / quota banners */
+    EL.btnDismissCorruptBanner.addEventListener('click', function () { EL.corruptBanner.hidden = true; });
+    EL.btnQuotaExport.addEventListener('click', function () { EL.btnExportJson.click(); });
+
+    /* Framing */
+    [EL.reversibilityReversible, EL.reversibilityHard, EL.reversibilityUnset].forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        var d = getActiveDecision();
+        d.reversibility = radio.checked ? (radio.value || null) : d.reversibility;
+        UI.onStateChange();
+      });
+    });
+    EL.fieldAssumption.addEventListener('input', function () {
+      var d = getActiveDecision();
+      d.loadBearingAssumption = EL.fieldAssumption.value;
+      UI.onStateChange();
+    });
+    EL.fieldTriggerCondition.addEventListener('input', function () {
+      var d = getActiveDecision();
+      d.revisitTrigger.condition = EL.fieldTriggerCondition.value;
+      UI.onStateChange();
+    });
+    EL.fieldTriggerDate.addEventListener('input', function () {
+      var d = getActiveDecision();
+      d.revisitTrigger.date = EL.fieldTriggerDate.value || null;
+      UI.onStateChange();
+    });
+
+    /* Criteria */
+    EL.criteriaList.addEventListener('input', function (e) {
+      var t = e.target, id = t.dataset.id;
+      if (!id) return;
+      var d = getActiveDecision();
+      var c = null; d.criteria.forEach(function (x) { if (x.id === id) c = x; });
+      if (!c) return;
+      if (t.dataset.role === 'criterion-name') { c.name = t.value; UI.onStateChange(); }
+      else if (t.dataset.role === 'criterion-weight') { c.weight = clamp(parseInt(t.value, 10) || 1, 1, 10); UI.onStateChange(); }
+    });
+    EL.criteriaList.addEventListener('change', function (e) {
+      var t = e.target, id = t.dataset.id;
+      if (!id) return;
+      var d = getActiveDecision();
+      var c = null; d.criteria.forEach(function (x) { if (x.id === id) c = x; });
+      if (!c) return;
+      if (t.dataset.role === 'criterion-direction') { c.direction = t.value; UI.onStateChange(); }
+    });
+    EL.criteriaList.addEventListener('click', function (e) {
+      var t = e.target.closest('[data-role="delete-criterion"]');
+      if (!t) return;
+      var d = getActiveDecision();
+      d.criteria = d.criteria.filter(function (c) { return c.id !== t.dataset.id; });
+      pruneScores(d);
+      UI.onStateChange();
+    });
+    EL.btnAddCriterion.addEventListener('click', function () {
+      var d = getActiveDecision();
+      if (d.criteria.length >= 12) return;
+      var c = Factories.makeCriterion('New criterion', 5, 'higher');
+      d.criteria.push(c);
+      UI.onStateChange();
+      focusLater('crit-name-' + c.id);
+    });
+
+    /* Options */
+    EL.optionsList.addEventListener('input', function (e) {
+      var t = e.target, id = t.dataset.id;
+      if (!id) return;
+      var d = getActiveDecision();
+      var o = null; d.options.forEach(function (x) { if (x.id === id) o = x; });
+      if (!o) return;
+      if (t.dataset.role === 'option-name') { o.name = t.value; UI.onStateChange(); }
+      else if (t.dataset.role === 'option-premortem') { o.premortem = t.value; UI.onStateChange(); }
+    });
+    EL.optionsList.addEventListener('change', function (e) {
+      var t = e.target;
+      if (t.dataset.role === 'option-statusquo') {
+        var id = t.dataset.id;
+        var d = getActiveDecision();
+        d.options.forEach(function (o) { o.isStatusQuo = (o.id === id) ? t.checked : false; });
+        UI.onStateChange();
+      }
+    });
+    EL.optionsList.addEventListener('click', function (e) {
+      var t = e.target.closest('[data-role="delete-option"]');
+      if (!t) return;
+      var d = getActiveDecision();
+      d.options = d.options.filter(function (o) { return o.id !== t.dataset.id; });
+      pruneScores(d);
+      UI.onStateChange();
+    });
+    EL.btnAddOption.addEventListener('click', function () {
+      var d = getActiveDecision();
+      if (d.options.length >= 12) return;
+      var o = Factories.makeOption('New option', false, '');
+      d.options.push(o);
+      UI.onStateChange();
+      focusLater('opt-name-' + o.id);
+    });
+
+    /* Multi-rater + raters panel */
+    EL.toggleMultirater.addEventListener('change', function () {
+      var d = getActiveDecision();
+      d.multiRater = EL.toggleMultirater.checked;
+      UI.onStateChange();
+    });
+    EL.ratersPanel.addEventListener('input', function (e) {
+      var t = e.target, id = t.dataset.id;
+      if (!id) return;
+      var d = getActiveDecision();
+      var r = null; d.raters.forEach(function (x) { if (x.id === id) r = x; });
+      if (!r) return;
+      if (t.dataset.role === 'rater-name') { r.name = t.value; UI.onStateChange(); }
+      else if (t.dataset.role === 'rater-weight') { r.weight = clamp(parseInt(t.value, 10) || 1, 1, 10); UI.onStateChange(); }
+    });
+    EL.ratersPanel.addEventListener('click', function (e) {
+      var del = e.target.closest('[data-role="delete-rater"]');
+      if (!del) return;
+      var d = getActiveDecision();
+      if (d.raters.length <= 1) return;
+      var id = del.dataset.id;
+      d.raters = d.raters.filter(function (r) { return r.id !== id; });
+      pruneScores(d);
+      if (App.scoringAsRaterId === id) App.scoringAsRaterId = null;
+      UI.onStateChange();
+    });
+    EL.btnAddRater.addEventListener('click', function () {
+      var d = getActiveDecision();
+      if (d.raters.length >= 12) return;
+      var r = Factories.makeRater('Rater ' + (d.raters.length + 1), 1);
+      d.raters.push(r);
+      UI.onStateChange();
+      focusLater('rater-name-' + r.id);
+    });
+    EL.selectScoringAs.addEventListener('change', function () {
+      App.scoringAsRaterId = EL.selectScoringAs.value;
+      UI.renderAll();
+    });
+
+    /* Score matrix */
+    EL.matrixContainer.addEventListener('input', function (e) {
+      var t = e.target;
+      if (t.dataset.role !== 'score-cell') return;
+      var d = getActiveDecision();
+      var optId = t.dataset.optionId, critId = t.dataset.criterionId;
+      var raterId = getScoringAsRaterId(d);
+      var raw = t.value.trim();
+      if (raw === '') {
+        clearCellScore(d, optId, critId, raterId);
+      } else {
+        var n = parseInt(raw, 10);
+        if (!isNaN(n)) {
+          n = clamp(n, 1, 10);
+          setCellScore(d, optId, critId, raterId, n);
+        }
+      }
+      UI.onStateChange();
+    });
+    EL.matrixContainer.addEventListener('click', function (e) {
+      var t = e.target.closest('[data-role="clear-cell"]');
+      if (!t) return;
+      var d = getActiveDecision();
+      var raterId = getScoringAsRaterId(d);
+      clearCellScore(d, t.dataset.optionId, t.dataset.criterionId, raterId);
+      var input = document.getElementById('cell-' + t.dataset.optionId + '-' + t.dataset.criterionId);
+      if (input) input.value = '';
+      UI.onStateChange();
+    });
+
+    /* Import */
+    EL.importFileInput.addEventListener('change', function () {
+      var file = EL.importFileInput.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        var result = DecisionEngine.fromSessionJSON(String(reader.result));
+        if (!result.ok) {
+          EL.importErrors.hidden = false;
+          EL.importErrors.innerHTML = '<p>Import failed:</p><ul>' + result.errors.map(function (er) { return '<li>' + escapeHtml(er) + '</li>'; }).join('') + '</ul>';
+        } else {
+          EL.importErrors.hidden = true;
+          var imported = result.decision;
+          imported.id = Factories.uid('d');
+          imported.title = (imported.title || 'Untitled decision') + ' (imported)';
+          var now = new Date().toISOString();
+          imported.createdAt = now;
+          imported.updatedAt = now;
+          Store.library.decisions.push(imported);
+          Store.library.activeDecisionId = imported.id;
+          App.scoringAsRaterId = null;
+          UI.onStateChange();
+        }
+        EL.importFileInput.value = '';
+      };
+      reader.readAsText(file);
+    });
+
+    /* Export gating focus links */
+    EL.exportGating.addEventListener('click', function (e) {
+      var a = e.target.closest('[data-focus-target]');
+      if (!a) return;
+      e.preventDefault();
+      var el = document.getElementById(a.getAttribute('data-focus-target'));
+      if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus(); }
+    });
+
+    /* Exports */
+    EL.btnExportMd.addEventListener('click', function () {
+      var d = getActiveDecision();
+      var val = DecisionEngine.validateForExport(d);
+      if (!val.ok) return;
+      var md = DecisionEngine.toMarkdown(d);
+      downloadBlob(md, slugify(d.title) + '-decision-record.md', 'text/markdown');
+    });
+    EL.btnExportJson.addEventListener('click', function () {
+      var d = getActiveDecision();
+      var val = DecisionEngine.validateForExport(d);
+      if (!val.ok) return;
+      var json = DecisionEngine.toSessionJSON(d);
+      downloadBlob(json, slugify(d.title) + '-session.json', 'application/json');
+    });
+    EL.btnCopyClipboard.addEventListener('click', function () {
+      var d = getActiveDecision();
+      var val = DecisionEngine.validateForExport(d);
+      if (!val.ok) return;
+      var md = DecisionEngine.toMarkdown(d);
+      function tier3() {
+        EL.clipboardFallbackTextarea.hidden = false;
+        EL.clipboardFallbackTextarea.value = md;
+        EL.clipboardFallbackTextarea.focus();
+        EL.clipboardFallbackTextarea.select();
+        UI.setCopyStatus('Press Ctrl+C to copy (automatic copy unavailable).');
+      }
+      function tier2() {
+        try {
+          var ta = document.createElement('textarea');
+          ta.value = md;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.focus(); ta.select();
+          var ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+          if (ok) { UI.setCopyStatus('Copied to clipboard.'); return; }
+          tier3();
+        } catch (e) { tier3(); }
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(md).then(function () {
+          UI.setCopyStatus('Copied to clipboard.');
+        }).catch(tier2);
+      } else {
+        tier2();
+      }
+    });
+    EL.btnPrint.addEventListener('click', function () { window.print(); });
+  }
+
+  UI.init = function () {
+    cacheEls();
+    wireEvents();
+    if (Store.corruptionDetected) UI.showCorruptBanner(Store.corruptionDetected);
+    UI.renderAll();
+  };
+  window.UI = UI;
+
+  /* =========================================================
+     SelfTest — assertions against DecisionEngine only
+  ========================================================= */
+  var SelfTest = {
+    results: [],
+    assert: function (name, cond, detail) {
+      this.results.push({ name: name, pass: !!cond, detail: detail || '' });
+    },
+    assertClose: function (name, actual, expected, eps, detail) {
+      eps = (eps === undefined) ? 1e-6 : eps;
+      var ok = Math.abs(actual - expected) <= eps;
+      this.assert(name, ok, detail || ('expected ' + expected + ' got ' + actual));
+    },
+    run: function () {
+      this.results = [];
+      try { this.runAll(); } catch (e) { this.assert('self-test harness threw', false, String(e && e.stack || e)); }
+      var pass = 0, fail = 0;
+      this.results.forEach(function (r) { if (r.pass) pass++; else fail++; });
+      return { pass: pass, fail: fail, results: this.results };
+    },
+    runAll: function () {
+      var self = this;
+
+      function fixtureDecision() {
+        var c1 = { id: 'c1', name: 'Cost', weight: 5, direction: 'lower' };
+        var c2 = { id: 'c2', name: 'Impact', weight: 5, direction: 'higher' };
+        var o1 = { id: 'o1', name: 'Option A', isStatusQuo: true, premortem: '' };
+        var o2 = { id: 'o2', name: 'Option B', isStatusQuo: false, premortem: '' };
+        var rater = { id: 'r_me', name: 'Me', weight: 1 };
+        return {
+          id: 'd1', title: 'Test', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+          reversibility: null, loadBearingAssumption: '', revisitTrigger: { condition: '', date: null },
+          multiRater: false, raters: [rater], criteria: [c1, c2], options: [o1, o2],
+          scores: {
+            o1: { c1: { r_me: 2 }, c2: { r_me: 8 } },
+            o2: { c1: { r_me: 9 }, c2: { r_me: 3 } }
+          }
+        };
+      }
+      function marginDecision(v1, v2) {
+        return {
+          id: 'm', title: 'm', createdAt: '', updatedAt: '', reversibility: null, loadBearingAssumption: '',
+          revisitTrigger: { condition: '', date: null }, multiRater: false, raters: [{ id: 'r_me', name: 'Me', weight: 1 }],
+          criteria: [{ id: 'c1', name: 'C1', weight: 1, direction: 'higher' }, { id: 'c2', name: 'C2', weight: 1, direction: 'higher' }],
+          options: [{ id: 'o1', name: 'O1', isStatusQuo: false, premortem: '' }, { id: 'o2', name: 'O2', isStatusQuo: false, premortem: '' }],
+          scores: { o1: { c1: { r_me: v1 }, c2: { r_me: v1 } }, o2: { c1: { r_me: v2 }, c2: { r_me: v2 } } }
+        };
+      }
+
+      /* 1. Weight normalization including rounding fix-up */
+      var nw1 = DecisionEngine.normalizeWeights([{ id: 'a', weight: 1 }, { id: 'b', weight: 1 }, { id: 'c', weight: 1 }]);
+      var sum1 = 0; nw1.forEach(function (n) { sum1 += n.percentDisplay; });
+      self.assertClose('normalizeWeights: thirds sum to exactly 100.0', sum1, 100, 1e-9);
+      self.assertClose('normalizeWeights: normalized fraction correct', nw1[0].normalized, 1 / 3, 1e-9);
+      var nw2 = DecisionEngine.normalizeWeights([{ id: 'a', weight: 7 }, { id: 'b', weight: 3 }]);
+      self.assertClose('normalizeWeights: exact 70/30 split (a)', nw2[0].percentDisplay, 70.0, 1e-9);
+      self.assertClose('normalizeWeights: exact 70/30 split (b)', nw2[1].percentDisplay, 30.0, 1e-9);
+
+      /* 2. Direction inversion */
+      var d2 = fixtureDecision();
+      var cv1 = DecisionEngine.cellValue(d2, 'o1', 'c1');
+      self.assertClose('direction inversion: lower-is-better score 2 -> effective 9', cv1.value, 9, 1e-9);
+      var cv2 = DecisionEngine.cellValue(d2, 'o1', 'c2');
+      self.assertClose('direction inversion: higher-is-better score 8 -> effective 8', cv2.value, 8, 1e-9);
+
+      /* 3. Unscored-cell midpoint */
+      var d3 = fixtureDecision();
+      delete d3.scores.o1.c1;
+      var cv3 = DecisionEngine.cellValue(d3, 'o1', 'c1');
+      self.assert('unscored cell falls back to midpoint 5.5', cv3.value === 5.5 && cv3.scored === false);
+
+      /* 4. Per-rater weighted aggregation */
+      var d4 = fixtureDecision();
+      d4.multiRater = true;
+      d4.raters = [{ id: 'r1', name: 'A', weight: 1 }, { id: 'r2', name: 'B', weight: 3 }];
+      d4.scores.o1.c2 = { r1: 10, r2: 2 };
+      var cv4 = DecisionEngine.cellValue(d4, 'o1', 'c2');
+      self.assertClose('multi-rater weighted aggregation (1*10 + 3*2)/4 = 4', cv4.value, 4, 1e-9);
+
+      /* 5. Contributions sum to total */
+      var d5 = fixtureDecision();
+      d5.scores.o2.c1 = { r_me: 4 };
+      d5.scores.o2.c2 = { r_me: 6 };
+      var so5 = DecisionEngine.scoreOption(d5, 'o2');
+      var sumContrib = 0; so5.contributions.forEach(function (c) { sumContrib += c.contribution; });
+      self.assertClose('contributions sum to total', sumContrib, so5.total, 1e-9);
+
+      /* 6. Rank ordering and tie handling */
+      var c1o = { id: 'c1', name: 'X', weight: 1, direction: 'higher' };
+      var c2o = { id: 'c2', name: 'Y', weight: 1, direction: 'higher' };
+      var oA = { id: 'oA', name: 'A', isStatusQuo: true, premortem: '' };
+      var oB = { id: 'oB', name: 'B', isStatusQuo: false, premortem: '' };
+      var oC = { id: 'oC', name: 'C', isStatusQuo: false, premortem: '' };
+      var tieDecision = {
+        id: 't', title: 't', createdAt: '', updatedAt: '', reversibility: null, loadBearingAssumption: '',
+        revisitTrigger: { condition: '', date: null }, multiRater: false, raters: [{ id: 'r_me', name: 'Me', weight: 1 }],
+        criteria: [c1o, c2o], options: [oA, oB, oC],
+        scores: {
+          oA: { c1: { r_me: 5 }, c2: { r_me: 5 } },
+          oB: { c1: { r_me: 5 }, c2: { r_me: 5 } },
+          oC: { c1: { r_me: 1 }, c2: { r_me: 1 } }
+        }
+      };
+      var rk6 = DecisionEngine.rankOptions(tieDecision);
+      self.assert('rankOptions: sufficient with 2 criteria / 3 options', rk6.sufficient === true);
+      self.assert('rankOptions: tie shares rank 1, status quo first',
+        rk6.ranked[0].optionId === 'oA' && rk6.ranked[1].optionId === 'oB' &&
+        rk6.ranked[0].rank === 1 && rk6.ranked[1].rank === 1 &&
+        rk6.ranked[0].tied === true && rk6.ranked[1].tied === true);
+      self.assert('rankOptions: third option ranked 3 (skip), not tied', rk6.ranked[2].rank === 3 && rk6.ranked[2].tied === false);
+      var insufficient = { id: 'i', title: 'i', createdAt: '', updatedAt: '', reversibility: null, loadBearingAssumption: '', revisitTrigger: { condition: '', date: null }, multiRater: false, raters: [{ id: 'r_me', name: 'Me', weight: 1 }], criteria: [c1o, c2o], options: [oA], scores: {} };
+      var rk6b = DecisionEngine.rankOptions(insufficient);
+      self.assert('rankOptions: insufficient data flagged (fewer than 2 options)', rk6b.sufficient === false && rk6b.ranked.length === 0);
+
+      /* 7. Close-call threshold at the boundary */
+      var near = DecisionEngine.rankOptions(marginDecision(10, 9.6));
+      self.assert('close call: 4% margin triggers banner', near.closeCall === true);
+      var boundary = DecisionEngine.rankOptions(marginDecision(10, 9.5));
+      self.assert('close call: exactly 5% margin does NOT trigger (boundary is <5%)', boundary.closeCall === false);
+      var far = DecisionEngine.rankOptions(marginDecision(10, 9.0));
+      self.assert('close call: 10% margin does not trigger', far.closeCall === false);
+
+      /* 8. validateForExport for both reversibility states */
+      var dv1 = fixtureDecision();
+      dv1.reversibility = 'reversible';
+      var val1 = DecisionEngine.validateForExport(dv1);
+      self.assert('validateForExport: reversible is always ok', val1.ok === true && val1.missing.length === 0);
+
+      var dv2 = fixtureDecision();
+      dv2.reversibility = 'hard_to_reverse';
+      var val2 = DecisionEngine.validateForExport(dv2);
+      self.assert('validateForExport: hard_to_reverse blocks with missing fields', val2.ok === false && val2.missing.length >= 2);
+
+      var dv3 = fixtureDecision();
+      dv3.reversibility = 'hard_to_reverse';
+      dv3.loadBearingAssumption = 'Because X';
+      dv3.revisitTrigger = { condition: 'If Y happens', date: null };
+      var rankTop = DecisionEngine.rankOptions(dv3);
+      var topOpt = null;
+      dv3.options.forEach(function (o) { if (o.id === rankTop.ranked[0].optionId) topOpt = o; });
+      topOpt.premortem = 'It might fail because Z';
+      var val3 = DecisionEngine.validateForExport(dv3);
+      self.assert('validateForExport: hard_to_reverse passes when all three filled', val3.ok === true);
+
+      /* 9. fromSessionJSON rejecting malformed input without throwing */
+      var bad1 = DecisionEngine.fromSessionJSON('not json{{{');
+      self.assert('fromSessionJSON: invalid JSON text rejected without throwing', bad1.ok === false && Array.isArray(bad1.errors));
+      var bad2 = DecisionEngine.fromSessionJSON('42');
+      self.assert('fromSessionJSON: non-object JSON rejected', bad2.ok === false);
+      var bad3 = DecisionEngine.fromSessionJSON(JSON.stringify({ foo: 'bar' }));
+      self.assert('fromSessionJSON: missing required fields rejected', bad3.ok === false);
+      var good = DecisionEngine.fromSessionJSON(DecisionEngine.toSessionJSON(fixtureDecision()));
+      self.assert('fromSessionJSON: valid session JSON accepted', good.ok === true && good.decision && Array.isArray(good.decision.criteria));
+
+      /* 10. migrate() on empty/garbage object without throwing */
+      var threw = false, libA = null, libB = null, libC = null;
+      try {
+        libA = DecisionEngine.migrate(null);
+        libB = DecisionEngine.migrate({});
+        libC = DecisionEngine.migrate({ schemaVersion: 99, decisions: 'garbage', activeDecisionId: 12345 });
+      } catch (e) { threw = true; }
+      self.assert('migrate: never throws on null/empty/garbage input', threw === false);
+      self.assert('migrate: produces a valid library shape from null', !!libA && Array.isArray(libA.decisions) && libA.decisions.length >= 1);
+      self.assert('migrate: repairs a garbage decisions array', !!libC && Array.isArray(libC.decisions) && libC.decisions.length >= 1);
+    },
+    renderPage: function () {
+      var res = this.run();
+      document.title = 'Self-test — Decision Engine';
+      document.documentElement.style.background = '#fff';
+      document.body.innerHTML = '';
+      var root = document.createElement('div');
+      root.id = 'selftest-root';
+      root.style.fontFamily = '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif';
+      root.style.padding = '24px';
+      root.style.maxWidth = '900px';
+      root.style.margin = '0 auto';
+      var h1 = document.createElement('h1');
+      h1.textContent = 'Decision Engine — Self Tests';
+      root.appendChild(h1);
+      var summary = document.createElement('p');
+      summary.id = 'selftest-summary';
+      summary.textContent = 'SELFTEST PASS: ' + res.pass + ' FAIL: ' + res.fail;
+      summary.style.fontWeight = 'bold';
+      summary.style.fontSize = '1.25rem';
+      root.appendChild(summary);
+      var backLink = document.createElement('p');
+      backLink.innerHTML = '<a href="' + location.pathname + '">Back to app</a>';
+      root.appendChild(backLink);
+      var list = document.createElement('ul');
+      list.id = 'selftest-list';
+      list.style.listStyle = 'none';
+      list.style.padding = '0';
+      res.results.forEach(function (r) {
+        var li = document.createElement('li');
+        li.className = r.pass ? 'pass' : 'fail';
+        li.style.padding = '0.25rem 0';
+        li.style.borderBottom = '1px solid #eee';
+        li.style.color = r.pass ? '#0a7a0a' : '#b00020';
+        li.textContent = (r.pass ? 'PASS' : 'FAIL') + ' — ' + r.name + (r.pass ? '' : ' :: ' + r.detail);
+        list.appendChild(li);
+      });
+      root.appendChild(list);
+      document.body.appendChild(root);
+    }
+  };
+  window.runSelfTests = function () { return SelfTest.run(); };
+
+  /* =========================================================
+     Bootstrap
+  ========================================================= */
+  function boot() {
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('selftest') === '1') {
+      SelfTest.renderPage();
+      return;
+    }
+    Store.init();
+    UI.init();
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+})();
+</script>
+</body>
+</html>
+
