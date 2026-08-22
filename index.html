@@ -1600,12 +1600,45 @@ ROE.io = (function(){
 
   // ---- Header mapping detection ----
   // Returns { field: matchedHeader|null } for each canonical field in `sheetName`.
-  function detectMapping(sheetName, headers){
+  // `customDefs` (optional, IO-1 fix round 2): the file's own CustomFieldDefs rows for this sheet's
+  // entity type. Canonical fuzzy matching and custom-field positional matching must operate on
+  // DISJOINT column sets, decided BEFORE fuzzy matching runs loosely - otherwise a deleted canonical
+  // column (e.g. "Office") lets fuzzyMatchHeader's ~60-point substring match steal a genuine custom
+  // column (e.g. "Office Location") that the CustomFieldDefs sheet says belongs to a custom field
+  // (MGR-E). So: first claim exact canonical matches and month-key columns (unambiguous), then
+  // reserve whichever of the remaining columns line up - by position AND header text - with the
+  // file's own custom defs, and only THEN run fuzzy matching for any still-unmapped canonical field,
+  // restricted to whatever is left over. Erring toward "leave unmapped, let the user resolve it in
+  // the manual mapping UI" beats guessing.
+  function detectMapping(sheetName, headers, customDefs){
+    customDefs = customDefs || [];
     var fields = COLUMNS[sheetName] || [];
     var mapping = {};
+    var claimed = {};
     fields.forEach(function(f){
       var exact = headers.find(function(h){ return U.normalizeHeader(h) === U.normalizeHeader(f); });
-      mapping[f] = exact || U.fuzzyMatchHeader(f, headers) || null;
+      mapping[f] = exact || null;
+      if (exact){
+        var idx = headers.indexOf(exact);
+        if (idx !== -1) claimed[idx] = true;
+      }
+    });
+    headers.forEach(function(h, i){ if (U.isMonthKey(h)) claimed[i] = true; });
+
+    // Reserve columns that positionally AND textually match the file's own custom-field defs,
+    // before fuzzy canonical matching gets a chance to see them.
+    var leftoverForCustom = [];
+    headers.forEach(function(h, i){ if (!claimed[i]) leftoverForCustom.push(i); });
+    customDefs.forEach(function(def, i){
+      var ci = leftoverForCustom[i];
+      if (ci === undefined) return;
+      if (String(headers[ci]) === String(def.label)) claimed[ci] = true;
+    });
+
+    var fuzzyCandidates = headers.filter(function(h, i){ return !claimed[i]; });
+    fields.forEach(function(f){
+      if (mapping[f]) return;
+      mapping[f] = U.fuzzyMatchHeader(f, fuzzyCandidates) || null;
     });
     return mapping;
   }
@@ -1626,9 +1659,9 @@ ROE.io = (function(){
     var result = { records: [], errors: [], skipped: 0, monthWarnings: [] };
     if (!aoa || aoa.length === 0) return result;
     var headers = aoa[0];
-    var mapping = opts.mapping || detectMapping(sheetName, headers);
-    var horizonMonths = opts.monthKeys || [];
     var customDefs = opts.customDefs || [];
+    var mapping = opts.mapping || detectMapping(sheetName, headers, customDefs);
+    var horizonMonths = opts.monthKeys || [];
     var isWideMonths = sheetName === "ProjectDemands" || sheetName === "Assignments";
     var monthHeaderCols = [];
     if (isWideMonths){
@@ -1657,22 +1690,36 @@ ROE.io = (function(){
     }
 
     // Reads this row's custom-field columns into { values, presentKeys }, matched by POSITION,
-    // not by searching the header row for `def.label` text. buildWorkbookSheets always appends
-    // exactly one column per active def (using the label purely as a human-readable header),
-    // strictly after the canonical + month columns, in the same relative order that
+    // not by searching the header row for `def.label` text - but VERIFIED against the header text
+    // actually found at that position before trusting it (fix round 2). buildWorkbookSheets always
+    // appends exactly one column per active def (using the label purely as a human-readable
+    // header), strictly after the canonical + month columns, in the same relative order that
     // `customDefsFor(entityType)` (i.e. `customDefs` here, filtered from the file's own
     // CustomFieldDefs sheet) preserves. So: figure out which header columns are already claimed by
     // a canonical field (via `mapping`) or by a month column (for wide-month sheets), then zip the
-    // remaining "leftover" columns, left to right, against `customDefs`, in order. This means two
+    // remaining "leftover" columns, left to right, against `customDefs`, in order - but only trust
+    // the zip if the header text found at that position actually equals `def.label`. This means two
     // defs sharing an identical label, or a custom label colliding with a canonical column name
-    // (e.g. "Name"), can never be confused with each other or with the canonical column - identity
-    // comes from the file's CustomFieldDefs sheet order, never from re-deriving a match off printed
-    // label text (the bug `headers.indexOf(def.label)` had).
-    // presentKeys lists every def.key whose column was actually present in this row's sheet at
-    // all (whether the cell itself was blank or not) - used by STORE.upsert to distinguish "column
-    // absent from this import" (leave the existing stored value alone) from "column present but
-    // cell blank" (an explicit, intentional clear) on re-import (see BUILD_PLAN_ADDENDUM_1.md's
-    // "never silently delete data" principle).
+    // (e.g. "Name"), can never be confused with each other or with the canonical column when the
+    // file is unedited - identity comes from the file's CustomFieldDefs sheet order, never from
+    // re-deriving a match off printed label text (the bug `headers.indexOf(def.label)` had).
+    //
+    // A structural edit to the exported file (inserting/removing a column, or reordering the
+    // CustomFieldDefs sheet's rows) is exactly what breaks the position-only assumption - hand-
+    // editing the exported workbook is the whole point of the export/import feature, so this must
+    // not be allowed to silently misassign a value. When the header at the expected position does
+    // NOT match `def.label`, do not guess: report a per-row/per-column error naming the sheet and
+    // the expected field, and leave that key untouched (never populate it, never mark it present -
+    // so STORE.upsert's merge treats it exactly like "column absent", preserving any existing
+    // stored value, not clearing it).
+    //
+    // presentKeys lists every def.key whose column was verified present in this row's sheet AND
+    // successfully read (a genuinely blank cell counts as present - it is an explicit, intentional
+    // clear; a parse failure does not, so it never wipes the existing stored value - see the
+    // Number-column fix below). Used by STORE.upsert to distinguish "column absent from this
+    // import" (leave the existing stored value alone) from "column present but cell blank" (an
+    // explicit clear) on re-import (see BUILD_PLAN_ADDENDUM_1.md's "never silently delete data"
+    // principle).
     function readCustom(row, rowNum){
       var out = { values: {}, presentKeys: [] };
       if (!customDefs.length) return out;
@@ -1692,17 +1739,28 @@ ROE.io = (function(){
       customDefs.forEach(function(def, i){
         var ci = leftover[i];
         if (ci === undefined) return; // no column present in this file for this def at all
-        out.presentKeys.push(def.key);
+        var headerText = headers[ci];
+        if (String(headerText === undefined || headerText === null ? "" : headerText) !== String(def.label)){
+          // Structural edit shifted columns out of alignment (inserted/removed column, reordered
+          // CustomFieldDefs rows, etc.) - do not guess-assign. Report and leave the key untouched.
+          result.errors.push({ sheet: sheetName, row: rowNum, field: def.label, message: "Expected custom column '" + def.label + "' but found '" + (headerText === undefined || headerText === null ? "" : headerText) + "' at that position - value not imported (column order may have changed; re-export or fix the sheet layout)" });
+          return;
+        }
         var raw = row[ci];
-        if (raw === undefined || raw === "" || raw === null) return; // present but blank = explicit clear
+        if (raw === undefined || raw === "" || raw === null){
+          out.presentKeys.push(def.key); // present but blank = explicit clear
+          return;
+        }
         if (def.type === "number"){
           var n = typeof raw === "number" ? raw : parseFloat(raw);
           if (isNaN(n)){
             result.errors.push({ sheet: sheetName, row: rowNum, field: def.label, message: "'" + def.label + "' must be a number" });
-            return;
+            return; // do NOT mark presentKeys - leave the existing stored value untouched, not cleared
           }
+          out.presentKeys.push(def.key);
           out.values[def.key] = n;
         } else {
+          out.presentKeys.push(def.key);
           out.values[def.key] = String(raw);
         }
       });
@@ -3272,7 +3330,7 @@ ROE.ui = (function(){
       var val = (rec && rec.custom) ? rec.custom[d.key] : undefined;
       if (val === undefined || val === null) val = "";
       var inputType = d.type === "number" ? "number" : "text";
-      return '<label>'+esc(d.label)+' <span class="hint">('+d.type+')</span><input type="'+inputType+'" class="custom-field-input" data-entity="'+esc(entityType)+'" data-key="'+esc(d.key)+'" data-type="'+d.type+'"'+extraAttrs+' value="'+esc(val)+'"></label>';
+      return '<label>'+esc(d.label)+' <span class="hint">('+d.type+', key: '+esc(d.key)+')</span><input type="'+inputType+'" class="custom-field-input" data-entity="'+esc(entityType)+'" data-key="'+esc(d.key)+'" data-type="'+d.type+'"'+extraAttrs+' value="'+esc(val)+'"></label>';
     }).join("");
     return '<fieldset><legend>Custom fields</legend><div class="row">'+rows+'</div></fieldset>';
   }
@@ -4365,10 +4423,18 @@ ROE.ui = (function(){
       var state = STORE.getState();
       var mappings = {};
       var needsMappingHtml = "";
+      // Fix round 2: parse the file's own CustomFieldDefs sheet (if any) up front so canonical
+      // header detection can reserve custom-field columns BEFORE fuzzy-matching canonical fields
+      // against them - otherwise a deleted canonical column lets fuzzy matching steal a genuine
+      // custom column out from under it (MGR-E). Only successfully-parsed rows count here, so a
+      // rejected CustomFieldDefs row never reserves (or shifts) a column either.
+      var cfdForMapping = sheets.CustomFieldDefs ? IO.parseCustomFieldDefsSheet(sheets.CustomFieldDefs).records : [];
       Object.keys(IO.COLUMNS).forEach(function(sheetName){
         if (sheetName === "Meta" || sheetName === "CustomFieldDefs" || !sheets[sheetName]) return;
         var headers = sheets[sheetName][0] || [];
-        var detected = IO.detectMapping(sheetName, headers);
+        var entityType = IO.ENTITY_TYPE_BY_SHEET[sheetName];
+        var defsForSheet = entityType ? IO.customDefsFor(cfdForMapping, entityType) : [];
+        var detected = IO.detectMapping(sheetName, headers, defsForSheet);
         var unresolved = Object.keys(detected).filter(function(f){ return !detected[f]; });
         mappings[sheetName] = {};
         Object.keys(detected).forEach(function(f){ mappings[sheetName][f] = detected[f]; });
