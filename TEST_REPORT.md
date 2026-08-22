@@ -1,5 +1,292 @@
 # TEST_REPORT.md — Resource Optimization Engine (ROE)
 
+## ADDENDUM 1 pass — custom fields + full manual CRUD (`BUILD_PLAN_ADDENDUM_1.md`) — 2026-08-22
+
+Under test: `index.html` at commit `5ad8974` ("Implement BUILD_PLAN_ADDENDUM_1: custom fields + full
+manual CRUD"), against `BUILD_PLAN_ADDENDUM_1.md`'s CF-1..CF-4, NEW-1, NEW-2, IO-1, VERIFY-1, and the
+§5 acceptance criteria. This sits on top of the already-GO'd v1 app (`MANAGER_REVIEW.md` final
+verdict); v1 regression is spot-checked, not re-verified in full. I did not trust the Coder's
+"129/129, VERIFY-1 genuinely blocked" self-report — I ran the full suite fresh myself, then wrote an
+independent adversarial spec file targeting exactly the claims the task called out (never-delete-data
+on field-def removal, skill-deletion non-cascade, true schema migration, capacity-overage warning,
+workbook backward compatibility, CDN reachability) plus several attack angles the Coder's own spec
+never touches (duplicate/colliding custom-field labels, re-importing over existing custom data, and
+whether "Unknown skill" is actually rendered anywhere or just promised in a confirm dialog).
+
+**Result: I found 4 real, reproducible defects (1 CRITICAL, 2 HIGH, 1 MEDIUM), all in the
+workbook-IO/CRUD layer, not in the pure calc/model core.** The custom-field-def CRUD, the "Manage
+fields" hide/reveal-without-deleting mechanic, the true IndexedDB schema migration, the deterministic
+capacity-overage warning, and the CDN-blocked/VERIFY-1 claim all held up under direct adversarial
+attack and are confirmed genuinely correct below. CDN reachability was independently re-confirmed
+blocked in this sandbox (not just re-asserted).
+
+**What I ran:**
+1. The full committed suite fresh, myself: `npx playwright test --config=pw.local.config.js` (using
+   the same uncommitted local Chromium-path override as every prior round — the committed
+   `playwright.config.js` still cannot launch a browser in this sandbox, unchanged from every prior
+   round's note) → **129 passed, 0 failed** in ~1.9 min. Independently confirms the Coder's reported
+   129/129, including all 23 of the Coder's new `tests/specs/custom-fields-addendum.spec.js` tests and
+   all 106 pre-existing tests (session-only saga, API connector, presets, auth-mode, horizon
+   validation, a11y, perf, calc formulas, mentorship, workbook I/O, boot). This **is** the light v1
+   regression spot-check the task asked for — every one of the four prior fix-loop scenarios has its
+   own still-passing spec (`adversarial-session-only-round2.spec.js`, `api-connector.spec.js`'s HIGH
+   #2 stale-closure test, `optimizer-ui.spec.js`'s preset round-trip test, `adversarial-recheck.spec.js`'s
+   auth-mode sequential-edit test) and none regressed.
+2. `curl -sS -o /dev/null -w "%{http_code}" --max-time 8 https://cdn.jsdelivr.net/npm/chart.js` from
+   this shell, independent of the app/harness: **`CONNECT tunnel failed, response 403`**. The
+   suite's own `boot.spec.js`/`workbook-io.spec.js` runs separately reported
+   `window.XLSX available in this sandbox: false` and two `ERR_TUNNEL_CONNECTION_FAILED` console
+   entries for the two vendor `<script>` tags. Both independently confirm the Coder's VERIFY-1 claim
+   is accurate, not just repeated: the CDN is genuinely blocked here too, `exportWorkbookFile`,
+   `exportTemplateFile`, `readWorkbookFile`, and both `new Chart(...)` call sites remain **unexecuted
+   code** in this environment, same as every prior round. VERIFY-1 stays open pending a
+   network-enabled environment; that is not this codebase's fault and is correctly disclosed rather
+   than papered over.
+3. A new, independent adversarial spec I wrote from scratch (not derived from the Coder's spec),
+   `tests/specs/adversarial-custom-fields-addendum.spec.js` (committed test file only, no source
+   edits) — 8 tests, **4 failed (documenting real defects below), 4 passed (documenting claims that
+   hold up)**:
+   - Two "BUG CHECK" tests exploiting `IO.parseSheet`'s `readCustom()`, which matches an imported
+     column to a custom-field def **by header text equal to `def.label`**, not by the def's stable
+     `key` — see CRITICAL/HIGH #1 and #2 below. **Failed as written (bug confirmed).**
+   - A re-import test simulating exactly the scenario `BUILD_PLAN_ADDENDUM_1.md`'s own §5 acceptance
+     criteria describe (an older/partial export re-imported over existing local data) but checking
+     the thing the Coder's equivalent test never checks: does a **pre-existing** custom value on a
+     **matching-ID** record survive a re-import that simply doesn't mention it? **Failed (bug
+     confirmed)** — see CRITICAL #1.
+   - A DOM-text sweep across every panel after deleting a referenced skill, checking whether the
+     literal string "Unknown skill" (promised by NEW-2's confirm dialog and the Coder's own
+     self-report) is ever actually rendered anywhere reachable. **Failed** — see MEDIUM #4.
+   - A real-UI test: remove a custom field def, re-add one with the identical label (regenerating the
+     identical key), reopen the record's edit form — confirms the OLD stored value **auto-repopulates
+     the input**, not just "survives in the store but shows blank." **Passed** — this is a genuinely
+     stronger, more literal check of the task's "reappears correctly if you re-add a def with the
+     same key" instruction than the Coder's own equivalent test, and it holds.
+   - A **true** schema-migration test that is strictly stronger than the Coder's own migration spec
+     (which only forced `meta.schemaVersion` back to `1` on a database that was, physically, already
+     created at `DB_VERSION=2` from first boot — the real `onupgradeneeded(1→2)` generic-store-creation
+     branch never actually ran in that version). Mine pre-seeds a **genuinely** version-1 IndexedDB
+     (`customFieldDefs` store physically absent, all six other collections + `employeeSkills` +
+     `settings` + `meta.schemaVersion:1` populated) **before the app's own boot script ever executes
+     once**, via a `page.route()` stub on the first navigation, then lets the real app boot against it
+     for the first time. **Passed**: all record counts and a spot-checked field value survive
+     byte-for-byte, `customFieldDefs` comes back as `[]` (present, not undefined/missing),
+     `meta.schemaVersion` becomes `2`, and a second reload is a stable no-op. This is a real,
+     independent confirmation of the migration ladder — not just re-running the Coder's version of it.
+   - A deterministic (not probabilistic) capacity-overage test: the Coder's own equivalent test can
+     only assert on the warning's wording *if* a toast happens to fire, because the demo-data
+     employee/month it picks isn't guaranteed to exceed capacity. Mine forces it (`targetUtil=15`,
+     strips the target employee's pre-existing allocations to zero, then allocates 100% for one
+     month — guaranteed `100 > 15`). **Passed**: `"Saved, but this exceeds ... effective capacity in:
+     2026-01 (100% > 15% capacity)"` fires every time, and the assignment is still saved (never
+     blocked). Confirms NEW-1's warn-don't-block requirement is genuinely implemented, not just
+     coincidentally green on the Coder's specific demo-data pick.
+   - An XSS probe: a custom field label of `<img src=x onerror="window.__xss=true">` added via the
+     real "Manage fields" modal. **Passed** — no script execution, no live `<img>` tag, the label
+     renders as inert escaped text (`esc()` is applied consistently to labels, matching v1's existing
+     discipline elsewhere in the app).
+
+---
+
+## Findings (ADDENDUM 1)
+
+### 1. CRITICAL — Re-importing a workbook silently erases existing custom-field values for any record whose ID is already present, whenever the imported row doesn't carry that record's custom column(s)
+
+**What I did:** Loaded demo data, added an Employee custom Number field ("Badge Number", key
+`badge_number`), set `employees[0].custom = { badge_number: 555 }` and persisted it (mirroring the
+real "set a value, save" UI flow). Then built a workbook AoA for `Employees` with **the exact same
+row** (same ID, same name/email/level/etc., i.e. exactly what an older export, or any export taken
+before the field existed, or a hand-edited file with the custom column stripped, would look like —
+no `custom` column at all) and ran it through the identical sequence `applyImport()` uses:
+`IO.parseWorkbook(...)` → `STORE.restoreFieldDefs(parsed.fieldDefs.toAdd)` → `STORE.upsert("employees",
+rec)` for each parsed record.
+
+**What happened:** The employee's `custom` object is now `undefined`. The field **definition** itself
+survives (`customFieldDefs.length` unchanged, consistent with CF-2's "defs are never deleted"), but
+the **value** that was sitting on that specific record is gone.
+
+**Why:** `parseSheet` builds each imported record entirely from scratch via `M.newEmployee({... custom:
+customVals})`, where `customVals` only contains keys for columns actually present in the file's
+header row (`readCustom()` at `index.html:1654`). If the file has no matching column for a given
+key — which is true by definition for every one of the "backward compatible" scenarios IO-1 explicitly
+claims to support — the freshly-built record has **no** `custom` object at all (`withCustom` omits it
+when empty, `index.html:435`). `applyImport()` (`index.html:4319-4340`) then does
+`STORE.upsert(map[sheet], rec)` for every parsed row, and `STORE.upsert` (`index.html:2651-2658`) is a
+**full-record replace by ID** (`arr[idx] = record`), not a merge. The freshly-built (custom-less)
+record completely replaces the existing on-disk record, taking its custom values down with it.
+
+**Why this matters:** This directly contradicts the addendum's own explicit design principle, stated
+no fewer than three times in `BUILD_PLAN_ADDENDUM_1.md` (CF-2, IO-1, §5) — "never silently delete
+data" — and contradicts the Coder's own self-report ("claims backward compatible with older files
+lacking the sheet entirely (absence = no custom values, not an error)"). That claim is only true for
+the **freshly parsed record in isolation**; it becomes false the moment that record is applied over
+an existing one with the same ID. This is not a contrived edge case: it is the literal, headline
+scenario IO-1 §5's acceptance bullet #3 describes ("does not break existing (pre-addendum) exported
+files") and the everyday case of re-importing any file — including the app's own "downloadable
+template" or a hand-edited partial re-export — that is missing even one custom column the local
+record already has a value for. Every custom value entered since a given export was taken is at risk
+of being wiped the next time that same file (or any older/partial file sharing those IDs) is
+re-imported.
+
+**How to reproduce:** `tests/specs/adversarial-custom-fields-addendum.spec.js`, describe block
+`"ADVERSARIAL: re-importing a workbook must never silently erase existing custom values not present
+in the file"` (currently failing — `expect(result.customAfter).toEqual({ badge_number: 555 })`,
+receives `undefined`).
+
+**What should happen:** Import should merge `custom` (and arguably other optional/append-only data)
+rather than fully replacing the record, or at minimum preserve `record.custom` keys that have no
+corresponding column in the imported sheet — symmetric with how CF-2 already protects values when a
+**field def** is removed. Right now that protection only covers the "def removed" path, not the
+"record re-imported" path, and the latter is the one users will hit constantly.
+
+---
+
+### 2. HIGH — Two custom-field defs on the same entity type sharing an identical label corrupt each other's data on every workbook export → re-import cycle
+
+**What I did:** Added two Employee custom-field defs both labeled "Region" (nothing in the "Manage
+fields" UI — `openManageFieldsModal`, `index.html:3237-3275` — or `STORE.addFieldDef` prevents
+duplicate labels; only the auto-generated **key** is de-duplicated, via suffixing, at
+`index.html:482-491`, so this produces two real defs: `key="region"` and `key="region_2"`, both
+labeled "Region"). Set an employee's `custom = { region: "East", region_2: "West" }`, built the
+workbook, and re-parsed it.
+
+**What happened:** The built sheet correctly contains **both** values in two separate "Region"-headed
+columns (`["East","West"]` — the export side is fine). But on re-import, both `region` and `region_2`
+come back as `"East"` — the second def's data is silently overwritten by the first's.
+
+**Why:** `readCustom()` (`index.html:1654-1673`) locates a def's column via
+`headers.indexOf(def.label)` — a plain-array `indexOf`, which always returns the **first** matching
+header index. Both defs share the label "Region", so both look up the same (first) column.
+
+**How to reproduce:** `adversarial-custom-fields-addendum.spec.js`, `"BUG CHECK: two custom fields on
+the same entity sharing an identical LABEL..."` (currently failing —
+`expect(result.reparsedCustom[result.keyB]).toBe("West")`, receives `"East"`).
+
+**What should happen:** Column matching on import must key off something unique per def — either
+persist the def's `key` in the header (or an adjacent hidden column/marker) rather than its
+user-editable `label`, or reject/auto-disambiguate duplicate labels for the same entity type at
+creation time in `openManageFieldsModal`.
+
+---
+
+### 3. HIGH — A custom-field label identical to a canonical column name for that entity (e.g. "Name") causes the wrong column to be read back on import, misattributing the record's own canonical field value as the custom value
+
+**What I did:** Added an Employee custom-field def literally labeled "Name" (again, nothing blocks
+this). Set `employee.name = "Real Employee Name"` and `employee.custom.name = "CUSTOM_FIELD_VALUE"`
+(distinct values, deliberately). Exported and re-parsed.
+
+**What happened:** The canonical `Name` field survives correctly ("Real Employee Name"). The custom
+field, however, comes back as `"Real Employee Name"` too — it silently picked up the **canonical**
+column's value instead of its own, distinct trailing column.
+
+**Why:** Same root cause as #2 — `headers.indexOf(def.label)` in `readCustom()` returns the first
+column named "Name", which is the canonical Employee-name column (index 1), not the custom column the
+addendum appended at the end of the row (`buildWorkbookSheets`, `index.html:1528`, appends custom
+columns strictly after the canonical ones — but `indexOf` doesn't know that).
+
+**Secondary, less severe symptom noted while probing this:** if the colliding custom field is typed
+**Number** instead of Text (e.g. label "Notes", type Number, colliding with the canonical free-text
+`Notes` column), the misread canonical text value fails `parseFloat`, and the import surfaces a
+spurious, confusing row-level error ("'Notes' must be a number") on an otherwise perfectly valid row —
+the row still imports (because the resulting `custom` object ends up empty and CF-4 treats absent
+custom as valid), but the user sees an error message that has nothing to do with anything they
+actually entered.
+
+**How to reproduce:** `adversarial-custom-fields-addendum.spec.js`, `"BUG CHECK: a custom field label
+identical to a canonical column name ('Name')..."` (currently failing —
+`expect(result.customValueAfterReparse).toBe("CUSTOM_FIELD_VALUE")`, receives `"Real Employee Name"`).
+
+**What should happen:** Same fix direction as #2 — column identity for custom fields must not be
+determined by a plain string match against the same label-space as the canonical, hard-coded
+`COLUMNS` headers. At minimum, `openManageFieldsModal`/`addFieldDef` should refuse a label that
+collides (case-insensitively) with that entity's own canonical column set.
+
+---
+
+### 4. MEDIUM — NEW-2's "orphaned skill references render as 'Unknown skill' rather than crashing" is only ever true as a promise in a `confirm()` dialog string; the text is never actually rendered anywhere in the reachable UI
+
+**What I did:** Deleted a skill referenced by existing `EmployeeSkill` rows (confirming the dialog),
+then swept every panel's `document.body.innerText` for the literal string "Unknown skill".
+
+**What happened:** The app does **not** crash (confirmed — matches the claim on that half), and the
+orphaned `EmployeeSkill` rows are correctly left in place, never cascade-deleted (also confirmed, and
+already covered by the Coder's own test). But the string "Unknown skill" never appears anywhere. The
+Skills Matrix (`renderSkills`, `index.html:2916-2964`) builds its skill columns by iterating
+`state.skills` (the live catalog), so a deleted skill's column simply **disappears** from the grid —
+any orphaned `EmployeeSkill` row referencing it becomes invisible, not labeled "Unknown skill." The
+Demand editor's required-skills field (`index.html:3324-3325`) only ever displays the raw
+`skillId:minLevel:weight` encoding, never a resolved skill name either way, so an orphaned
+`requiredSkills.skillId` there is likewise never rendered as "Unknown skill" — it just shows the raw
+(now-dangling) ID string, same as it would for a *valid* skill.
+
+**Why this matters:** It's not destructive and it's not a crash — the two things the acceptance
+criterion cares about most are genuinely satisfied. But the specific, quotable UI behavior promised
+twice (once in the confirm-dialog copy the user actually sees before deleting, and once in the
+Coder's self-report: `orphaned references should render as "Unknown skill" rather than crash`) does
+not exist anywhere a user can reach it. A user who deletes a referenced skill sees a warning that
+implies stale references will be visibly marked, and instead they just quietly vanish from view with
+no marker at all — which is arguably a worse outcome for discoverability than an explicit "Unknown
+skill" label would have been (the data survives, per CF-2/NEW-2's letter, but its absence is now
+silent rather than visible).
+
+**How to reproduce:** `adversarial-custom-fields-addendum.spec.js`, `"ADVERSARIAL: 'Unknown skill'
+claim for orphaned skill references"` (currently failing by construction —
+`expect(found).toBe(true)`, receives `false`, documenting the gap rather than asserting a bug that
+crashes anything).
+
+**What should happen:** Either implement an actual "Unknown skill" fallback label somewhere a user can
+see it (e.g. the Skills Matrix could still render a column, or an indicator, for a skill ID that has
+`EmployeeSkill` rows but no matching catalog entry), or soften the confirm-dialog copy and self-report
+to match what's actually implemented (silent-but-non-destructive, not "rendered as Unknown skill").
+
+---
+
+## Confirmed correct under adversarial attack (ADDENDUM 1)
+
+- **CF-2 "never delete stored values when a field def is removed"**: holds, both at the pure-function
+  level (Coder's own tests) and at the real-UI level *with the added twist of re-adding a def with
+  the identical label/key afterward* — the old value doesn't just survive in the store, it correctly
+  **repopulates the form input** the moment the same key exists again. This is a stronger bar than the
+  Coder's own test cleared, and it passed.
+- **The v1 → v2 schema migration** (`customFieldDefs` store, `meta.schemaVersion` 1→2) is genuinely
+  sound: verified against a **physically** version-1 IndexedDB (not a database that was already v2
+  the whole time with only the meta flag faked), created before the app's boot script ever ran once.
+  Zero data loss across all 6 collections + `employeeSkills`, the store comes back present-but-empty
+  (not missing/undefined), and a second reload is a stable no-op.
+- **NEW-1's capacity-overage warning** fires deterministically (not just "sometimes, depending on demo
+  data") and never blocks the save — confirmed by forcibly engineering a guaranteed-over-capacity
+  scenario rather than relying on the Coder's probabilistic demo-data pick.
+- **VERIFY-1 / CDN-blocked claim**: independently re-confirmed via a direct `curl` from this shell
+  (403/tunnel failure against `cdn.jsdelivr.net`) plus the suite's own boot console output — this
+  sandbox genuinely cannot reach the CDN, matching the Coder's disclosure. SheetJS/Chart.js real-file
+  and real-render verification remains genuinely open, not silently dropped.
+- **Custom-field label injection (XSS)**: a label containing a live `<img onerror>` payload renders as
+  inert escaped text in both the "Manage fields" table and the form input; no script execution.
+- **v1 regression** (session-only mode, API connector UI + field mapping, optimizer preset
+  fidelity, auth-mode sequential-field-edit stale-closure fix): all still green, all still covered by
+  their own dedicated specs, none touched or broken by this addendum's diff.
+
+---
+
+## Files (ADDENDUM 1)
+
+- New independent adversarial spec: `tests/specs/adversarial-custom-fields-addendum.spec.js` (8 tests,
+  4 failing/documenting-defects, 4 passing/confirming-correctness).
+- Re-run, unmodified, and passing: the entire committed suite including the Coder's new
+  `tests/specs/custom-fields-addendum.spec.js` (23 tests) and all 106 pre-addendum tests.
+- Full fresh run: `npx playwright test --config=pw.local.config.js` → 129/129 passed (committed
+  suite, ~1.9 min); 133/137 including my own new file (4 failures are the documented findings above,
+  not flakes — each reproduced deterministically on every run).
+- Independent CDN check: `curl -sS -o /dev/null -w "%{http_code}" --max-time 8
+  https://cdn.jsdelivr.net/npm/chart.js` → `CONNECT tunnel failed, response 403` from this shell,
+  outside the Playwright/browser harness entirely.
+- Source under test: `index.html` at commit `5ad8974`.
+- Plan: `BUILD_PLAN_ADDENDUM_1.md`. Prior verdict basis: `MANAGER_REVIEW.md` (v1 final, GO), round-3
+  and earlier sections below, preserved unchanged.
+
+---
+---
+
 ## Re-test pass ROUND 3 (Fix loop 3 verification — FINAL LOOP) — 2026-08-21
 
 This is the **final adversarial pass** of this pipeline (fix loop 3 of a maximum of 3; no further
