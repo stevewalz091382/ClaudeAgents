@@ -2,6 +2,251 @@
 
 ---
 
+# ADDENDUM 1 REVIEW (custom fields + full manual CRUD, pipeline close-out) — 2026-08-22
+
+## Verdict: **GO WITH FIXES**
+
+Reviewed: `BUILD_PLAN_ADDENDUM_1.md`, `TEST_REPORT.md`'s three addendum sections (original pass, fix,
+final re-test), and `index.html` at commit `e18b693`. I read the fix code myself — `readCustom`,
+`markImportedCustomKeys`, `STORE.upsert`'s merge branch, `parseCustomFieldDefsSheet`,
+`restoreFieldDefs`, `addFieldDef`/`keyFromLabel`, `openManageFieldsModal` — rather than trusting the
+test count, re-ran the full committed suite myself (**145 passed / 0 failed**, 2.0 min), and wrote
+seven of my own probes (MGR-A..G) aimed at angles neither the Coder nor the Tester covered.
+
+**The four reported findings are genuinely closed.** The fix is structural, not symptomatic: column
+identity now comes from the file's own `CustomFieldDefs` sheet order rather than from re-deriving a
+match off printed label text, and `__importedCustomKeys` gives `upsert` the three-way distinction it
+needs (absent → merge, present-with-value → update, present-but-blank → clear). I tried to reopen
+all three of the CRITICAL/HIGH cases and could not.
+
+**But the same rewritten function has three new silent-corruption paths that nobody tested**, all
+sharing one root cause: the positional zip has no sanity check against the header text it is
+ignoring. Two of them are reachable by ordinary Excel editing, which is the entire point of the
+export/import feature. They do not reopen the closed findings and they do not affect app-generated
+round-trips, but "custom values silently land under the wrong key with zero errors reported" is the
+exact failure family this fix round existed to eliminate. Hence GO WITH FIXES rather than GO.
+
+---
+
+## 1. Independent verification that the CRITICAL / HIGH / HIGH / MEDIUM fixes hold
+
+Read, not taken on report:
+
+- **`readCustom` (`index.html:1676-1710`)** never reads header text at all. It computes the set of
+  column indices already claimed by a canonical field (via `mapping` + `colIndex`) or by any month
+  key, then zips the remaining leftover indices left-to-right against `customDefs` (the file's own
+  `CustomFieldDefs` rows for that entity type, in file order). Two defs with the same label, or a
+  custom label identical to a canonical column, therefore cannot collide — the canonical column is
+  claimed first by index and removed from the leftover pool. That is the real structural property the
+  two HIGHs rested on, and it holds.
+- **`markImportedCustomKeys` (`:1654`)** uses `Object.defineProperty(..., enumerable:false)`, so the
+  marker is invisible to `Object.keys`/`JSON.stringify`/deep-equal round-trip tests but readable by
+  `upsert`. I traced the live path: `previewImport` (`:4394`) stores the parse result on
+  `uiState.importSession.parsed` and `applyImport` (`:4426`) hands those same object references
+  straight to `STORE.upsert` — no `U.clone`, no JSON hop anywhere between. The marker survives in
+  production, not just in the pure-function tests. This was my main suspicion about the fix and it is
+  clean.
+- **`STORE.upsert` (`:2701-2722`)** merges onto a copy of the existing record's `custom`, applies only
+  the keys in `importedKeys`, deletes the key when the cell was blank, and `delete record.custom`
+  when the merge result is empty (satisfying the "no stray `custom: {}` noise" acceptance criterion).
+  Non-import writers never set the marker, so manual forms and API pull keep v1's plain full-replace
+  behavior — correctly scoped, no blast radius.
+- **Empty-array case is right by accident but right:** a file with a `CustomFieldDefs` sheet listing
+  no defs for that entity yields `presentKeys = []`, which is truthy, so the merge branch runs with
+  zero keys and preserves the entire existing `custom`. A file with *no* `CustomFieldDefs` sheet at
+  all yields the same outcome one level up (`customDefs` empty → `readCustom` returns early). Old
+  exports import cleanly, per §3.
+- **MEDIUM #4 ("Unknown skill")** is genuinely rendered in both promised places: the Skills Matrix
+  orphan column (`:3029`, `:3040`) and `resolvedRequiredSkillsLabel` (`:3392`) used by the Demand
+  editor. I also checked the consumers the Tester did not: `skillScoreFor` (`:936`) and the
+  alert-engine gap check (`:1298`) both treat a dangling `skillId` as "no match", so orphans degrade
+  to a skill gap rather than crashing the optimizer.
+
+My own probes (run against `file:///home/user/ClaudeAgents/index.html`, results in
+`/tmp/.../scratchpad/mgr/specs/mgr-probe.spec.js`):
+
+| Probe | Result |
+|---|---|
+| **MGR-F** (control) app-generated export→parse with two defs both labelled "Region" | `{"keys":["region","region_2"],"custom":{"region":"East","region_2":7}}` — correct. Export headers are literally `["Notes","Region","Region"]` and still round-trip losslessly. The HIGH stays closed. |
+| **MGR-G** wide-month sheet re-imported into an app whose horizon no longer overlaps the file's months | `{"custom":{"cost_code":"CC-1"},"monthWarn":2}` — month columns are claimed by `isMonthKey` regardless of horizon, so the custom column does not shift. Correct. |
+| **MGR-A** file with one extra hand-added column before the custom column | `{"custom":{"region":"Alice"},"errors":[]}` — **corrupted, silently.** See issue 2. |
+| **MGR-B** `CustomFieldDefs` row rejected by validation while its column is still in the sheet | badge value destroyed, error text points at the wrong column. See issue 3. |
+| **MGR-C** non-numeric cell (`"N/A"`) in a Number custom column | previously stored `42` **deleted**; record still imported. See issue 1. |
+| **MGR-D** `CustomFieldDefs` rows reordered relative to the sheet's column order | `{"custom":{"team":"EAST","region":"ALPHA"}}` — values swapped, silently. See issue 2. |
+| **MGR-E** canonical `Office` column removed by hand while a custom field labelled "Office Location" exists | fuzzy matcher claims the custom column for `office`; the custom value is lost entirely. See issue 2. |
+
+---
+
+## 2. The "robustness, not prevention" design choice for duplicate labels
+
+The Coder chose to allow duplicate labels and make matching robust, rather than block them at
+creation. **For data integrity this holds** — verified by MGR-F and by the Tester's UI-driven repro.
+`addFieldDef` (`:482-491`) auto-suffixes the *key* (`region`, `region_2`) while leaving the label
+alone, `keyFromLabel` is never re-derived after creation, and `restoreFieldDefs` (`:2770`) preserves
+imported keys verbatim and matches on `entityType+key`, so re-import can never merge two same-label
+defs into one.
+
+**For humans it is under-finished.** The Manage Fields table shows the `Key` column, so an admin can
+tell the two apart there — but nowhere else can anyone:
+
+- `customFieldInputsHtml` (`:3275`) labels each input with `esc(d.label)` only. Two identically
+  labelled inputs, no key, no ordinal, in every edit form.
+- `buildWorkbookSheets` emits two identically-named columns (confirmed: `["Notes","Region","Region"]`).
+  A planner filling in the wrong "Region" column in Excel writes to the wrong key with no feedback.
+
+So the choice is defensible and correctly implemented, but it needs one of: show the key (or an
+ordinal) beside the label in `customFieldInputsHtml`, or warn on duplicate-label creation in the
+Manage Fields modal. Owner: **Architect** (the plan never decided this) / **Coder**. Not blocking.
+
+Related, and worth one line of documentation somewhere: because `keyFromLabel` is deterministic,
+deleting a field and later creating a *new* field that happens to share the old label regenerates the
+old key and silently re-surfaces the old, never-deleted values. The Tester tested this as a feature
+(it is, per CF-2's "re-add the same key and values reappear"). It is also a surprise if the reuse was
+coincidental. Behaviour is correct; the docs are silent.
+
+---
+
+## 3. Key issues, ranked
+
+### 1. MEDIUM — an invalid value in a Number custom column *destroys* the previously stored value. (Owner: **Coder**; missed by **Tester**)
+
+`readCustom` pushes `def.key` into `presentKeys` (`:1695`) **before** it attempts the numeric parse
+(`:1698-1702`). So a cell containing `"N/A"`, `"TBD"`, or an Excel `#N/A` produces a validation error
+*and* marks the key as present-in-file with no value — which `upsert` then interprets as an explicit
+clear. MGR-C: an employee holding `badge = 42` re-imports against a row whose Badge cell reads
+`"N/A"`, and comes back with `custom` gone entirely. The row itself still imports (the error does not
+reject it).
+
+Why it matters: this is a realistic Excel-editing outcome, not a corrupted-file edge case, and it
+violates the addendum's own "never silently delete data" principle in the same way the original
+CRITICAL did — just triggered by a bad cell instead of a missing column. The user's natural response
+("fix the cell and re-import") does not recover the value, because it is already gone. It is also
+inconsistent with how the app treats every other invalid input, where an invalid row is rejected
+whole and nothing is written. The Tester tested blank-cell-as-clear but never invalid-cell.
+
+Fix shape: move the `presentKeys.push` after a successful parse, or treat a parse failure as
+"leave the existing value alone" — one line either way.
+
+### 2. MEDIUM — the positional zip has no cross-check against header text, so any structural edit to an exported sheet silently misassigns custom values with zero errors. (Owner: **Coder**, design; **Architect**, unspecified)
+
+Three variants, all confirmed:
+
+- **MGR-A** — user adds a scratch column ("Reviewed By") to the exported Employees sheet before
+  re-importing. The zip shifts by one: `region` becomes `"Alice"`, the real `"West"` is discarded,
+  `errors: []`. Nothing anywhere tells the user.
+- **MGR-D** — user reorders the rows of the `CustomFieldDefs` sheet. Values swap between fields.
+- **MGR-E** — user deletes a canonical column that a custom label fuzzily resembles. `fuzzyMatchHeader`
+  (`:352-364`, 60-point substring match) claims the custom column for the canonical field, the
+  canonical field takes the custom value, and the custom value is lost.
+
+Why it matters: hand-editing the exported workbook is the *point* of the export/import feature, and
+adding a column in Excel is an ordinary thing to do. Note this is specifically a **regression the fix
+introduced** — the old label-`indexOf` code handled an inserted column correctly (and broke on
+duplicate labels instead). The fix traded one corruption mode for another rather than eliminating the
+class. The correct design is a hybrid the Coder's own comment gestures at but does not implement:
+zip by position, but verify the leftover column's header equals `def.label`; on mismatch, fall back to
+a unique-label lookup, and if that also fails, emit a per-sheet error instead of guessing. Today it
+always guesses, and always silently.
+
+Severity is MEDIUM not HIGH only because app-generated, unedited round-trips are provably safe
+(MGR-F/MGR-G) and canonical columns are unaffected.
+
+### 3. LOW — a rejected `CustomFieldDefs` row cascades into a positional shift for that entity's remaining fields. (Owner: **Coder**)
+
+MGR-B: a hand-edited file where one `Employee` def row has lost its `Key` cell. That row is correctly
+rejected (`"EntityType and Key are required"`), but its **column is still in the Employees sheet**, so
+the surviving def zips against the wrong column: `badge` reads `"West"` → `"'Badge' must be a number"`
+(an error naming the wrong column), and the stored `badge = 42` is destroyed via the issue-1 path.
+Compounded by issue 4: the user is told "CustomFieldDefs: 1 error" with no message text, so the
+actual cause is unreachable from the UI.
+
+### 4. LOW — Tester's finding #5 is still open, by design. (Owner: **Tester**, correctly reported / **Coder**, unfixed)
+
+`previewImport`'s `errorList` (`:4401-4402`) iterates only `parsed.bySheet[*].errors` and never
+`parsed.fieldDefs.errors`. `CustomFieldDefs`-sheet errors show a count in the table and nothing else.
+I confirmed this by reading the code; it is accurate as reported and pre-existing. It was found in the
+final round and deliberately not fixed — a legitimate call on its own, but issue 3 shows it has a
+compounding partner, and the fix is four lines.
+
+### 5. VERIFY-1 remains open. (Owner: environment, not any agent)
+
+I re-checked independently rather than accepting either report: `curl` to both
+`cdn.jsdelivr.net/npm/chart.js` and the SheetJS CDN returns `CONNECT tunnel failed, response 403` from
+this shell. `index.html:8-9` still loads Chart.js and SheetJS from those exact CDNs with `onerror`
+fallbacks. So `exportWorkbookFile`, `exportTemplateFile`, `readWorkbookFile` and both `new Chart(...)`
+call sites remain **unexecuted code in every environment this pipeline has ever run in**. Every
+custom-field IO claim above — mine, the Tester's, the Coder's — is a claim about `buildWorkbookSheets`
+and `parseWorkbook` operating on arrays-of-arrays, not about a real `.xlsx` file.
+
+This is correctly and plainly disclosed by both the Coder and the Tester, exactly as the plan
+demanded after being asked twice. It is not a defect in the artifact. But it must not be recorded as
+closed: **the single real file download → Excel edit → re-upload cycle has never once been executed**,
+and issues 1-3 above are precisely the ones such a pass would surface first, because they are all
+triggered by a human editing the file in Excel. Whoever runs this in a network-enabled browser should
+make that their first test, not a smoke test.
+
+---
+
+## 4. Plan coverage — did the Coder build what the Architect specified?
+
+Verified by reading the code, not by the test names:
+
+| Req | Status |
+|---|---|
+| CF-1 def shape + stable key | Done. `newCustomFieldDef` (`:450`), `keyFromLabel` (`:445`); label edits never touch the key. |
+| CF-2 Manage Fields UI on all 6 entities, remove never deletes values | Done. `openManageFieldsModal` (`:3317`) wired from all six panels/modals (`:3074`, `:3148`, `:3380`, `:3511`, `:3568`, `:3911`, plus per-modal `#m-manage-fields` entry points). `removeFieldDef` (`:495`) filters defs only. |
+| CF-3 dynamic inputs on all 6 forms, blank ≠ stored | Done. `customFieldInputsHtml`/`readCustomFieldValues` (`:3267`, `:3301`); blank deletes the key; values under removed defs are preserved by seeding from `existingCustom`. |
+| CF-4 validators accept `custom`, validate only matching number defs, unknown keys permitted | Done. `validateCustomFields` (`:418`) filters to `type === "number"` defs and ignores everything else. |
+| NEW-1 Assignment modal, warn-don't-block on capacity | Done and correct: `:3672-3693` computes `effectiveCapacity` against indexes rebuilt *without* the record being edited, saves unconditionally, then toasts the per-month overage. |
+| NEW-2 Skill modal, reference count on delete, orphans render | Done: `:3155`/`:3199` count `EmployeeSkill` + `Demand.requiredSkills` refs in the confirm text; no cascade delete; orphans render in both places. |
+| IO-1 `CustomFieldDefs` sheet + per-entity columns, recreate-never-delete defs | Done, with the caveats in issues 2-3. `restoreFieldDefs` preserves keys verbatim and never removes a local def. Template generator updated and wired (`:4222`). |
+| Schema v1→v2 migration | Done, and independently verified by the Tester against a genuinely v1-shaped IndexedDB seeded before first boot — a stronger test than the Coder's. I accept that one on the Tester's evidence; it is the right test. |
+| VERIFY-1 | Open, honestly declared. See issue 5. |
+
+Every §5 acceptance criterion is met for app-generated files. No plan drift: the Coder built what was
+specified and did not quietly expand scope.
+
+---
+
+## 5. Loose ends
+
+- Issues 1-3 above: unfixed, and all five failing probes live in a throwaway scratchpad spec, not in
+  the committed suite. Whoever picks this up should port MGR-A/B/C/D/E into `tests/specs/` so they
+  cannot silently regress.
+- `restoreFieldDefs` skips a file def whose `entityType+key` already exists locally even when the
+  file's `type` disagrees (local `text` vs file `number`). The value parses per the file's type but
+  displays per the local def's input type. Harmless today; a trap if `date`/`boolean` types are ever
+  added.
+- Untested in any round: two browser profiles exchanging workbooks where each side has custom fields
+  the other lacks *for the same entity* (partially overlapping def sets, both directions). The Tester
+  covered one direction (file has more) and the Coder covered the other (local has more); the
+  interleaved case is the one issue 2 would bite hardest.
+- The base app's own two deferred limitations (session-only checkbox label, clear-all exiting
+  session-only) are unchanged and unaffected by this addendum.
+
+---
+
+## 6. Is this safe to consider done alongside the base app's GO?
+
+Yes for the feature as specified; not yet for the sentence "you can export everything to Excel, edit
+it, and import it back." The custom-field model, the Manage Fields UI, the two new manual CRUD modals,
+the migration, and the app-generated workbook round-trip are all solid and independently verified. The
+gap is that the import path still assumes a file no human has restructured, and fails that assumption
+silently. Issues 1 and 2 are the ones that should land before this is called done; 3 and 4 are cheap
+enough to ride along. None of them reopens anything the Tester closed.
+
+**Chain assessment:** Architect — good, tight, additive spec; the one omission is that it never said
+what should happen to a *structurally* edited file, which is exactly where the remaining defects live.
+Coder — built the plan faithfully and fixed the reported defects at the root rather than the symptom;
+the one criticism is that the fix's own comment claims a robustness property the code only has for
+files the app itself produced. Tester — the strongest link this round: found the real bugs, re-tested
+them independently instead of re-running the same specs, self-corrected a bad test in the open, and
+declared the CDN gap honestly; the miss is that after the fix rewrote how columns are located, nobody
+re-probed what *else* that rewrite now depends on.
+
+
+---
+
 # FINAL REVIEW (round 3, pipeline close-out) — 2026-08-21
 
 ## Verdict: **GO** — ship it as an internal tool. No blocking defects remain.
