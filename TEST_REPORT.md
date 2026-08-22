@@ -1,5 +1,233 @@
 # TEST_REPORT.md — Resource Optimization Engine (ROE)
 
+## RE-TEST pass ROUND 2 — verification of the Coder's custom-fields workbook-IO fix (`3452c8d`) — 2026-08-22
+
+Under test: `index.html` at commit `3452c8d` ("Fix custom-fields workbook-IO bugs: match by key/position,
+not label"), against my own prior CRITICAL + 2×HIGH + MEDIUM findings from the ADDENDUM 1 pass below
+(`754c74a`/`5ad8974`). Coder's claim: replaced label-text `indexOf()` column matching with
+position-based matching against the file's own `CustomFieldDefs` sheet order, added an
+`__importedCustomKeys` marker so `STORE.upsert()` can merge (not fully replace) `custom` on re-import,
+and added an "Unknown skill (ID)" fallback in the Skills Matrix and the Demand editor. Claimed: my own
+`adversarial-custom-fields-addendum.spec.js` now 8/8 (was 4/8), full suite 137/137.
+
+**Result: the fix holds. All 4 original findings (1 CRITICAL, 2 HIGH, 1 MEDIUM) are confirmed closed
+by independent re-testing, not just by re-running the Coder's or my own prior spec unmodified. I found
+one new, minor (LOW) gap while doing a fresh adversarial pass on top of the fix, unrelated to the 4
+original findings and not a regression introduced by this commit's diff. I did not find any CRITICAL or
+HIGH issue this round.**
+
+**What I ran:**
+
+1. The full committed suite fresh, myself, from a clean `cd tests && npx playwright test
+   --config=pw.local.config.js` (same uncommitted local Chromium-path override as every prior round —
+   the committed `tests/playwright.config.js` still cannot launch a browser in this sandbox, unchanged
+   across all rounds): **137 passed, 0 failed** (~2.1 min) on the first run, confirming the Coder's
+   129/129 + my own 8/8 `adversarial-custom-fields-addendum.spec.js` claim exactly.
+2. Re-ran `tests/specs/adversarial-custom-fields-addendum.spec.js` **unmodified**, isolated, on its
+   own: **8 passed, 0 failed** — including all 4 tests that were failing last round (dual-label
+   round-trip, canonical-"Name"-collision round-trip, re-import silent-erasure, "Unknown skill"
+   rendering) and all 4 that were already passing (repopulate-on-redef, true v1→v2 migration,
+   deterministic capacity-overage warning, XSS-in-label). Confirmed with real values in the console
+   output, not just green checkmarks: e.g. `reparsedCustom:{"region":"East","region_2":"West"}` (was
+   both `"East"` before), `customValueAfterReparse:"CUSTOM_FIELD_VALUE"` (was misreading the canonical
+   "Real Employee Name" before), `customAfter:{"badge_number":555}` surviving a re-import that omits
+   the column (was `undefined` before), `'Unknown skill' text ever rendered in UI: true` (was `false`
+   before).
+3. Wrote a **brand-new** spec, `tests/specs/tester-round2-recheck.spec.js` (8 tests), deliberately not
+   copy-pasted from my own prior adversarial file, to independently re-attempt each of the 4 original
+   repros from scratch with different data/mechanics than either my own or the Coder's existing specs
+   use, plus one new adversarial angle the task specifically asked for. All 8 passed after one
+   self-correction (see note below):
+   - **Repro #1 (CRITICAL) re-attempted with a twist my own original spec didn't cover**: two custom
+     defs on the same employee, but the re-imported file's own `CustomFieldDefs` sheet + entity sheet
+     only mention **one** of the two fields (a genuinely self-consistent "older export taken after
+     field A existed but before field B was added" shape, not just "no custom columns at all"). Result:
+     the mentioned field (`badge_number`) correctly **updates** to the new value (`777`), and the
+     unmentioned field (`home_office`) is **left completely untouched** (`"Denver"` survives). A second
+     test confirms the complementary case: a column that **is** present in the file with a **blank**
+     cell is treated as an explicit clear (value becomes absent), correctly distinct from "column not
+     in the file at all." Both passed. (Self-correction: my first draft of this test omitted a
+     `CustomFieldDefs` sheet from the hand-built AoA entirely, which — correctly, per IO-1's own
+     backward-compatibility design — causes the parser to skip reading *any* custom columns for that
+     import, since a file with no `CustomFieldDefs` sheet is defined as "no custom values". That was a
+     bug in my test's setup, not in the app; I fixed the test to include a self-consistent
+     `CustomFieldDefs` sheet declaring only the field that should be "mentioned," then it passed.
+     Documented here in the interest of showing my work, not hiding a false start.)
+   - **Repro #2 (HIGH) re-attempted via the real Manage Fields UI** (clicking `#btn-manage-emp-fields`
+     → `#mf-label` → `#mf-add` twice with the identical label "Territory"), not `STORE.addFieldDef()`
+     called directly as before. Set `North`/`South` on the two auto-suffixed keys, built and re-parsed
+     the workbook. Both values came back correctly matched to their own key (`north`/`south`), not
+     swapped or collapsed. **Passed.**
+   - **Repro #3 (HIGH) re-attempted with the Number-typed variant explicitly**, which the original
+     finding's write-up called out as a "secondary, less severe symptom" (a spurious "'Notes' must be a
+     number" validation error on a perfectly valid row, caused by the old code misreading the canonical
+     free-text `Notes` column as the numeric custom field). Added an Employee custom field literally
+     labeled "Notes", type Number, alongside the real canonical `Notes` field. Round-tripped: canonical
+     `notes` stays as the free-text string, the custom field stays as its own distinct number
+     (`12345`), and — confirming the secondary symptom is *also* fixed as a side effect of the same
+     position-based rewrite — **zero** validation errors are produced (was 1 confusing, wrong-column
+     error before). **Passed**, and this closes a part of finding #3 my original write-up flagged but
+     didn't have a dedicated assertion for.
+   - **Repro #4 (MEDIUM) re-attempted against a `Demand.requiredSkills` reference specifically**, not
+     an `EmployeeSkill` reference (the original finding's repro and the Coder's own diff both mention
+     the Demand editor as a *separate* code path from the Skills Matrix — `resolvedRequiredSkillsLabel`
+     vs. the matrix's orphan-column logic — so this needed its own, separate confirmation). Assigned a
+     demand's `requiredSkills` to reference a real skill, confirmed the Demand editor shows the real
+     skill's name (not "Unknown skill") beforehand, then deleted that skill via the real UI confirm
+     dialog, reopened the same project's demand editor, and confirmed the "Resolved:" hint now
+     literally contains the string `"Unknown skill"` plus the dangling skill ID, and that
+     `demand.requiredSkills` itself is untouched (length still 1, no crash, no cascade-delete).
+     **Passed** — the fallback genuinely renders in the *second* place the addendum promised it, not
+     just the Skills Matrix.
+   - **New adversarial angle (per this round's task): a `CustomFieldDefs` sheet entry for an entity
+     type this app's current field defs don't represent at all.** I tested both readings of that
+     phrase to be thorough:
+     - *A def for a key genuinely never seen locally before* (a colleague's export, or a file from a
+       different browser profile, defining `Employee/cost_center` when the current local instance has
+       zero custom field defs at all) — per IO-1's literal text ("recreate any defs missing locally").
+       Confirmed: `parsed.fieldDefs.toAdd` contains it, `STORE.restoreFieldDefs()` recreates the def
+       with the exact same key/label/type, and the corresponding column's value (`"CC-9001"`) round-trips
+       correctly into `record.custom`. **Correct, IO-1 holds for this case.**
+     - *A def whose `EntityType` string isn't among the app's 6 recognized types at all* (`"Vendor"`,
+       simulating a hand-edited or much-older/foreign file) — confirmed this is rejected as a per-row
+       `CustomFieldDefs` error (`"Unknown entity type 'Vendor'"`), **never crashes** (0 `pageerror`
+       events), **never silently invents** a phantom `Vendor` def, and — importantly — **does not
+       poison the rest of the sheet**: a second, valid row in the very same `CustomFieldDefs` sheet
+       (`Employee/legit_field`) still gets created and its value still round-trips correctly
+       (`"OK"`). This is correct, defensible, non-destructive behavior for genuinely invalid/foreign
+       data — not a bug, and not something the plan's "never delete a local def" language was ever
+       trying to cover (there's no local def in play here at all; it's rejecting an invalid *new*
+       entry, which is different from deleting an *existing* one).
+   - **While probing the above, found one new, minor (LOW) gap**, not part of the original 4 findings
+     and not a new defect in this fix commit's diff (confirmed by `git diff 754c74a 3452c8d --
+     index.html`: the code path involved was untouched by this round's fix): `previewImport()`'s
+     `errorList` (`index.html` ~4396-4402) builds its user-visible error message text by iterating only
+     `parsed.bySheet[sheet].errors` for the 6 entity sheets — it never includes
+     `parsed.fieldDefs.errors`. So when a `CustomFieldDefs` sheet row itself is invalid (e.g. the
+     "Unknown entity type" case above), the Import Preview's summary **table** does correctly show a
+     non-zero error count for that row (`summary.CustomFieldDefs.errors`, via `diffAgainstState`,
+     `index.html:1855`), but the actual **message text** explaining what was wrong with it is never
+     displayed anywhere in the preview UI — unlike every other sheet's errors, which do get their full
+     message text listed below the table. Not destructive, not a crash, the count is still visible, so
+     this is **LOW**, not MEDIUM/HIGH: a user importing a foreign/hand-edited file with a bad
+     `CustomFieldDefs` row sees "CustomFieldDefs: 1 error" in the table but has to guess what's wrong,
+     rather than being told. See `tests/specs/tester-round2-recheck.spec.js`'s "GAP CHECK" test
+     (documents the behavior via direct `parsed.fieldDefs.errors` vs. `errorList`-construction code
+     inspection rather than asserting a redundant failing expectation).
+4. Independent CDN re-check, unchanged from every prior round: `curl -sS -o /dev/null -w
+   "HTTP_CODE:%{http_code}" --max-time 8 https://cdn.jsdelivr.net/npm/chart.js` and the SheetJS CDN URL
+   both → `CONNECT tunnel failed, response 403` from this shell. Still a known, declared, unchanged
+   gap — not a new finding, not something this codebase can fix from inside this sandbox.
+5. v1 + rest-of-addendum regression spot check: the full suite (145 total this round: 129 committed +
+   my 8 `adversarial-custom-fields-addendum.spec.js` + my 8 new `tester-round2-recheck.spec.js`) covers
+   Manage Fields UI CRUD, the Assignment/Skill modals, the v1→v2 migration ladder, and the
+   capacity-overage warning via their own dedicated, still-passing specs
+   (`custom-fields-addendum.spec.js`, `adversarial-custom-fields-addendum.spec.js`'s migration/capacity
+   tests) — none regressed. One flake was observed and chased down: a single full-suite run produced
+   `144 passed, 1 failed` on `tester-round3-independent.spec.js`'s `MGR-repro(b)` (an old, pre-existing
+   round-3 session-only test, unrelated to this addendum, that uses `waitForTimeout`-based debounce
+   windows). Re-ran that spec file alone 3× (`--repeat-each=3`, 18/18 passed) and re-ran the **entire**
+   suite fresh a second time (**145 passed, 0 failed**) — confirms this was sandbox-load-sensitive
+   timing flake in a test file that predates this round entirely, not a regression from the Coder's
+   diff (which never touches `index.html`'s session-only/`hydrated` code at all — confirmed via `git
+   diff 754c74a 3452c8d -- index.html`, scoped entirely to `ROE.io`'s `readCustom`/`markImportedCustomKeys`,
+   `ROE.store`'s `upsert`, and `ROE.ui`'s Skills Matrix + Demand editor rendering).
+
+**Combined this round: 145/145 passed** (129 pre-existing + 8 `adversarial-custom-fields-addendum.spec.js`
++ 8 new `tester-round2-recheck.spec.js`), across two full clean runs plus an isolated 3× repeat of the
+one file that flaked once.
+
+---
+
+## Findings (RE-TEST ROUND 2)
+
+### Confirmed CLOSED this round (the 4 original ADDENDUM 1 findings)
+
+- **1. CRITICAL — re-import silently erasing existing custom values**: **CLOSED.** Confirmed via two
+  independent mechanisms this round: my own unmodified original spec (`customAfter` now
+  `{"badge_number":555}`, was `undefined`), and a brand-new test with a genuinely self-consistent
+  "older-export" file shape covering a value that's present-in-the-file (updates), a value that's
+  absent-from-the-file (untouched), and a value that's present-but-blank (explicit clear) — all three
+  behave correctly and distinctly. The `__importedCustomKeys` marker + `STORE.upsert()` merge logic is
+  real, not test-shaped.
+- **2. HIGH — duplicate-label custom fields corrupting each other on re-import**: **CLOSED.** Confirmed
+  via my own unmodified original spec and a fresh test that creates the colliding-label defs through
+  the **real Manage Fields UI** (not a direct `STORE.addFieldDef()` call) — both values (`North`/
+  `South`) round-trip to their own distinct auto-suffixed key.
+- **3. HIGH — custom label colliding with a canonical column name misattributes the canonical value**:
+  **CLOSED**, for both the primary symptom (canonical "Name" field no longer bleeds into a same-labeled
+  custom field) and the secondary symptom I'd only anecdotally noted last round (a Number-typed
+  colliding label no longer produces a spurious "'Notes' must be a number" validation error — confirmed
+  `errorCount: 0` on a row with a real free-text `Notes` value and a real numeric custom `Notes` value
+  side by side).
+- **4. MEDIUM — "Unknown skill" claim never actually rendered anywhere**: **CLOSED** in **both** places
+  the addendum promised it: the Skills Matrix (an orphan column now appears, confirmed by my original
+  spec's panel-text sweep) **and** the Demand editor's required-skills "Resolved:" hint (confirmed fresh
+  this round against a `Demand.requiredSkills` reference specifically, which is a separate code path
+  `resolvedRequiredSkillsLabel` from the Skills Matrix's orphan-column logic and needed its own,
+  independent check).
+
+### New finding this round
+
+### 5. LOW — Import Preview never surfaces the actual error TEXT for an invalid `CustomFieldDefs` sheet row, only a count
+
+**What I did:** Built a hand-crafted workbook whose `CustomFieldDefs` sheet contains one row with an
+`EntityType` this app doesn't recognize (`"Vendor"`), parsed it with `IO.parseWorkbook`, and inspected
+both `parsed.fieldDefs.errors` (populated correctly, with a real message: `"Unknown entity type
+'Vendor'"`) and the code path that builds the Import Preview modal's visible error list
+(`previewImport()`, `index.html` ~4396-4409).
+
+**What happened:** `previewImport()`'s `errorList` array is built by iterating
+`Object.keys(parsed.bySheet).forEach(...)`, pushing each entity sheet's own row-level errors — but
+`parsed.fieldDefs.errors` (the `CustomFieldDefs`-sheet-specific error list, populated separately at
+`index.html:1815`) is never included in that loop. The summary **table** row for `CustomFieldDefs` does
+correctly show a non-zero error **count** (`diffAgainstState`, `index.html:1855`, reads
+`parsed.fieldDefs.errors.length`), so the user isn't told "0 errors" when there's actually a problem —
+but the specific message text (which column, which value, why it was rejected) is never displayed
+anywhere in the reachable Import Preview UI, unlike every other sheet's errors.
+
+**Why this matters (mildly):** A user importing a hand-edited, foreign, or corrupted file with a bad
+`CustomFieldDefs` row sees "CustomFieldDefs: 1 error(s)" in the preview table and has no way to find out
+*what* was wrong without opening dev tools — every other sheet in the same preview gives them the exact
+message. Not destructive (nothing is silently dropped without the count being visible), not a crash,
+and — per the `git diff 754c74a 3452c8d` scoping check above — not introduced or touched by this
+round's fix commit at all; it's a pre-existing gap in the original addendum implementation that this
+round's adversarial pass happened to surface while specifically probing `CustomFieldDefs`-sheet-level
+edge cases (the task's "entity type that isn't represented" angle) rather than entity-sheet-level ones.
+
+**How to reproduce:** `tests/specs/tester-round2-recheck.spec.js`, describe block "NEW ADVERSARIAL
+PASS: CustomFieldDefs sheet edge cases beyond the original 4 findings", test "GAP CHECK: does the
+Import Preview UI actually surface the CustomFieldDefs-sheet-level error TEXT (not just a count)
+anywhere the user can read it?" — documents `fieldDefErrors` (populated) vs. the `errorList`-building
+loop at `index.html` ~4402 (which never reads `parsed.fieldDefs.errors`).
+
+**What should happen:** `previewImport()`'s `errorList` construction should also iterate
+`parsed.fieldDefs.errors` and push their messages (e.g. `"CustomFieldDefs row " + e.row + " [" +
+e.field + "]: " + e.message"`) alongside the per-sheet ones, exactly the way every other sheet's errors
+already work.
+
+---
+
+## Overall verdict for this round
+
+**Sign-off ready for the custom-fields addendum's workbook-IO fix specifically.** All 4 defects from the
+prior round (1 CRITICAL, 2 HIGH, 1 MEDIUM) are independently confirmed closed under fresh, from-scratch
+adversarial re-testing — not just by trusting the Coder's report or re-running existing specs unmodified.
+No new CRITICAL or HIGH issue was found despite a genuine, non-trivial additional adversarial pass (real
+UI-driven duplicate-label creation, a self-consistent partial-older-export simulation, a
+Demand-specific "Unknown skill" check, and two new `CustomFieldDefs`-sheet edge cases neither of us had
+tried before). One new LOW-severity UX gap was found and is reported above, pre-existing and unrelated
+to this fix's diff — worth a follow-up but not blocking. CDN reachability remains a known, unchanged,
+declared environmental gap (still `403`/tunnel-blocked), not a new issue and not this codebase's fault.
+
+**Files this round:** `tests/specs/tester-round2-recheck.spec.js` (new, 8 tests, all passing).
+Re-verified unmodified: `tests/specs/adversarial-custom-fields-addendum.spec.js` (8/8, was 4/8).
+Full fresh suite: 145/145 across two clean runs (one isolated flake in an unrelated pre-existing
+round-3 test, chased down and confirmed to be timing/load-sensitive, not a regression).
+
+---
+---
+
 ## ADDENDUM 1 pass — custom fields + full manual CRUD (`BUILD_PLAN_ADDENDUM_1.md`) — 2026-08-22
 
 Under test: `index.html` at commit `5ad8974` ("Implement BUILD_PLAN_ADDENDUM_1: custom fields + full
