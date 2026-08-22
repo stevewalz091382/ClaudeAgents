@@ -1647,29 +1647,66 @@ ROE.io = (function(){
       return idx === -1 ? undefined : row[idx];
     }
 
-    // Reads this row's custom-field columns (matched by header === def.label) into a plain
-    // object keyed by def.key. A non-numeric value under a "number" def is reported as a row
-    // error (same sheet/row/field shape as every other validation error) rather than silently
-    // dropped or silently stored.
+    // Stashes which custom keys had a column present in this row as a non-enumerable property, so
+    // it never shows up in Object.keys/JSON.stringify/deepEqual comparisons of the plain record
+    // (e.g. the existing pure build->parse round-trip test), but STORE.upsert can still read (and
+    // then strip) it via direct property access to drive the merge-not-replace fix for re-imports.
+    function markImportedCustomKeys(rec, presentKeys){
+      Object.defineProperty(rec, "__importedCustomKeys", { value: presentKeys, enumerable: false, configurable: true, writable: true });
+      return rec;
+    }
+
+    // Reads this row's custom-field columns into { values, presentKeys }, matched by POSITION,
+    // not by searching the header row for `def.label` text. buildWorkbookSheets always appends
+    // exactly one column per active def (using the label purely as a human-readable header),
+    // strictly after the canonical + month columns, in the same relative order that
+    // `customDefsFor(entityType)` (i.e. `customDefs` here, filtered from the file's own
+    // CustomFieldDefs sheet) preserves. So: figure out which header columns are already claimed by
+    // a canonical field (via `mapping`) or by a month column (for wide-month sheets), then zip the
+    // remaining "leftover" columns, left to right, against `customDefs`, in order. This means two
+    // defs sharing an identical label, or a custom label colliding with a canonical column name
+    // (e.g. "Name"), can never be confused with each other or with the canonical column - identity
+    // comes from the file's CustomFieldDefs sheet order, never from re-deriving a match off printed
+    // label text (the bug `headers.indexOf(def.label)` had).
+    // presentKeys lists every def.key whose column was actually present in this row's sheet at
+    // all (whether the cell itself was blank or not) - used by STORE.upsert to distinguish "column
+    // absent from this import" (leave the existing stored value alone) from "column present but
+    // cell blank" (an explicit, intentional clear) on re-import (see BUILD_PLAN_ADDENDUM_1.md's
+    // "never silently delete data" principle).
     function readCustom(row, rowNum){
-      var custom = {};
-      customDefs.forEach(function(def){
-        var ci = headers.indexOf(def.label);
-        if (ci === -1) return;
+      var out = { values: {}, presentKeys: [] };
+      if (!customDefs.length) return out;
+      var claimed = {};
+      (COLUMNS[sheetName] || []).forEach(function(field){
+        var h = mapping[field];
+        if (!h) return;
+        var idx = colIndex(headers, h);
+        if (idx !== -1) claimed[idx] = true;
+      });
+      if (isWideMonths){
+        headers.forEach(function(h, i){ if (U.isMonthKey(h)) claimed[i] = true; });
+      }
+      var leftover = [];
+      headers.forEach(function(h, i){ if (!claimed[i]) leftover.push(i); });
+
+      customDefs.forEach(function(def, i){
+        var ci = leftover[i];
+        if (ci === undefined) return; // no column present in this file for this def at all
+        out.presentKeys.push(def.key);
         var raw = row[ci];
-        if (raw === undefined || raw === "" || raw === null) return;
+        if (raw === undefined || raw === "" || raw === null) return; // present but blank = explicit clear
         if (def.type === "number"){
           var n = typeof raw === "number" ? raw : parseFloat(raw);
           if (isNaN(n)){
             result.errors.push({ sheet: sheetName, row: rowNum, field: def.label, message: "'" + def.label + "' must be a number" });
             return;
           }
-          custom[def.key] = n;
+          out.values[def.key] = n;
         } else {
-          custom[def.key] = String(raw);
+          out.values[def.key] = String(raw);
         }
       });
-      return custom;
+      return out;
     }
 
     for (var r = 1; r < aoa.length; r++){
@@ -1679,7 +1716,7 @@ ROE.io = (function(){
       var idField = COLUMNS[sheetName][0];
       var idVal = get(row, idField);
       if (idVal && String(idVal).indexOf("EXAMPLE-") === 0){ result.skipped += 1; continue; }
-      var customVals = readCustom(row, rowNum);
+      var customParsed = readCustom(row, rowNum);
 
       var rec, valid;
       if (sheetName === "Employees"){
@@ -1688,11 +1725,13 @@ ROE.io = (function(){
           discipline: get(row,"Discipline"), office: get(row,"Office"), businessGroup: get(row,"BusinessGroup"),
           targetUtil: U.parseNum(get(row,"TargetUtil"), 85), mentorRole: get(row,"MentorRole") || "None",
           active: get(row,"Active") === undefined ? true : (get(row,"Active") === true || get(row,"Active") === "true" || get(row,"Active") === 1 || get(row,"Active") === "TRUE"),
-          notes: get(row,"Notes"), custom: customVals
+          notes: get(row,"Notes"), custom: customParsed.values
         });
+        markImportedCustomKeys(rec, customParsed.presentKeys);
         valid = M.validateEmployee(rec, customDefs);
       } else if (sheetName === "Skills"){
-        rec = M.newSkill({ id: idVal || undefined, code: get(row,"Code"), name: get(row,"Name"), category: get(row,"Category"), custom: customVals });
+        rec = M.newSkill({ id: idVal || undefined, code: get(row,"Code"), name: get(row,"Name"), category: get(row,"Category"), custom: customParsed.values });
+        markImportedCustomKeys(rec, customParsed.presentKeys);
         valid = M.validateSkill(rec, customDefs);
       } else if (sheetName === "EmployeeSkills"){
         rec = M.newEmployeeSkill({ employeeId: get(row,"EmployeeID"), skillId: get(row,"SkillID"), level: M.normalizeSkillLevel(get(row,"Level")) });
@@ -1704,8 +1743,9 @@ ROE.io = (function(){
           discipline: get(row,"Discipline"), phase: get(row,"Phase"), budget: U.parseNum(get(row,"Budget"),0),
           bimLevel: get(row,"BIMLevel"), teamMin: U.parseNum(get(row,"TeamMin"),1), teamMax: U.parseNum(get(row,"TeamMax"),10),
           priority: U.parseNum(get(row,"Priority"),3), status: get(row,"Status"),
-          software: swRaw ? String(swRaw).split(";").filter(Boolean) : [], notes: get(row,"Notes"), custom: customVals
+          software: swRaw ? String(swRaw).split(";").filter(Boolean) : [], notes: get(row,"Notes"), custom: customParsed.values
         });
+        markImportedCustomKeys(rec, customParsed.presentKeys);
         valid = M.validateProject(rec, customDefs);
       } else if (sheetName === "ProjectDemands"){
         var alloc = {};
@@ -1716,8 +1756,9 @@ ROE.io = (function(){
         rec = M.newDemand({
           id: idVal || undefined, projectId: get(row,"ProjectID"), title: get(row,"Title"), discipline: get(row,"Discipline"),
           minLevel: get(row,"MinLevel"), openings: U.parseNum(get(row,"Openings"),1),
-          requiredSkills: decodeRequiredSkills(get(row,"RequiredSkills")), allocationByMonth: alloc, custom: customVals
+          requiredSkills: decodeRequiredSkills(get(row,"RequiredSkills")), allocationByMonth: alloc, custom: customParsed.values
         });
+        markImportedCustomKeys(rec, customParsed.presentKeys);
         valid = M.validateDemand(rec, customDefs);
       } else if (sheetName === "Assignments"){
         var alloc2 = {};
@@ -1729,15 +1770,17 @@ ROE.io = (function(){
           id: idVal || undefined, projectId: get(row,"ProjectID"), employeeId: get(row,"EmployeeID"),
           demandId: get(row,"DemandID") || null, status: get(row,"Status") || "Proposed", source: get(row,"Source") || "import",
           scoreSnapshot: get(row,"ScoreSnapshot") === "" || get(row,"ScoreSnapshot") === undefined ? null : U.parseNum(get(row,"ScoreSnapshot"), null),
-          allocationByMonth: alloc2, custom: customVals
+          allocationByMonth: alloc2, custom: customParsed.values
         });
+        markImportedCustomKeys(rec, customParsed.presentKeys);
         valid = M.validateAssignment(rec, customDefs);
       } else if (sheetName === "Mentorships"){
         rec = M.newMentorship({
           id: idVal || undefined, mentorId: get(row,"MentorID"), menteeId: get(row,"MenteeID"), focusSkillId: get(row,"FocusSkillID"),
           sharedProjectId: get(row,"SharedProjectID") || null, frequency: get(row,"Frequency"),
-          score: U.parseNum(get(row,"Score"),0), compat: get(row,"Compat"), status: get(row,"Status"), custom: customVals
+          score: U.parseNum(get(row,"Score"),0), compat: get(row,"Compat"), status: get(row,"Status"), custom: customParsed.values
         });
+        markImportedCustomKeys(rec, customParsed.presentKeys);
         valid = M.validateMentorship(rec, customDefs);
       } else {
         continue;
@@ -2648,10 +2691,31 @@ ROE.store = (function(){
   function isPersistenceActive(){ return hydrated; }
 
   // ---- Generic CRUD over a top-level collection (employees/projects/demands/assignments/mentorships/skills) ----
+  // Workbook re-import must never silently erase an existing record's custom-field values for a
+  // key that simply has no column in the file being imported (see BUILD_PLAN_ADDENDUM_1.md's
+  // "never silently delete data" principle - the same protection CF-2 already gives field-def
+  // removal, applied here to the re-import path). ROE.io.parseSheet marks exactly which custom
+  // keys had a column present in the row via a `__importedCustomKeys` array on the record (every
+  // other write path - manual edit forms, API pull - never sets this marker, so they keep today's
+  // plain full-record-replace behavior unchanged).
   function upsert(collectionName, record){
     var arr = state[collectionName];
-    record.updatedAt = U.nowIso();
     var idx = arr.findIndex(function(r){ return r.id === record.id; });
+    var importedKeys = record.__importedCustomKeys;
+    if (importedKeys){
+      delete record.__importedCustomKeys;
+      var existing = idx !== -1 ? arr[idx] : null;
+      var merged = Object.assign({}, existing && existing.custom);
+      importedKeys.forEach(function(key){
+        if (record.custom && Object.prototype.hasOwnProperty.call(record.custom, key)){
+          merged[key] = record.custom[key];
+        } else {
+          delete merged[key]; // column present in the file, but this row's cell was blank - explicit clear
+        }
+      });
+      if (Object.keys(merged).length) record.custom = merged; else delete record.custom;
+    }
+    record.updatedAt = U.nowIso();
     if (idx === -1) arr.push(record); else arr[idx] = record;
     markDirty(); notify(); scheduleSave();
     return record;
@@ -2951,7 +3015,18 @@ ROE.ui = (function(){
       return colors[lvl] || colors[0];
     }
 
-    var skillCols = state.skills.map(function(s){ return '<th>'+esc(s.code)+'</th>'; }).join("");
+    // NEW-2: EmployeeSkill rows are never cascade-deleted when their referenced Skill is removed
+    // from the catalog (countSkillReferences/the delete-skill confirm dialog promise this). Those
+    // orphaned rows would otherwise just vanish from the matrix (state.skills no longer has a
+    // matching column), leaving the data present-but-invisible. Add one extra "Unknown skill"
+    // column per orphaned skillId still referenced by any EmployeeSkill row, so the confirm
+    // dialog's promise ("rendered as Unknown skill, not removed") is actually true somewhere a
+    // user can see it.
+    var orphanSkillIds = Array.from(new Set(state.employeeSkills.map(function(es){ return es.skillId; })))
+      .filter(function(sid){ return !state.skills.some(function(s){ return s.id === sid; }); });
+
+    var skillCols = state.skills.map(function(s){ return '<th>'+esc(s.code)+'</th>'; }).join("") +
+      orphanSkillIds.map(function(sid){ return '<th>'+esc("Unknown skill (" + sid + ")")+'</th>'; }).join("");
     var rows = pageItems.map(function(e){
       var skillCells = state.skills.map(function(s){
         var es = state.employeeSkills.find(function(x){ return x.employeeId===e.id && x.skillId===s.id; });
@@ -2959,7 +3034,12 @@ ROE.ui = (function(){
         return '<td style="background:'+levelColor(lvl)+';text-align:center;" data-skill-cell data-emp="'+e.id+'" data-skill="'+s.id+'">'+
           '<input type="number" min="0" max="5" value="'+lvl+'" aria-label="'+esc(e.name)+' '+esc(s.code)+' skill level" style="width:44px;" data-emp="'+e.id+'" data-skill="'+s.id+'" class="skill-level-input"></td>';
       }).join("");
-      return '<tr><td>'+esc(e.name)+'</td><td>'+esc(e.level)+'</td><td>'+esc(e.discipline)+'</td><td>'+esc(e.office)+'</td><td>'+esc(e.businessGroup)+'</td>'+skillCells+
+      var orphanCells = orphanSkillIds.map(function(sid){
+        var es = state.employeeSkills.find(function(x){ return x.employeeId===e.id && x.skillId===sid; });
+        if (!es) return '<td style="text-align:center;">-</td>';
+        return '<td style="background:'+levelColor(es.level)+';text-align:center;" title="Unknown skill (' + esc(sid) + ')">'+es.level+'</td>';
+      }).join("");
+      return '<tr><td>'+esc(e.name)+'</td><td>'+esc(e.level)+'</td><td>'+esc(e.discipline)+'</td><td>'+esc(e.office)+'</td><td>'+esc(e.businessGroup)+'</td>'+skillCells+orphanCells+
         '<td><button type="button" class="edit-emp" data-id="'+e.id+'">Edit</button></td></tr>';
     }).join("");
 
@@ -3301,6 +3381,19 @@ ROE.ui = (function(){
     $all(".edit-prj", root).forEach(function(btn){ btn.onclick = function(){ openProjectModal(btn.dataset.id); }; });
   }
 
+  // NEW-2: the demand editor's required-skills input only ever showed the raw SKILLID:minLevel:weight
+  // encoding, never a resolved skill name, so a Demand.requiredSkills row referencing a deleted
+  // Skill just showed a dangling ID (indistinguishable from a valid one). Resolve each entry's
+  // skill name here, falling back to "Unknown skill (ID)" when the catalog no longer has it.
+  function resolvedRequiredSkillsLabel(requiredSkills, skills){
+    if (!requiredSkills || !requiredSkills.length) return "(none)";
+    return requiredSkills.map(function(rs){
+      var skl = (skills || []).find(function(s){ return s.id === rs.skillId; });
+      var name = skl ? (skl.code || skl.name) : ("Unknown skill (" + rs.skillId + ")");
+      return name + " (min " + rs.minLevel + ", weight " + rs.weight + ")";
+    }).join(", ");
+  }
+
   function openProjectModal(id){
     var state = STORE.getState();
     var prj = id ? state.projects.find(function(p){ return p.id===id; }) : ROE.model.newProject({});
@@ -3323,6 +3416,7 @@ ROE.ui = (function(){
           '<button type="button" class="danger d-remove" data-id="'+d.id+'">Remove demand</button></div>' +
           '<div class="hint">Required skills: '+esc(IO.encodeRequiredSkills(d.requiredSkills)||"(none)")+' (SKILLID:minLevel:weight;...) '+
           '<input type="text" class="d-reqskills" data-id="'+d.id+'" placeholder="e.g. skl_civil3d:3:2" value="'+esc(IO.encodeRequiredSkills(d.requiredSkills))+'" style="width:260px;"></div>' +
+          '<div class="hint">Resolved: '+esc(resolvedRequiredSkillsLabel(d.requiredSkills, state.skills))+'</div>' +
           '<div class="hint">Fill-across: <input type="text" class="fa-start" data-id="'+d.id+'" placeholder="start YYYY-MM" style="width:100px;"> to ' +
           '<input type="text" class="fa-end" data-id="'+d.id+'" placeholder="end YYYY-MM" style="width:100px;"> value ' +
           '<input type="number" class="fa-val" data-id="'+d.id+'" min="0" max="100" style="width:60px;"> ' +
