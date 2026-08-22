@@ -1,5 +1,181 @@
 # TEST_REPORT.md — Resource Optimization Engine (ROE)
 
+## RE-TEST pass ROUND 3 — final independent verification of the header-verification fix (`2c67784`) — 2026-08-22
+
+Under test: `index.html` at commit `2c67784` ("Fix custom-fields column matching: header-verify
+instead of blind position, per Manager's own recommended hybrid approach"), against the Manager's
+`MANAGER_REVIEW.md` ADDENDUM 1 findings (issues 1-3: invalid-Number-cell erasure, positional-zip
+misassignment in three variants — inserted column / reordered `CustomFieldDefs` rows / stolen-by-
+fuzzy-match canonical column — and rejected-def-row cascade). Coder's claim: `readCustom` now verifies
+header text at each zipped position against `def.label` before assigning, reports a clear error and
+leaves the existing value untouched on mismatch; `presentKeys` only set on genuine-blank-or-parsed,
+never on parse failure; `detectMapping` reserves position+header-matched custom columns before fuzzy
+canonical matching runs; a rejected `CustomFieldDefs` row no longer cascades; added a key-hint next to
+custom field labels in edit forms. Claims all 5 Manager findings fixed, ported MGR-A..G into
+`tests/specs/mgr-workbook-io-fix-round2.spec.js`, 152/152 full suite.
+
+**Result: the 5 findings the fix explicitly targeted are genuinely closed, confirmed both by the
+Coder's own ported probes and by re-running them myself. But the header-verification mechanism itself
+has a new gap the Manager's 7 probes never exercised: it compares header text with strict `===`
+(byte-exact) equality instead of the same normalized comparison (`U.normalizeHeader`: lowercase, strip
+non-alphanumerics) that canonical-column matching already uses elsewhere in this same function chain.
+A custom column header that differs from the stored `def.label` by case only — a completely mundane
+Excel-editing outcome, not a contrived edge case — is treated as "column not found for this def" rather
+than "this is the same column, differently cased." Combined with a deleted canonical column that the
+mangled header now fuzzy-resembles (the exact MGR-E scenario), this reopens the identical bug class the
+fix was written to close: the canonical field is silently overwritten with the custom column's value,
+the custom value itself is silently dropped, and zero errors are reported. This is a genuine, clean,
+independently-reproduced regression-of-the-fix, not a manufactured finding — see CRITICAL/HIGH #1
+below. Two secondary, lower-severity gaps (spurious-but-safe mismatch errors on whitespace-padded
+headers; asymmetric strictness vs. canonical matching) round out the round. Isolation, blank-vs-absent,
+and full-UI-path "existing value untouched" claims all held up under attack.**
+
+**What I ran:**
+
+1. Fresh full committed suite myself, from a clean `cd tests && npx playwright test
+   --config=pw.local.config.js`: **152 passed, 0 failed** (~2.1 min), matching the Coder's claim
+   exactly. Confirmed console output for every persistence/session-only/API/perf/custom-fields spec
+   name individually (not just the pass count) — e.g. `MGR-C-repro`, `MGR-A2-repro`,
+   `repro#1 fresh result`, `unsupported-entity-type result` all printed the expected values.
+2. Re-ran `tests/specs/mgr-workbook-io-fix-round2.spec.js` **unmodified**, isolated: **7 passed, 0
+   failed** (MGR-A, D, E, C, B, F-control, G-control), console output showing the exact clear error
+   text now produced for each structural edit (e.g. `"Expected custom column 'Region' but found
+   'Reviewed By' at that position..."`) and the previously-stored value surviving each attack
+   (`storedCustomAfterReimport` unchanged in every case). All 7 of the Manager's own probes hold.
+3. Spot-checked prior-round regressions by name in the same full run: `persistence.spec.js` (all 12,
+   including the session-only reload-gate and token-redaction checks), `tester-round3-independent.spec.js`
+   (all 7 MGR-repro a/a2/b/c + regression checks), `custom-fields-addendum.spec.js`,
+   `workbook-io.spec.js`, `settings-validation.spec.js` — all green, all base-app fix-loop work and the
+   addendum's first fix round remain unaffected by this commit.
+4. Wrote a fresh probe set (scratchpad-only, not committed — `tester-round2-probe*.spec.js`, run via
+   the project's own `pw.local.config.js` then removed; `git status` confirms `tests/specs/` is clean)
+   attacking exactly the angles requested: header case/whitespace vs. exact match, more-leftover-than-
+   defs, fewer-leftover-than-defs (column entirely absent vs. present-but-blank), error isolation across
+   fields in one row, and the full `handleImportFile → previewImport → applyImport` UI path (not just
+   direct `STORE.upsert` calls) for the "existing value untouched" claim.
+5. Re-checked CDN reachability: `curl` to both `cdn.jsdelivr.net/npm/chart.js` and the jsDelivr-hosted
+   SheetJS build still returns `CONNECT tunnel failed, response 403` from this shell — unchanged,
+   still a known declared environment gap (VERIFY-1), not a new finding.
+
+**Findings:**
+
+### 1. HIGH — header verification uses byte-exact string equality instead of the app's own normalized comparison, so a case-only (or whitespace-only) difference in a custom column's header text reopens the exact MGR-E "fuzzy match steals a custom column" corruption the fix exists to close — silently, with zero errors, for a brand-new record
+
+`readCustom`'s mismatch check (`index.html:1743`) is `String(headerText) !== String(def.label)` — raw,
+case-sensitive, whitespace-sensitive. `detectMapping`'s custom-column reservation (`:1635`) uses the
+identical strict check. But canonical-column matching two lines above it (`:1619`) uses
+`U.normalizeHeader(h) === U.normalizeHeader(f)` — lowercase, non-alphanumeric-stripped — specifically
+*so that* trivial header variations don't break matching. The new custom-field code is inconsistently
+stricter than the canonical code sitting right next to it in the same function.
+
+Reproduced cleanly (isolated in the scratchpad, not the committed suite — see repro steps below): add
+an Employee custom field labeled "Office Location" (text). Export. In the exported sheet, delete the
+canonical "Office" column entirely (an ordinary edit — arguably *more* likely than inserting a
+column, since a planner might consider "Office" redundant once "Office Location" exists) and change
+only the case of "Office Location"'s header cell to "office location" (equally ordinary — Excel
+autocapitalization, a copy-pasted template header, or someone just retyping it). Import a **brand-new**
+row (never previously stored, so no merge-preserve fallback from an existing record can mask the
+outcome) with that column's cell = `"Denver"`.
+
+Result: `detectMapping` cannot reserve "office location" for the custom def (strict-equality fails), so
+it falls into the fuzzy-candidate pool; `fuzzyMatchHeader("Office", ["office location"])` scores 60
+(substring match) and wins, since "Office" has no exact-match column left. `mapping.Office = "office
+location"`. `readCustom` then marks that same column index as claimed *by the canonical field* before
+it ever looks at `customDefs`, so the custom def's leftover-column search finds nothing at that
+position — not a mismatch (which would report an error), but "no column present for this def at all"
+(which reports nothing, by design, since a genuinely-absent column is meant to be silent). Net result:
+
+- `errors`: `[]` — zero errors reported.
+- Canonical `employee.office` = `"Denver"` — silently overwritten with the *custom* column's raw text.
+- `employee.custom` — the `office_location` key is **entirely absent** (not blank, not present-and-
+  cleared — just never written), so the value the user typed for "Office Location" is gone.
+
+This is not "a mismatch reported that the user has to notice" (the acceptable outcome for the fix's
+other scenarios) — it is complete silent data loss plus cross-field corruption, identical in shape to
+the original MGR-E finding this exact commit's own inline comment (`:1606-1611`) says it closes. The
+fix only holds when the file's header text is byte-identical to the stored `def.label`; it was framed
+(by the Coder's comment and the Manager's review) as closing the class of "any structural edit to an
+exported sheet," but a structural edit was never required here — only a one-character casing change to
+a header cell alongside an unrelated canonical-column deletion, both entirely plausible independently
+in the same hand-edit session.
+
+Why HIGH and not (only) MEDIUM like the original collective finding: the Manager rated the original
+three-variant issue MEDIUM in part *because* "canonical columns are unaffected" by two of the three
+variants. Here the canonical column (`Office`) is directly and silently corrupted, not merely
+unmapped — this is strictly worse than the MGR-E variant it reopens.
+
+Reproduce: `STORE.addFieldDef("Employee","Office Location","text")`; build the export via
+`IO.buildWorkbookSheets`; take the emitted header/row, delete the "Office" column entirely, and replace
+the "Office Location" header cell with `"office location"` (lowercase); construct one new data row with
+`EmployeeID`/`Name`/enum fields filled to pass validation and the custom column's cell = `"Denver"`;
+run the file's own `CustomFieldDefs` sheet through `IO.parseCustomFieldDefsSheet` →
+`IO.customDefsFor` → `IO.detectMapping` (mirroring `handleImportFile`) to get the real mapping; feed
+into `IO.parseWorkbook`; inspect the resulting record's `office` and `custom` fields directly (`errors`
+array is empty, `office` is `"Denver"`, `custom` has no `office_location` key at all).
+
+Fix shape: the mismatch check at `:1743` (and the reservation check at `:1635`) should use
+`U.normalizeHeader` for the comparison, exactly like the canonical-matching code three lines above it
+already does — consistent, not stricter-for-no-reason. That alone would make this case round-trip
+correctly (as a match, not a mismatch, not a theft).
+
+### 2. LOW — a harmless whitespace-padded header (no canonical column involved) produces a spurious "column mismatch" error instead of matching, unlike canonical columns which tolerate it
+
+Same root cause as #1, isolated without the fuzzy-theft compounding factor: export a file with a
+"Region" custom text field, then pad the header cell to `" Region "` (a realistic artifact of copying
+a header from a merged/formatted Excel cell) without touching any canonical column. Result: `readCustom`
+reports `"Expected custom column 'Region' but found ' Region ' at that position"` and does not update
+the value (existing value survives — no corruption, just a false-positive error and a value that
+silently fails to update from the file even though the column is unambiguously present). A canonical
+column with the same whitespace variance would match fine via `U.normalizeHeader`. Not data-destructive
+on its own (the existing value is preserved, per the "leave alone on mismatch" design), so this is a
+UX/consistency gap rather than corruption — same one-line fix as #1 would close it too.
+
+### 3. Confirmed correct (no new finding) — several angles specifically requested, verified clean:
+
+- **More leftover columns than defs** (an extra hand-added junk column with no corresponding def at
+  all, trailing after the real custom column): ignored cleanly, zero errors, existing custom value
+  round-trips correctly. The zip only ever consumes as many leftover columns as there are defs; extra
+  columns are never touched.
+- **Fewer leftover columns than defs, distinct from a present-but-blank cell** (a def's column deleted
+  from the sheet entirely, with a second custom column still present after it): the deleted def's key
+  never appears in `presentKeys` (no error, no value) and — via `STORE.upsert`'s merge — the previously
+  stored value for that key survives untouched on re-import, correctly distinguished from a genuinely
+  blank cell (which does clear it, per the "MGR-C" design). Confirmed with two custom fields
+  simultaneously (one column removed, one intact) to make sure the removal of one didn't shift the
+  other — it didn't.
+- **Error isolation within one row**: forcing both custom fields in a row to mismatch (via a single
+  inserted column shifting everything after it) produces two independent per-field errors, and does
+  not block that same row's canonical fields (`Office`, `Notes`) from importing their own new values
+  correctly. Confirmed against `mgr-workbook-io-fix-round2.spec.js`'s own MGR-B result too (Team
+  mismatch does not prevent Badge's own error/value handling, and vice versa).
+- **Full UI-path "existing value untouched" claim**: re-verified end-to-end through
+  `handleImportFile`'s own mapping-detection step (using the file's own `CustomFieldDefs` sheet, not
+  local defs, exactly as production code does) → `previewImport` → `applyImport`'s exact sequence
+  (`restoreFieldDefs` then `STORE.upsert`), not just a direct `STORE.upsert(parseSheet(...))` shortcut.
+  The pre-set value survived byte-for-byte through the real pipeline on a header-mismatch attack.
+- **Duplicate-label key hint**: `customFieldInputsHtml` (`:3333`) now renders
+  `<label>Label <span class="hint">(type, key: the_key)</span>...` for every custom input — confirmed
+  by reading the code, closing the Manager's §2 UX gap for duplicate-labelled fields in manual forms.
+
+**CDN reachability**: unchanged. `curl` to `cdn.jsdelivr.net/npm/chart.js` and the jsDelivr-hosted
+SheetJS build both still return `CONNECT tunnel failed, response 403` in this shell. `index.html:8-9`
+is unchanged. Still VERIFY-1, still a known, honestly-declared environment gap, not a new finding.
+
+**Verdict on the addendum, including workbook-IO robustness: not quite done yet.** The four issues the
+Manager named (invalid-Number-cell erasure, inserted-column misassignment, reordered-defs-sheet swap,
+rejected-def-row cascade) plus the fifth (fuzzy-theft-on-byte-identical-headers) are genuinely,
+independently confirmed closed — three fix rounds on this narrow area were not wasted. But the fix's
+own header-verification mechanism introduces exactly one new gap of the same severity class it was
+built to close, triggered by a completely ordinary real-world variation (header casing) that the
+Manager's 7 probes never had reason to try because all of them used byte-identical, app-generated
+label text for the "still matches" side of every comparison. One line (normalize both sides of the
+`:1743`/`:1635` comparisons the same way `:1619` already does) would close it. I recommend one more
+narrow fix-and-verify pass on this specific point before calling the addendum fully done; I would not
+block sign-off on the LOW (#2) alone.
+
+---
+
+
 ## RE-TEST pass ROUND 2 — verification of the Coder's custom-fields workbook-IO fix (`3452c8d`) — 2026-08-22
 
 Under test: `index.html` at commit `3452c8d` ("Fix custom-fields workbook-IO bugs: match by key/position,
