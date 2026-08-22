@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Program Status Report Builder</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+
+  <header class="topbar no-print">
+    <div class="brand">
+      <div class="brand-title" id="brandTitleDisplay">Program Status Report Builder</div>
+      <div class="brand-sub">Strictly browser-based &middot; nothing leaves your machine</div>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button class="tab-btn active" data-view="editor">Data Editor</button>
+      <button class="tab-btn" data-view="settings">Report Settings</button>
+      <button class="tab-btn" data-view="report">Report Preview</button>
+    </nav>
+  </header>
+
+  <div class="toolbar no-print">
+    <div class="toolbar-group">
+      <span class="toolbar-label">Import</span>
+      <button id="btnImport" class="btn">Import CSV / XLSX</button>
+      <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" hidden>
+    </div>
+    <div class="toolbar-group">
+      <span class="toolbar-label">Export data</span>
+      <button id="btnExportCsv" class="btn">Export CSV</button>
+      <button id="btnExportXlsx" class="btn">Export XLSX</button>
+    </div>
+    <div class="toolbar-group">
+      <span class="toolbar-label">Template</span>
+      <button id="btnTemplateXlsx" class="btn">Download Template (.xlsx)</button>
+      <button id="btnTemplateCsv" class="btn btn-secondary">Download Template (.csv)</button>
+    </div>
+    <div class="toolbar-group">
+      <span class="toolbar-label">Report</span>
+      <button id="btnExportPdf" class="btn btn-primary">Export PDF</button>
+    </div>
+    <div class="toolbar-group toolbar-group-right">
+      <button id="btnLoadSample" class="btn btn-ghost">Load Sample Data</button>
+      <button id="btnClearAll" class="btn btn-ghost btn-danger">Clear All</button>
+    </div>
+  </div>
+
+  <div id="importStatus" class="import-status no-print" hidden></div>
+
+  <main>
+
+    <!-- ============ DATA EDITOR VIEW ============ -->
+    <section id="view-editor" class="view active no-print">
+      <div class="view-header">
+        <h2>Initiatives</h2>
+        <p class="hint">Edit cells directly. Completion status (Not started / In progress / Gaining momentum) is derived automatically from the completion percentage. Use the exact column headers shown here when preparing CSV/XLSX files outside this tool.</p>
+      </div>
+      <div class="table-scroll">
+        <table id="editorTable" class="editor-table">
+          <thead>
+            <tr>
+              <th style="width:14%">Strategic Pillar</th>
+              <th style="width:16%">Project Name</th>
+              <th style="width:26%">Accomplishments/Updates</th>
+              <th style="width:9%">Approx. Completion %</th>
+              <th style="width:11%">Project Manager</th>
+              <th style="width:20%">Initiative Description</th>
+              <th style="width:4%"></th>
+            </tr>
+          </thead>
+          <tbody id="editorBody"></tbody>
+        </table>
+      </div>
+      <button id="btnAddRow" class="btn btn-add">+ Add Initiative</button>
+    </section>
+
+    <!-- ============ SETTINGS VIEW ============ -->
+    <section id="view-settings" class="view no-print">
+      <div class="view-header">
+        <h2>Report Settings</h2>
+        <p class="hint">These fields control the cover section of the exported report. Saved automatically in this browser.</p>
+      </div>
+      <div class="settings-grid">
+        <label class="field">
+          <span>Program label (eyebrow)</span>
+          <input type="text" id="setEyebrow" placeholder="DESIGN TECHNOLOGY PROGRAM (DTP) · Q2 2026">
+        </label>
+        <label class="field">
+          <span>Report title</span>
+          <input type="text" id="setTitle" placeholder="DTP Program &amp; Strategy Update">
+        </label>
+        <label class="field">
+          <span>Subtitle</span>
+          <input type="text" id="setSubtitle" placeholder="Executive Leadership Summary — May 2026">
+        </label>
+        <label class="field field-wide">
+          <span>Summary paragraph(s) — one per line</span>
+          <textarea id="setSummary" rows="5" placeholder="Give a short executive summary of the program's momentum this period."></textarea>
+        </label>
+        <label class="field">
+          <span>Contact name</span>
+          <input type="text" id="setContactName" placeholder="Jane Doe (Program Manager)">
+        </label>
+        <label class="field">
+          <span>Contact email</span>
+          <input type="email" id="setContactEmail" placeholder="jane.doe@company.com">
+        </label>
+      </div>
+
+      <div class="view-header" style="margin-top:2rem">
+        <h2>Coming Up / Milestones</h2>
+        <p class="hint">Optional timeline shown on the report. Not part of the CSV/XLSX import format.</p>
+      </div>
+      <div class="table-scroll">
+        <table id="milestoneTable" class="editor-table">
+          <thead>
+            <tr>
+              <th style="width:20%">When</th>
+              <th style="width:76%">Milestone</th>
+              <th style="width:4%"></th>
+            </tr>
+          </thead>
+          <tbody id="milestoneBody"></tbody>
+        </table>
+      </div>
+      <button id="btnAddMilestone" class="btn btn-add">+ Add Milestone</button>
+    </section>
+
+    <!-- ============ REPORT VIEW (also the print target) ============ -->
+    <section id="view-report" class="view report-view">
+      <div id="reportRoot" class="report-root"></div>
+    </section>
+
+  </main>
+
+  <footer class="no-print">
+    <p>Runs entirely in your browser. Data is kept only in this browser's local storage and in files you explicitly export &mdash; nothing is uploaded anywhere.</p>
+  </footer>
+</div>
+
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="sample-data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
