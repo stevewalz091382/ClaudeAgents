@@ -2,6 +2,206 @@
 
 ---
 
+# ADDENDUM 1 — FINAL REVIEW (header-normalization fix, round 4 / close-out) — 2026-08-22
+
+## Verdict: **GO**
+
+Reviewed: `BUILD_PLAN_ADDENDUM_1.md`, my own ADDENDUM 1 review below, `TEST_REPORT.md`'s ROUND 3
+re-test, and `index.html` at commit `4a37a96`. I read both changed comparison sites myself, re-ran
+the full committed suite from clean (**154 passed / 0 failed**, 1.9 min), and wrote four fresh probes
+(MGR4-A..D) on angles no round has tried. **The fix is real, minimal, and correct. The workbook-IO
+column-matching saga is closed.** Three fix rounds on this one area were justified — every round
+found a genuine defect, and this last one is a two-line change that removes an inconsistency rather
+than adding another mechanism.
+
+---
+
+## 1. Independent verification of the fix (read, not taken on report)
+
+The diff is exactly two production lines plus a spec file. Both claimed sites genuinely use the
+app's own helper:
+
+- **`detectMapping`'s custom-column reservation (`index.html:1635`)** —
+  `if (U.normalizeHeader(headers[ci]) === U.normalizeHeader(def.label)) claimed[ci] = true;`
+- **`readCustom`'s mismatch check (`:1743`)** —
+  `if (U.normalizeHeader(headerText) !== U.normalizeHeader(def.label)){ ...error, leave key untouched... }`
+- **The helper (`:347`)** — `String(h || "").toLowerCase().replace(/[^a-z0-9]/g,"")`, the same
+  function canonical matching uses at `:1619` and `fuzzyMatchHeader` uses at `:353/:357`. It is
+  null/undefined-safe, so the old hand-rolled `headerText === undefined ? "" : headerText` guard is
+  correctly dropped rather than lost. The three comparison sites in this function chain now have
+  **identical** tolerance — which was the whole substance of the Tester's HIGH.
+
+Both of the Tester's repro scenarios are ported verbatim into the committed suite
+(`tests/specs/tester-round3-header-normalize.spec.js`): TESTER-R3-1 asserts the canonical `office`
+field is *not* overwritten with the custom column's value and that the custom value survives;
+TESTER-R3-2 asserts a whitespace-padded header matches and imports the **new** cell value (proving a
+real match, not merely a preserved old value). Both are genuine regression guards, not tautologies.
+
+Nothing else in the file changed, so there is no blast radius beyond custom-column matching. The
+manual column-mapping UI path (`workbook-io.spec.js` "renamed headers import correctly once mapped")
+still passes, which was the one place a looser reservation could have starved a canonical field.
+
+---
+
+## 2. Fresh probes (MGR4-A..D) — what I could still break, and why none of it blocks
+
+Run against `file:///home/user/ClaudeAgents/index.html`; scratch specs removed afterwards,
+`git status` clean.
+
+| Probe | Result |
+|---|---|
+| **MGR4-A** custom field labelled *exactly* `"Office"`, canonical `Office` column deleted by hand | `{"office":"Denver","custom":undefined,"errors":[]}` — silent theft, still. See loose end L1. |
+| **MGR4-B** Assignment custom field labelled `"2026-02"` (a month key), plain app round-trip, no hand editing | `alloc {"2026-01":50,"2026-02":0}`, custom value dropped, `errors: []` — real allocation data loss. See L2. |
+| **MGR4-C** two labels that *normalize* equal (`"Region"` / `"region!"`), `CustomFieldDefs` rows reordered | values swapped silently — the inherent cost of normalized comparison; see L3. |
+| **MGR4-D** label `"#"` (normalizes to empty) + an inserted blank-header column | blank column matched the def; `"SCRATCH"` overwrote the stored value silently. See L3. |
+
+None of these reopens anything the fix closed, and none is a regression introduced by `4a37a96`
+(MGR4-A and MGR4-B predate the entire fix arc; MGR4-C/D are the narrow, self-inflicted-label price of
+normalization, and normalization is still strictly the right trade — case and whitespace variance in
+headers is common, labels that differ only in punctuation are not). All four require the user to
+choose a pathological label: identical to a canonical column name, in `YYYY-MM` shape, or containing
+no alphanumeric characters at all. **The one-line prevention is the same for all of them — validate
+the label at creation in `addFieldDef`/the Manage Fields modal (reject/warn on a canonical-column
+collision, a month-key-shaped label, or a label with no alphanumeric content).** That is a v2 polish
+item, not a fourth fix loop. I am explicitly not asking for one.
+
+MGR4-B is the only one worth a second look by whoever picks this up: it is the sole known path where
+an **unedited, app-generated** round-trip loses canonical data (the month column and the custom
+column collide by header text, the custom column is parsed as a duplicate allocation, and the text
+value becomes `0`). Probability is low; blast radius is an allocation. LOW, and stated plainly rather
+than buried.
+
+---
+
+## 3. The whole addendum arc, for the record
+
+**What was built** (all verified by reading code across rounds, not by test names):
+
+- **CF-1..CF-4** — `CustomFieldDef {id, entityType, key, label, type, createdAt}` with a stable key
+  generated once at creation (`keyFromLabel`, `:445`) and never re-derived; auto key suffixing on
+  label collision; Manage Fields UI on all six entity types; dynamic inputs on all six forms
+  (now with a `(type, key: …)` hint so duplicate labels are distinguishable); validators that accept
+  `custom`, check only `number`-typed defs, and permit unknown keys so a removed def never
+  invalidates stored data.
+- **NEW-1** — Assignment manual create/edit modal with month grid, fill-across, and a
+  warn-don't-block `effectiveCapacity` overage check computed against indexes rebuilt *without* the
+  record being edited.
+- **NEW-2** — Skill manual create/edit modal, reference counts in the delete confirm, no cascade
+  delete, and `"Unknown skill (id)"` rendering for orphans in both the Skills Matrix and the Demand
+  editor (optimizer and alert engine degrade orphans to a skill gap rather than crashing).
+- **IO-1** — `CustomFieldDefs` sheet plus one appended column per active def on each entity sheet;
+  import reads defs first, recreates missing ones, never deletes a local def; old exports with no
+  `CustomFieldDefs` sheet still import cleanly.
+- **v1 → v2 migration** — `customFieldDefs` store added through the existing ladder; verified by the
+  Tester against a genuinely v1-shaped IndexedDB seeded before first boot, which is the right test.
+
+**The workbook-IO matching saga, all four rounds:**
+
+1. **Original build.** Columns were located by searching the header row for `def.label`
+   (`headers.indexOf(...)`). 1 CRITICAL + 2 HIGH: re-importing a file that omitted a custom column
+   silently erased stored values; two defs sharing a label collapsed onto one column; a custom label
+   colliding with a canonical column name (`"Name"`, `"Notes"`) read the canonical column's text —
+   including spurious "must be a number" errors on valid rows.
+2. **Fix 1 (position-based).** Identity moved to the file's own `CustomFieldDefs` sheet order, zipped
+   against leftover columns, plus a non-enumerable `__importedCustomKeys` marker giving `STORE.upsert`
+   the three-way absent / present-with-value / present-but-blank distinction. All four findings
+   genuinely closed — but the zip trusted position blindly. My review found five new silent-corruption
+   paths (inserted column shifts everything; reordered defs rows swap values; a deleted canonical
+   column lets `fuzzyMatchHeader`'s 60-point substring match steal a custom column; an invalid Number
+   cell marked the key present and thereby *deleted* the stored value; a rejected def row cascaded).
+   GO WITH FIXES.
+3. **Fix 2 (header verification).** Verify the header text at each zipped position before trusting it;
+   report a per-row error and leave the key untouched on mismatch; reserve position+header-matched
+   custom columns in `detectMapping` *before* fuzzy canonical matching runs; only mark `presentKeys`
+   on a genuine blank or a successful parse. All five closed, ported to
+   `tests/specs/mgr-workbook-io-fix-round2.spec.js`. But the verification used byte-exact `===` while
+   the canonical matcher three lines up used `normalizeHeader` — so a case-only header difference plus
+   a deleted canonical column reopened the fuzzy-theft corruption, silently. The Tester found it. HIGH.
+4. **Fix 3 (this commit).** Both verification sites use `U.normalizeHeader`. Closed, ported, 154/154.
+
+The through-line worth remembering: each round's fix was structurally right and each round's *new*
+defect came from an assumption the fix quietly took on. That pattern stopped here — this round's
+change removes an assumption instead of adding one, which is why I am calling it done.
+
+**VERIFY-1 is the one plan requirement that is not met.** I re-checked myself: `curl` to
+`cdn.jsdelivr.net/npm/chart.js` and the SheetJS CDN still returns `CONNECT tunnel failed, response
+403`. `index.html:8-9` loads both from those CDNs with `onerror` fallbacks, so `exportWorkbookFile`,
+`exportTemplateFile`, `readWorkbookFile` and both `new Chart(...)` call sites have **never executed
+in any environment this pipeline has run in**. Every IO claim in every round — the Coder's, the
+Tester's, mine — is a claim about `buildWorkbookSheets`/`parseWorkbook` over arrays-of-arrays. This
+was demanded twice by the plan and has been honestly declared every time; it is an environment gap,
+not an artifact defect, but it must not be recorded as closed.
+
+---
+
+## 4. Consolidated loose ends (base app + addendum)
+
+Ranked by what a decision maker should act on first.
+
+- **VERIFY-1, still open (owner: environment / whoever runs this next).** One network-enabled pass:
+  real `.xlsx` download → open in Excel → edit → re-upload, plus both chart call sites. Make the
+  Excel *edit* step first, not a smoke test — every defect this arc found was triggered by a human
+  editing the file.
+- **L1 (LOW, Coder/Architect).** A custom label identical to a canonical column name is still stolen
+  by canonical exact-matching if the canonical column is deleted from the file (MGR4-A). Structural,
+  not fixable by ordering — canonical exact matching must run first.
+- **L2 (LOW, Coder/Architect).** A custom label in `YYYY-MM` shape on `Assignments`/`ProjectDemands`
+  collides with month columns; unedited round-trip zeroes that month's allocation and drops the custom
+  value, zero errors (MGR4-B). Only known unedited-round-trip data loss.
+- **L3 (LOW, Coder).** Labels that normalize identically, or to the empty string, defeat header
+  verification (MGR4-C/D). Same one-line prevention as L1/L2: validate the label at creation.
+- **Import error list still omits `CustomFieldDefs` errors (LOW, Coder).** `previewImport`'s
+  `errorList` (`:4467-4468`) iterates only `parsed.bySheet[*].errors`; `parsed.fieldDefs.errors` shows
+  a count in the summary (`:1913`) and nothing else. Reported by the Tester two rounds ago, never
+  fixed. Four lines. It is the reason a rejected def row is undiagnosable from the UI.
+- **`restoreFieldDefs` type disagreement (LOW, Coder).** A file def whose `entityType+key` exists
+  locally is skipped even when its `type` differs (local `text` vs file `number`): the value parses per
+  the file's type, the input renders per the local one. Harmless today, a trap if `date`/`boolean` are
+  added.
+- **Untested path (Tester).** Two profiles exchanging workbooks with *partially overlapping* def sets
+  for the same entity, in both directions at once. Each direction was tested separately; the
+  interleaved case never was.
+- **`horizonStart` hardcoded `"2026-01"` (`:179`, and `:2189` in the demo seed) (Coder).** §2.4 says
+  "current calendar year." Correct by luck today, wrong on 1 Jan 2027. Logged in three consecutive
+  reviews, still open, still cheap.
+- **"Monitor" action absent from optimizer candidate cards (Architect).** Zero occurrences of the
+  string in `index.html` against §7's "Commit / Monitor / Review." Strike it from the plan or schedule
+  it.
+- **Clear-all resets the session-only privacy toggle to OFF and resumes persistence (`:2716`)
+  (Architect/Coder).** Deliberate, documented in the code, and the UI does re-render — but a privacy
+  setting is being changed by an action taken for an unrelated reason. Worth one line in the About
+  text.
+- **Harness portability (Tester).** `tests/playwright.config.js` as committed still cannot launch a
+  browser here; every round has used `tests/pw.local.config.js`, which is *now committed* while its
+  own header comment still reads "LOCAL, UNCOMMITTED" and it hardcodes
+  `/opt/pw-browsers/chromium-1194/...`. Fourth round this has been logged. Either make the committed
+  config work or make the override honest.
+- **Doc nit (Coder).** The comment block at `:1692-1722` still says the zip is trusted only if the
+  header "actually equals `def.label`"; it is now a normalized comparison. One word.
+
+---
+
+## 5. Chain assessment (final)
+
+- **Architect.** The addendum spec was tight, correctly scoped, and additive; the Coder built it
+  without drift. Its one real omission ran through the entire arc: it never said what should happen to
+  a *structurally edited* file, which is precisely where every defect after round 1 lived. It also
+  never ruled on label hygiene (canonical-name collisions, month-shaped labels) — the residual L1-L3.
+- **Coder.** Fixed at the root each time, commented the reasoning, and kept the blast radius small;
+  this last commit is two lines and a spec, which is exactly the right shape for a round-4 fix. The
+  recurring criticism, now mild: fix comments claimed robustness properties slightly broader than the
+  code actually had.
+- **Tester.** The strongest link across both the base app and this addendum. Round 3 found a genuine
+  regression-of-the-fix that my own seven probes structurally could not have found, reproduced it from
+  scratch, rated it honestly, recommended one more narrow pass rather than blocking on the LOW, and
+  declared the CDN gap plainly every single round.
+
+**Ship it as an internal tool.** The remaining items are polish and one environment-blocked
+verification, none of which is worth another loop of this pipeline.
+
+---
+---
+
 # ADDENDUM 1 REVIEW (custom fields + full manual CRUD, pipeline close-out) — 2026-08-22
 
 ## Verdict: **GO WITH FIXES**
