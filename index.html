@@ -22,6 +22,10 @@
     font-size: 16px;
   }
   * { box-sizing: border-box; }
+  /* Guard against any author-origin `display` rule (e.g. .banner, .badge-warning)
+     defeating the UA's [hidden] { display: none } rule. Must stay near the top
+     so it is not shadowed, and !important so no later class declaration can win. */
+  [hidden] { display: none !important; }
   html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); overflow-x: hidden; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
@@ -613,12 +617,8 @@
       lines.push(sep);
       (decision.options || []).forEach(function (opt) {
         var cells = (decision.criteria || []).map(function (c) {
-          var cellScores = (decision.scores[opt.id] && decision.scores[opt.id][c.id]) || {};
-          var vals = [];
-          Object.keys(cellScores).forEach(function (k) { if (typeof cellScores[k] === 'number') vals.push(cellScores[k]); });
-          if (!vals.length) return '—';
-          var sumv = 0; vals.forEach(function (v) { sumv += v; });
-          return (sumv / vals.length).toFixed(1);
+          var cv = DecisionEngine.cellValue(decision, opt.id, c.id);
+          return cv.scored ? cv.value.toFixed(1) : '—';
         });
         lines.push('| ' + opt.name + ' | ' + cells.join(' | ') + ' |');
       });
@@ -767,6 +767,19 @@
       });
       if (Object.keys(critMap).length === 0) delete d.scores[optId];
     });
+  }
+
+  // Collapses decision.raters down to just the implicit rater 'r_me' (keeping its
+  // existing scores) and prunes every score belonging to any other rater id.
+  // Used when the user turns multi-rater mode off, so DecisionEngine.cellValue
+  // (which blends over decision.raters unconditionally) can only ever see one
+  // rater once this runs — no branching needed in the math layer.
+  function collapseRatersToSingle(d) {
+    var meRater = null;
+    d.raters.forEach(function (r) { if (r.id === 'r_me') meRater = r; });
+    if (!meRater) meRater = { id: 'r_me', name: 'Me', weight: 1 };
+    d.raters = [meRater];
+    pruneScores(d);
   }
 
   function setCellScore(d, optId, critId, raterId, value) {
@@ -1096,7 +1109,7 @@
   UI.renderRecordSection = function (d) {
     var val = DecisionEngine.validateForExport(d);
     var disable = !val.ok;
-    [EL.btnExportMd, EL.btnExportJson, EL.btnCopyClipboard].forEach(function (btn) { btn.disabled = disable; });
+    [EL.btnExportMd, EL.btnExportJson, EL.btnCopyClipboard, EL.btnPrint].forEach(function (btn) { btn.disabled = disable; });
     if (disable) {
       EL.exportGating.hidden = false;
       EL.exportGating.innerHTML = '<div><p>Exports are blocked until:</p><ul>' + val.missing.map(function (m) {
@@ -1282,6 +1295,19 @@
     /* Multi-rater + raters panel */
     EL.toggleMultirater.addEventListener('change', function () {
       var d = getActiveDecision();
+      var turningOff = !EL.toggleMultirater.checked;
+      if (turningOff) {
+        var hasOtherRaters = d.raters.length > 1;
+        if (hasOtherRaters) {
+          var confirmed = window.confirm('Turning off multi-rater mode will discard scores from the other rater(s). Continue?');
+          if (!confirmed) {
+            EL.toggleMultirater.checked = true;
+            return;
+          }
+        }
+        collapseRatersToSingle(d);
+        App.scoringAsRaterId = 'r_me';
+      }
       d.multiRater = EL.toggleMultirater.checked;
       UI.onStateChange();
     });
@@ -1434,7 +1460,12 @@
         tier2();
       }
     });
-    EL.btnPrint.addEventListener('click', function () { window.print(); });
+    EL.btnPrint.addEventListener('click', function () {
+      var d = getActiveDecision();
+      var val = DecisionEngine.validateForExport(d);
+      if (!val.ok) return;
+      window.print();
+    });
   }
 
   UI.init = function () {
@@ -1609,6 +1640,40 @@
       self.assert('migrate: never throws on null/empty/garbage input', threw === false);
       self.assert('migrate: produces a valid library shape from null', !!libA && Array.isArray(libA.decisions) && libA.decisions.length >= 1);
       self.assert('migrate: repairs a garbage decisions array', !!libC && Array.isArray(libC.decisions) && libC.decisions.length >= 1);
+
+      /* 11. collapseRatersToSingle (Fix C2): turning multi-rater off returns a true single-rater state */
+      var d11 = fixtureDecision();
+      d11.multiRater = true;
+      d11.raters = [{ id: 'r_me', name: 'Me', weight: 1 }, { id: 'r_other', name: 'Rater 2', weight: 3 }];
+      d11.scores.o1.c1 = { r_me: 10, r_other: 2 };
+      collapseRatersToSingle(d11);
+      self.assert('collapseRatersToSingle: exactly one rater remains', d11.raters.length === 1);
+      self.assert('collapseRatersToSingle: remaining rater is r_me', d11.raters[0] && d11.raters[0].id === 'r_me');
+      var noForeignScores = true;
+      Object.keys(d11.scores).forEach(function (optId) {
+        Object.keys(d11.scores[optId]).forEach(function (critId) {
+          Object.keys(d11.scores[optId][critId]).forEach(function (raterId) {
+            if (raterId !== 'r_me') noForeignScores = false;
+          });
+        });
+      });
+      self.assert('collapseRatersToSingle: no scores reference a non-r_me rater id', noForeignScores === true);
+      self.assertClose('collapseRatersToSingle: r_me\'s own score for the cell is preserved', d11.scores.o1.c1.r_me, 10, 1e-9);
+
+      /* 12. toMarkdown score matrix matches DecisionEngine.cellValue under unequal rater weights (Fix C3) */
+      var d12 = fixtureDecision();
+      d12.multiRater = true;
+      d12.raters = [{ id: 'r_me', name: 'Me', weight: 1 }, { id: 'r_other', name: 'Rater 2', weight: 3 }];
+      d12.scores.o1.c2 = { r_me: 10, r_other: 2 };
+      var expectedCell = DecisionEngine.cellValue(d12, 'o1', 'c2');
+      var md12 = DecisionEngine.toMarkdown(d12);
+      var matrixLine = null;
+      md12.split('\n').forEach(function (line) { if (line.indexOf('| Option A |') === 0) matrixLine = line; });
+      self.assert('toMarkdown: score matrix row for Option A found', !!matrixLine, matrixLine);
+      var expectedText = expectedCell.value.toFixed(1);
+      self.assert('toMarkdown: score matrix value matches cellValue under unequal rater weights (4.0, not the unweighted mean 6.0)',
+        !!matrixLine && matrixLine.indexOf(expectedText) !== -1,
+        'expected matrix line to contain ' + expectedText + ', got: ' + matrixLine);
     },
     renderPage: function () {
       var res = this.run();
