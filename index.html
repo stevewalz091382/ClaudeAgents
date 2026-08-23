@@ -357,6 +357,13 @@
     var options = Array.isArray(d.options) ? d.options.map(repairOption) : [];
     var raters = Array.isArray(d.raters) ? d.raters.map(repairRater) : [];
     if (!raters.length) raters = [{ id: 'r_me', name: 'Me', weight: 1 }];
+    // Data-model invariant: raters must always contain the implicit 'r_me' rater.
+    // The check above only backfills when raters is completely empty; if raters is
+    // non-empty but r_me specifically is missing (e.g. a hand-edited or malformed
+    // imported session), add r_me alongside the existing rater(s) rather than
+    // replacing them, so no rater or its scores are silently discarded here.
+    var hasMeRater = raters.some(function (r) { return r.id === 'r_me'; });
+    if (!hasMeRater) raters.push({ id: 'r_me', name: 'Me', weight: 1 });
     var sqFound = false;
     options.forEach(function (o) {
       if (o.isStatusQuo) {
@@ -1677,6 +1684,22 @@
       self.assert('toMarkdown: score matrix value matches cellValue under unequal rater weights (4.0, not the unweighted mean 6.0)',
         !!matrixLine && matrixLine.indexOf(expectedText) !== -1,
         'expected matrix line to contain ' + expectedText + ', got: ' + matrixLine);
+
+      /* 13. repairDecision (Fix C2-R3): imported/raw raters missing r_me get r_me added
+         alongside the existing rater(s), without destroying the existing rater or its scores. */
+      var d13 = fixtureDecision();
+      d13.multiRater = true;
+      d13.raters = [{ id: 'r_custom', name: 'X', weight: 1 }];
+      d13.scores.o1.c1 = { r_custom: 7 };
+      var imported13 = DecisionEngine.fromSessionJSON(DecisionEngine.toSessionJSON(d13));
+      self.assert('fromSessionJSON: r_me-less imported decision is still accepted', imported13.ok === true);
+      var repaired13 = imported13.decision;
+      var hasMe13 = repaired13.raters.some(function (r) { return r.id === 'r_me'; });
+      var hasCustom13 = repaired13.raters.some(function (r) { return r.id === 'r_custom'; });
+      self.assert('repairDecision: r_me is added when raters is non-empty but r_me-less', hasMe13);
+      self.assert('repairDecision: original non-r_me rater is preserved, not replaced', hasCustom13);
+      self.assert('repairDecision: original rater\'s score is left intact (not destroyed at import time)',
+        repaired13.scores.o1 && repaired13.scores.o1.c1 && repaired13.scores.o1.c1.r_custom === 7);
     },
     renderPage: function () {
       var res = this.run();
