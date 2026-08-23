@@ -4,6 +4,124 @@ Tested by: Tester agent (rounds 1-3), orchestrator (rounds 4-5 — see notes on 
 
 ---
 
+# ROUND 6 STATUS (2026-08-23) — v1.1 Extension: Levers, Reasoning, and Charts
+
+Scope: this round tests only the new "Extension: Levers, Reasoning, and Charts (v1.1)" section of BUILD_PLAN.md (E1–E11, E-A1–E-A10), as implemented in `index.html`. The core app (weighted scoring, multi-rater, exports, persistence — A1–A20) went through 5 prior rounds and is not re-litigated here beyond a light regression check on shared code paths this extension touches (export gating, `repairDecision`, results rendering).
+
+Method: same as every prior round — live rendering/interaction testing in a real Chromium instance (Playwright, `executablePath: /opt/pw-browsers/chromium`) loaded via `file://` against `/home/user/ClaudeAgents/index.html`, no server. Driver scripts saved under `/tmp/claude-0/-home-user-ClaudeAgents/2c19d920-0d83-5ba7-a188-5f5447493b4c/scratchpad/pwtest/` (`main.js` — lever deletion pruning + migration; `main2.js` — chart correctness + reasoning gating + markdown ordering; `main3.js` — alignment map live-update + accessible text alternatives + A15 regression + light regression; `main4.js` — lever cap, XSS/injection safety, zero-criteria edge case). All findings below were reproduced live and cross-checked against hand-computed expected values, not inferred from source alone or eyeballed from screenshots.
+
+**Verdict up front: I could not break this extension. Every attack and edge case I tried — lever-deletion pruning under multiple simultaneous references, pre-extension session migration via both localStorage injection and the real Import file-picker, reasoning export-gating (including re-blocking when only reasoning is cleared), hand-computed bar/radar chart math against the actual rendered SVG geometry, live alignment-map updates and orphan/unserved flagging, the 8-lever cap, XSS injection into lever/criterion names rendered into SVG text, and A15 caret/focus stability while the map re-renders alongside active typing — held up exactly as specified. Self-test count matches the coder's claim (66/0). Recommend GO for this extension.**
+
+## 1. Lever deletion pruning (E-A7) — holds under multi-reference and partial-reference attacks
+
+Set up 2 levers ("Cost certainty" `lv1`, "Visible win" `lv2`) and 3 criteria: `c1→lv1`, `c2→lv1` (two criteria sharing one lever), `c3→lv2` (a criterion on a *different* lever, to check for over-pruning). Deleted `lv1` via the real Delete button.
+
+- `c1`'s and `c2`'s "Serves lever" dropdowns both reset live to "No lever" (`value === ''`) — no dangling `leverId` survives.
+- `c3`'s dropdown, which references the untouched `lv2`, was completely unaffected (`value === lv2's id`) — the prune is scoped correctly, not a blanket "clear all lever refs on any delete."
+- Triggered an unrelated re-render (renaming `c1`) afterward and confirmed the pruned state doesn't resurrect — no stale-closure bug where the old `leverId` reappears on the next render.
+- The alignment map's live text summary correctly reflected the new orphan count (`c1`, `c2` both listed as orphans) immediately after deletion, with no page reload.
+
+No defect found here. This mirrors the existing criterion/option/rater deletion-pruning discipline exactly as E-A7 requires.
+
+## 2. Migration of pre-extension sessions (E-A8) — both entry points clean
+
+**Path A — direct localStorage injection** (via `addInitScript`, to avoid the app's own autosave racing the injection, per the same technique used in rounds 1–5): wrote a library object with a decision that has no `levers` array, no `reasoning` field at all, and criteria objects missing the `leverId` key entirely (not `leverId: null` — the key doesn't exist), simulating a genuinely pre-v1.1 session.
+- Zero thrown page errors on load.
+- Levers list renders its empty state (`#levers-empty` visible).
+- `#field-reasoning` defaults to `''`.
+- Every criterion's "Serves lever" dropdown defaults to "No lever" (`value === ''`).
+
+**Path B — real Import file-picker**: wrote the same shape of pre-extension session to a `.json` file on disk and drove the actual `<input type="file" id="import-file-input">` control with `setInputFiles`.
+- Zero thrown page errors.
+- Same clean defaults (levers empty state, reasoning `''`, criterion leverId → "No lever") reproduced through the fully-supported import path, not just on-load migration.
+
+Both paths matched E-A8 and E11's stated requirement exactly. Also spot-checked (via self-test assertion #20 in the shipped code, confirmed passing) that a `leverId` pointing at a lever that doesn't exist in the decision's own `levers` array (a hand-edited/foreign session, or a lever deleted before the array itself existed) also repairs to `null` rather than being left dangling — the defensive cross-validation the code comments describe.
+
+## 3. Reasoning export gating (E-A3) — correct, including re-blocking and no regression to the original 3 fields
+
+With reversibility set to "Hard to reverse" and all four narrative fields empty:
+- Export buttons correctly `disabled`.
+- Missing-items checklist lists all 4: Load-bearing assumption, **Reasoning**, revisit trigger, and (once a 2nd option exists) the top-ranked option's premortem.
+- Clicking the Reasoning checklist link (`<a data-focus-target="field-reasoning">`) genuinely moves `document.activeElement` to `#field-reasoning` — not just a dead `href="#..."`.
+- Filling all 4 fields (assumption, reasoning, trigger, top premortem) enables export.
+- **Isolated reasoning specifically**: with the other 3 fields filled and only `reasoning` cleared afterward, export correctly re-blocks, and the missing-items list correctly shows *only* "Reasoning" — confirming reasoning is evaluated independently, not just as a batch, and confirming the pre-existing 3-field gating logic wasn't accidentally coupled or broken by adding the 4th field.
+- Regression check: with reversibility = "Reversible" (not hard-to-reverse), export is correctly **not** gated by any of the four narrative fields, even when all are empty — matches the original A9 behavior.
+
+## 4. Chart correctness (E-A5, E-A6) — hand-computed values match rendered SVG geometry exactly
+
+Built a 3-criteria, 2-option scenario with known scores and computed expected values independently by hand (not just by calling the engine):
+- Cost (lower-is-better) weight 5, Impact (higher-is-better) weight 5, Speed (higher-is-better) weight 5 — equal weights, so total = simple average of effective per-criterion scores.
+- "Do Nothing" (status quo): Cost=4, Impact=6, Speed=8 → effective values (11−4)+6+8 → hand total = **7.0**.
+- "Option B": Cost=8, Impact=9, Speed=3 → hand total = **5.0**.
+- Both the pure `DecisionEngine.scoreOption` output and the live app's persisted `localStorage` state matched these hand-computed totals exactly.
+
+**Bar chart (E5/E-A5):** parsed the actual rendered `<rect>` elements' `width` attributes from the DOM. Hand-computed expected widths (`fraction × barAreaW(320)`) were 224px (Do Nothing, 7.0/10) and 160px (Option B, 5.0/10) — the rendered SVG matched to sub-pixel precision (exact integer match). The recommended option is marked with a `★` prefix, bold font-weight, *and* a distinct fill/stroke (not color alone), satisfying N5.
+
+**Radar chart (E6/E-A6):** independently hand-derived the expected (x,y) position for "Do Nothing"'s Cost axis using the documented formula (axis 0 points straight up, `frac = (effectiveValue−1)/9`, `x = centerX + frac·radius·cos(θ)`) — expected (210.0, 90.0). The actual rendered `<polygon points="...">` for that series contained a point matching (210.0, 90.0) to within 1px. Confirmed the fallback note ("Add at least 3 criteria...") renders instead of a chart with exactly 2 criteria (no degenerate 2-axis polygon), and confirmed real polygons render with exactly 3 criteria (the documented minimum). Legend differentiates each option's polygon by stroke-dash pattern in addition to color (not color alone).
+
+No numeric or rendering discrepancy found anywhere in this section.
+
+## 5. Alignment map correctness (E-A1, E-A2) — live updates, correct flag semantics, correct empty state
+
+- **Zero levers**: renders the documented empty state text, zero `<svg>` elements (not an empty diagram) — matches E3's explicit requirement.
+- **Lever added, no criteria assigned**: both default criteria correctly flagged as orphans (dashed red-stroke circles, `⚠ orphan` label) and the new lever correctly flagged as unserved (dashed amber-stroke circle, `⚠ unserved` label) — visually distinct fill/stroke colors confirmed via DOM attribute inspection (`#fbe9e7`/`#a5150a` for orphan criteria vs `#fff4dd`/`#e8c468` for unserved levers), satisfying the "different visual treatment, not just color" requirement.
+- **Live assignment**: selecting the lever in a criterion's "Serves lever" dropdown updates the map's text summary and draws a connecting `<line>` **without any page reload** — verified by reading the DOM immediately after the `selectOption` call completes.
+- **Live unassignment**: setting it back to "No lever" flips the state back to orphan+unserved live, confirming the map isn't one-way / doesn't require a full re-render trigger from elsewhere.
+- **Zero criteria, 1 lever present** (edge case not explicitly listed in E-A1/E-A2 but implied by the row-layout math `Math.max(levers.length, criteria.length, 1)`): renders without crashing, text summary correctly reports "0 of 0 criteria are linked to a lever" and the lever as unserved.
+- Text summary correctly distinguishes the two flag types in separate sentences ("Orphan criteria (no lever assigned): ..." vs "Unserved levers (no criteria connect to them): ...") — never conflates them.
+
+## 6. Accessible text alternatives (E-A9) — present, non-generic, and stay in sync with data
+
+All three (bar chart, radar chart, alignment map) expose a `<p class="visually-hidden" data-role="...">` element in the DOM (not merely an `aria-label`) with `display !== 'none'` (i.e., actually present for AT, not display:none-hidden). Content is substantive, not boilerplate — e.g. `"Bar chart: Do Nothing (status quo) at 5.5 of 10 (recommended), New option at 5.5 of 10 (recommended). The top two options are within 5% of each other — too close to call."` — not just `"chart"` or a generic label. Renamed a criterion to a unique marker string and confirmed both the alignment-map and radar-chart text alternatives updated to include the new name on the next render — they don't go stale.
+
+## 7. A15 regression on the new inputs — no focus/caret loss
+
+With the alignment map actively re-rendering alongside (a lever added, an extra criterion present so the map has real content to redraw on every keystroke-triggered render pass):
+- Typed a 61-character sentence into `#field-reasoning` one character at a time (15ms delay) — final value matched exactly, no drops/reordering, focus remained on the textarea throughout.
+- Typed a 6-character suffix into a criterion name field the same way — final value correct, focus remained on the field throughout, and the live-updating alignment map alongside it did not steal focus (confirms the coder's explicit design comment in `renderAll()` that the map "always rebuilds live" independent of the criteria list's focus-protection guard is safe in practice, not just in theory).
+- Set the caret to a mid-string position (`setSelectionRange(3,3)`) and typed a character — result was `ABCZDEF` (correct insertion point), not `ABCDEFZ` (reset-to-end) — confirms caret position itself is preserved, not just that no characters are dropped.
+- Zero thrown page errors during any of this.
+
+## 8. Self-test count (E-A10)
+
+`index.html?selftest=1` → **`SELFTEST PASS: 66 FAIL: 0`**, 0 console/page errors. Matches the coder's claim exactly. Read through the added assertions (roughly #15–24 in the file) and confirmed they cover exactly the non-trivial new pure logic E10 calls out by name: `computeLeverAlignment` orphan/unserved detection, lever-deletion pruning, pre-extension migration defaults, dangling-`leverId` repair, `barChartLayout` fraction math, `radarChartData` point-generation trig (including an exact-value check at max score and at the midpoint), `validateForExport` reasoning gating, and `toMarkdown` reasoning section placement/omission.
+
+## 9. Additional adversarial checks (not explicitly requested but attempted, per "assume guilty until proven robust")
+
+- **8-lever cap (E1)**: clicked "Add lever" 10 times — list correctly stops at exactly 8, the add button disables, and the cap message shows. No off-by-one.
+- **XSS/injection in lever and criterion names rendered into SVG `<text>` elements**: injected `<script>alert(1)</script><img src=x onerror=alert(2)>&"'` into both a lever name and a criterion name. Zero `dialog` events fired, zero thrown errors, and the raw SVG markup showed the payload correctly HTML-entity-escaped (`&lt;script&gt;...&lt;/script&gt;`) as inert text content — no live `<script>` element was ever injected into the DOM (confirmed by querying for actual `<script>` child elements, not just string-matching the markup, to rule out a false positive from escaped text that merely contains the substring "script"). `escapeHtml`/`escapeAttr` are applied consistently to the new SVG-building code paths, same as the rest of the app.
+- **Close-call bracket rendering**: confirmed (not just via code read) that when the top two options are within 5%, the bar chart actually renders 3 extra `<line>` elements forming the bracket, matching the text-alt's "too close to call" wording.
+
+## Light regression check (per instructions, not a full re-run)
+
+- **A9-style** (export gating with `reversibility = reversible`): correctly *not* gated, matching pre-extension behavior.
+- **A19-style** (orphan score pruning): deleted a criterion that had a real score entered; confirmed via the persisted `localStorage` state that the score entry for that criterion was pruned with no dangling reference, and the criterion itself was fully removed from the `criteria` array — `repairDecision`/pruning discipline is unaffected by the extension's changes to the same function.
+
+## Summary table
+
+| Item | Result |
+|---|---|
+| E-A1 (orphan criterion flag + live line-draw on assignment) | Pass |
+| E-A2 (unserved lever flag, visually distinct from orphan) | Pass |
+| E-A3 (reasoning export gating, incl. isolated re-block test) | Pass |
+| E-A4 (Markdown Reasoning section placement/content) | Pass |
+| E-A5 (bar chart proportional to hand-computed totals, non-color recommended marker) | Pass |
+| E-A6 (radar chart per-axis position matches hand-computed trig; 2-criteria fallback; 3-criteria render) | Pass |
+| E-A7 (lever deletion prunes only referencing criteria, multi-ref and cross-ref scoped correctly) | Pass |
+| E-A8 (pre-extension migration via localStorage injection AND Import file-picker) | Pass |
+| E-A9 (real DOM text alternatives, non-generic, stay in sync with data) | Pass |
+| E-A10 (66/0 self-test; A15 focus/caret unaffected by live map/chart re-renders) | Pass |
+| Lever 8-cap (E1) | Pass |
+| XSS/injection safety in new SVG text rendering | Pass (properly escaped) |
+| Light regression: A9 (reversible case), A19 (orphan score pruning) | Pass, no regression |
+
+## Recommendation: **GO** (for the v1.1 extension)
+
+I attacked every priority area from the task brief — lever-deletion pruning under multi-reference and cross-reference conditions, both migration entry points, isolated reasoning-field gating, hand-computed chart math against actual rendered SVG geometry (not eyeballed), live alignment-map correctness for both flag types plus the empty state, real-DOM accessible text alternatives that stay in sync, A15 caret/focus stability with the map re-rendering live alongside active typing, the self-test count, and a light regression check on shared code paths — and found no CRITICAL, HIGH, MEDIUM, or LOW defect. The implementation matches BUILD_PLAN.md's E1–E11 requirements and E-A1–E-A10 acceptance criteria precisely, including the scope discipline the plan calls for (lever has no `weight` field, since E3's alignment map only needs identity — correctly cut, not half-implemented). This is the first round across the whole project (core app or extension) with zero findings of any severity.
+
+---
+
+
 # ROUND 5 STATUS (2026-08-23) — closing fix for the manager's final finding
 
 The round-4-closing manager review (see the manager's verdict text preserved in the project history) independently re-verified rounds 1-4's fixes as solid, but found a fifth door into the multi-rater failure class that all four prior rounds missed: **`repairDecision()` enforced that `r_me` is always present, but never enforced that `raters` collapses to exactly one entry when `multiRater` is false.** A hand-edited or foreign session JSON with `"multiRater": false` and 2+ raters therefore still let `cellValue()` (which blends over every rater in `decision.raters` unconditionally, by design) silently factor an invisible rater's score into the ranking and the exported Markdown record — with the Raters panel hidden (since `multiRater` is false) and nothing in the UI able to reveal the discrepancy. The manager called this the same root cause as C2/C2-R2/C2-R3, just a different door, and recommended one scoped patch rather than a fourth full pipeline loop.
