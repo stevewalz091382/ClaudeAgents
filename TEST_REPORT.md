@@ -4,6 +4,143 @@ Tested by: Tester agent. Method: static code review plus live rendering/interact
 
 ---
 
+# ROUND 3 STATUS (2026-08-23) — final verification pass
+
+Round-3 driver scripts are saved under `/tmp/claude-0/-home-user-ClaudeAgents/2c19d920-0d83-5ba7-a188-5f5447493b4c/scratchpad/pw3/`. Round-2 scripts remain under `.../scratchpad/pw2/`, round-1 under `.../scratchpad/pw/`.
+
+**Verdict up front: the coder's fix genuinely closes C2-R2 as originally reported — "Me" cannot be deleted through any UI path I could find, including forcing the disabled attribute off, dispatching raw MouseEvents, and injecting spoofed elements with matching `data-role`/`data-id` attributes into the real delegated-listener container. However, adversarial testing found that the *same underlying invariant gap* the round-2 fix patched at the UI layer was never closed at the data-model layer, and it is reachable through the fully-supported Import (F14) feature — no console tricks required, just a crafted or hand-edited session JSON file dragged through the real file picker. This reproduces total, silent, unrecoverable score loss with zero confirmation dialog, i.e. the same class of bug as C2-R2, via a different, equally realistic door. Recommend GO WITH FIXES, not GO.**
+
+## 1. C2-R2 (delete-"Me"-then-collapse) — closed for every UI-level attack tried
+
+Re-ran the original C2-R2 repro (`pw2/round2_C2_edge_delete_me.js`) unmodified: it now fails at step 3 (deleting "Me") with a Playwright actionability timeout, because the delete button for `r_me` is unconditionally rendered `disabled`. Good sign, but not sufficient on its own (a `disabled` attribute is trivially bypassable from a hostile/automated actor, so I went further — see `pw3/round3_C2_attack.js`):
+
+| Attack | Method | Result |
+|---|---|---|
+| 1. Force-enable then real click | `btn.disabled = false` in-page, then Playwright `page.click()` (synthetic but spec-conformant mouse event) | **Me survived** — the delegated click handler on `#raters-panel` independently checks `if (id === 'r_me') return;`, so even a genuinely fired click on the real button does nothing once the id is `r_me` |
+| 2. Raw `dispatchEvent(new MouseEvent('click', ...))` on the real (force-enabled) button | Bypasses Playwright's actionability checks entirely | **Me survived** — same delegated-listener guard catches it |
+| 3. Spoofed element injected into `#raters-panel` with `data-role="delete-rater"` and `data-id="r_me"`, then clicked | Simulates an attacker/extension injecting a fake control matching the real DOM contract | **Me survived** — the delegated listener only looks at `dataset.id`, and since that's `'r_me'` regardless of which physical element carries it, the same guard fires |
+| 4. Checked for an exposed mutation surface (`window.App`, `window.Store`, etc.) that could set `decision.raters` directly | `window.App` and `window.Store` are not exposed globally (only `DecisionEngine` and `UI` are); no direct in-memory mutation path found from the console | N/A — no additional surface found |
+
+Conclusion: the guard is implemented at the right layer (the delegated event handler, not just a disabled attribute or the render function), so it holds under everything I could throw at the DOM/event layer. **C2-R2 as originally scoped is fixed and robust.**
+
+## 2. NEW FINDING — C2-R3 (CRITICAL, still open): the exact same silent-data-loss path is reachable via Import, because the fix was applied at the UI layer, not the data model
+
+**What I did:** Rather than trying to delete "Me" through the UI (now correctly blocked), I asked whether the invariant "raters always contains r_me" is enforced anywhere below the UI — i.e., in `repairDecision()`, which is the function that sanitizes every decision loaded from storage *or from an imported file*. Reading it (index.html, `repairDecision`):
+
+```js
+var raters = Array.isArray(d.raters) ? d.raters.map(repairRater) : [];
+if (!raters.length) raters = [{ id: 'r_me', name: 'Me', weight: 1 }];
+```
+
+This only backfills the implicit `r_me` rater when the `raters` array is **completely empty**. If `raters` is non-empty but contains no `r_me` entry at all (e.g. `[{id:'r_custom_only', name:'Rater 2', weight:1}]`), it passes through completely unchanged — `repairDecision` never checks "does this contain r_me specifically," only "is this array non-empty." This function runs on every `fromSessionJSON` call (i.e. every import) and every `migrate()` call (i.e. every page load), so it is the actual invariant-enforcement point for the data model — and it doesn't enforce the invariant the round-2 fix assumes always holds.
+
+I crafted a session-JSON file with `multiRater: true`, `raters: [{id:'r_custom_only', name:'Rater 2', weight:1}]` (no `r_me` at all), and real scores keyed under `r_custom_only`, then imported it through the real `<input type="file">` picker (F14's actual, supported import path — no console/devtools involved).
+
+**What happened (`pw3/round3_C2_import_bypass2.js`):**
+1. Import succeeds without error, appended as "Imported Evil Decision (imported)" per spec.
+2. Switching to the imported decision confirms the persisted state exactly as crafted: `multiRater: true`, `raters: [{id:'r_custom_only', ...}]`, real scores intact (`o1.c1.r_custom_only: 7`, etc.). The Multi-rater checkbox shows checked, the matrix cell shows "7", everything renders as a normal, healthy multi-rater decision.
+3. I then clicked the Multi-rater toggle to turn it off. **No `confirm()` dialog fired** — the guard `var hasOtherRaters = d.raters.length > 1;` is `false` because there is exactly one rater (it just isn't `r_me`), which is the identical logic gap C2-R2 identified in round 2, just reached by a different route.
+4. `collapseRatersToSingle(d)` ran unconditionally, found no rater with `id === 'r_me'`, fabricated a brand-new empty `{id:'r_me', name:'Me', weight:1}`, and `pruneScores` deleted every score keyed under `r_custom_only` — i.e. **all of them**.
+5. Net effect: the cell that showed "7" a moment earlier is now blank, `localStorage`'s `scores` for that decision is `{}`, and the user received **zero warning of any kind** before real, previously-persisted data (it survived an actual export → reimport round trip, so it's exactly as "real" as any other data in the app) was silently destroyed.
+
+**Reproduction:** `/tmp/claude-0/-home-user-ClaudeAgents/2c19d920-0d83-5ba7-a188-5f5447493b4c/scratchpad/pw3/round3_C2_import_bypass2.js`. Steps:
+1. Craft (or hand-edit a real exported) session JSON: set `"multiRater": true`, `"raters": [{"id":"r_something_not_r_me","name":"Rater 2","weight":1}]`, and populate `scores` under that rater id.
+2. Import via the app's real "Import session JSON" file input.
+3. Switch the library selector to the imported decision (state confirmed correct and fully functional at this point — nothing about the import itself is flagged as invalid).
+4. Turn the Multi-rater toggle off. **No confirmation dialog appears.**
+5. Observe the previously-populated cells are now blank and `scores` is `{}` in `localStorage`.
+
+**Why this is a distinct, still-open finding and not just "C2-R2 again":** the round-2 fix closed the *specific mechanism* reported (deleting the seeded `r_me` rater through the Raters panel) by adding a UI-level guard (disabled button + delegated-handler check on `id === 'r_me'`). That fix is real and I could not defeat it (see section 1). But it operates entirely on the assumption that `r_me` is always present in `decision.raters`, an assumption that is true for any decision *created and only ever edited inside this session's UI*, but is **not** enforced by `repairDecision()`, which is the actual gatekeeper for anything coming from `localStorage` or from an imported file. Since F14 (Import) is a first-class, spec-required feature — not a hostile console trick — and nothing in `fromSessionJSON`'s validation rejects a raters array that's non-empty but `r_me`-less, this is a fully realistic path a real user can hit (e.g. hand-editing an exported JSON, receiving one from an older/different build, or any future schema-migration bug that drops the `r_me` entry) and reach the identical silent-data-destruction outcome C2-R2 was supposed to eliminate entirely.
+
+**Why CRITICAL, not HIGH:** identical severity reasoning to C2-R2 — real, deterministic, zero-warning, total loss of previously-real (export-round-tripped) scored data, through a documented, user-facing feature (Import), with no error, no dialog, and no way to recover once it happens (the data is gone from `localStorage` the moment the debounced save fires).
+
+**Fix direction (for the Coder, not applied by me):** Push the invariant down to where it's actually enforced — `repairDecision()` should guarantee `r_me` is present in `raters` whenever `raters` is non-empty too, not only when it's empty (e.g., if no entry has `id === 'r_me'`, either inject one alongside the existing raters, or re-key the *first* existing rater to `id: 'r_me'` while preserving its name/weight/scores — whichever preserves the most data). Separately, and more robustly: the toggle-off guard and `collapseRatersToSingle` should stop trusting `raters.length > 1` as a proxy for "is there anything to lose" — as flagged in round 2, the correct condition is "does the sole remaining rater already have the canonical `id === 'r_me'` identity," checked directly, so this whole class of bug (present-day and any future route into it) closes at the root rather than needing a new patch every time a new door to a non-`r_me`-only-rater state is found.
+
+## 3. Normal multi-rater collapse (2 raters, both scored) — no regression
+
+`pw3/round3_normal_collapse.js`: enabled multi-rater, added a rater, scored Me=9 and Rater2=3 on the same cell.
+- **Cancel path**: dialog fires with the expected text, dismissing it leaves the toggle checked and both raters (`r_me` + the added rater) fully present.
+- **Confirm path**: dialog fires, confirming collapses to exactly `raters: [{id:'r_me', ...}]`, the visible cell shows **9** (Me's own value, not Rater2's 3 and not a blend), correct after a full page reload, and the exported session JSON (`DecisionEngine.toSessionJSON`) contains only `r_me` in both `raters` and `scores` — no orphaned keys. Matches round-2's findings exactly; no regression.
+
+## 4. Other rater management (add / rename / reweight / delete non-Me) — all work normally
+
+`pw3/round3_rater_mgmt.js`: added 2 extra raters (3 total), renamed one, changed its weight via the range input (persisted correctly to `localStorage`), deleted it (leaves 2), deleted the last non-Me rater (leaves exactly `[r_me]`), and confirmed that with only `r_me` left, its delete button is present but `disabled` (consistent with the invariant, not a dead/missing control). All operations behaved exactly as expected, no side effects on unrelated raters or scores.
+
+## 5. Self-test harness
+
+`index.html?selftest=1` → **`SELFTEST PASS: 32 FAIL: 0`**, 0 console/page errors. Matches round 2's count exactly (no new self-tests were added for this round's fix, and none regressed).
+
+## 6. Full A1–A20 regression sweep
+
+Re-verified every acceptance criterion live (not just the ones touched by the round-2/round-3 fixes). Scripts: `pw3/round2_regression.js` (reused verbatim), `pw3/round3_sweep2.js`, `round3_sweep2b_tie.js`, `round3_sweep2c_closecall.js`, `round3_sweep3.js`, `round3_sweep4.js`, `round3_caps2.js`, `round3_print_check.js`, `round3_L1.js`.
+
+| Criterion | Result |
+|---|---|
+| A1/A2 (no console errors, no network requests, fresh load) | 0 console errors, 0 non-`file://` network requests |
+| A3 (status-quo seeded) | Confirmed checked on fresh load |
+| A4 (normalized % sums to 100.0) | Confirmed via existing round-2 script logic (weights 5/5/8 → sums to 100.0%) |
+| A5 (hand-computed totals) | 7.00 / 7.25 exactly, matching hand calc |
+| A6 (direction flip) | Status-quo total correctly flips 7.00 → 4.50 when Cost direction flips |
+| A7 (unscored → midpoint) | "1 of 2 criteria unscored" badge shown, still ranked using 5.5 fallback |
+| A8 (persistence across reload) | Title survives a real page reload |
+| A9 (export gating + focus links) | Exactly 3 missing items listed; clicking first link focuses `#field-assumption` |
+| A10 (Markdown content) | Contains title, recommendation section, criteria/weights, options/premortems |
+| A11 (import round-trip, fresh profile) | Real download → real file-picker import into a cleared profile: appended as new decision with `(imported)` suffix, new id, original decision untouched |
+| A12 (weighted multi-rater blend) | Covered by section 3 above; math unaffected by the fix |
+| A13 (ties / close-call boundary) | Exact tie → both `T1`, status-quo listed first; 10% and exactly-5% margins correctly do **not** trigger close-call (strict `<0.05`); confirmed no regression from round 1/2's boundary self-tests |
+| A14 (self-test count) | `PASS: 32 FAIL: 0` — see section 5 |
+| A15 (typing/caret stability) | Character-by-character typing into title field: value and focus intact, no drops |
+| A16 (380px responsive) | `scrollWidth === clientWidth` (380/380), no overflow |
+| A17 (keyboard flow) | Spot check: Tab moves focus, no thrown errors |
+| A18 (corrupt localStorage recovery) | Genuinely corrupt load (via `addInitScript` to avoid the `beforeunload` self-healing flush noted in round 1): `#corrupt-banner` shown with `display:flex` and correct text, backup key `decisionEngine.v1.corrupt.<ts>` present with a byte-for-byte match of the original corrupt string |
+| A19 (orphan pruning) | Deleting a scored criterion and a scored option both correctly remove their entries from `scores`; no orphaned keys in the live store |
+| A20 (print output) | Corrected methodology from an earlier mis-check in this round (I initially checked `display`, but the print CSS uses `visibility: hidden` on `body *` plus `visibility: visible` scoped to `#markdown-preview` — checking the right property confirms `#app-header`, `#btn-print`, `#matrix-container`, `#raters-panel` are all `visibility:hidden` under print media, and `#markdown-preview` is `visibility:visible`, exactly as designed) | Confirmed correct, no regression |
+| 12-item caps (criteria/options) | Both cap at exactly 12, cap message shows at 12 not before, `Add` buttons `disabled`, and a forced `.click()` on the disabled button via `page.evaluate` has no effect |
+| XSS | `<img src=x onerror=alert(1)>` in the title field stored/rendered as inert text, zero dialogs fired |
+| L1 (decimal truncation) | Unchanged: `"3.7"` still stores as `3` via `parseInt` truncation — confirmed still present, still LOW, untouched code path as predicted in round 2 |
+| M1 (dual "Recommended" badge on exact ties) | Unchanged: confirmed still present via the A13 tie re-test (two `T1` cards both show "Recommended") — still MEDIUM/judgment call as before |
+
+I did not find any regression anywhere in this sweep. Everything that passed in rounds 1–2 still passes in round 3.
+
+## Summary of round-3 status
+
+| Item | Round-1 | Round-2 | Round-3 (final) |
+|---|---|---|---|
+| C1 (7 hidden/display elements) | CRITICAL | FIXED | **FIXED — reconfirmed, no regression** |
+| C2 (multi-rater-off blending, original scenario) | CRITICAL | FIXED | **FIXED — reconfirmed, no regression** |
+| C2-R2 (delete-"Me"-then-collapse via UI) | *new in round 2* | CRITICAL — open | **FIXED — closed against every UI/DOM-level attack tried (force-enable, raw dispatchEvent, spoofed element)** |
+| C2-R3 (same invariant gap, reached via Import instead of delete) | — | — | **NEW — CRITICAL — open** |
+| Finding 3 (Markdown unweighted mean) | noted | FIXED | **FIXED — no regression** |
+| Finding 4 (print bypassing export gate) | noted | FIXED | **FIXED — no regression** |
+| A14 (self-test count) | skipped | PASS 32/0 | **PASS 32/0 — reconfirmed** |
+| F13b (clipboard tiers) | not tested | all 3 verified | not re-tested this round (untouched code, no reason to suspect regression) |
+| M1 (dual "Recommended" badge on ties) | MEDIUM, judgment call | not re-tested | **Reconfirmed present, unchanged — MEDIUM, accepted-as-is (judgment call, not a defect per spec)** |
+| L1 (decimal truncation on hostile score input) | LOW | not re-tested | **Reconfirmed present, unchanged — LOW, open but low-impact** |
+| L2 (dead tab-order controls) | LOW, consequence of C1 | FIXED | **FIXED — no regression (not independently re-walked this round, but C1's underlying CSS rule is confirmed still in place and untouched)** |
+
+## Final overall recommendation: **GO WITH FIXES**
+
+Three full rounds in, the application's core engine, persistence, export/import, gating, accessibility, and responsive behavior are all solid — I was unable to find any new defect anywhere outside the multi-rater collapse invariant across three rounds of adversarial testing on the calculation layer, self-tests, print/export/import, caps, XSS, and keyboard/focus handling. The coder's round-3 fix for C2-R2 is well-built (enforced at the delegated-event-handler layer, not just a disabled attribute) and I could not defeat it through any DOM-level attack. However, the fix treated the symptom (a UI action that could produce a non-`r_me`-only rater list) rather than the root cause (nothing below the UI enforces that `r_me` is always present in `raters`), and the Import feature — a fully supported, spec-required path (F14), not a hostile workaround — reaches the identical unguarded `collapseRatersToSingle`/`pruneScores` code path and produces the identical outcome: total, silent, unwarned loss of real scored data. This is not a hairline edge case; it will happen to any user who hand-edits an exported JSON (a natural thing to do, since the format is human-readable) or receives one that's slightly non-conformant, and it fails in the worst possible way — no error, no dialog, just gone.
+
+Recommend one more targeted pass from the Coder scoped narrowly to: (1) `repairDecision()` guaranteeing `r_me`'s presence whenever `raters` is non-empty, not just when it's empty, and (2) changing the toggle-off guard and `collapseRatersToSingle` to check "is the sole remaining rater's id `r_me`" directly rather than `raters.length > 1`, so this class of bug cannot resurface through some other not-yet-found door. Given the fix is narrow, well-understood, and every other area of the app has now held up across three rounds, I'd expect this to be the last blocking item before GO.
+
+## Final status table — every CRITICAL/HIGH/MEDIUM/LOW finding across all 3 rounds
+
+| Finding | Severity | Round found | Final status |
+|---|---|---|---|
+| C1 — 7 hidden/display elements permanently visible | CRITICAL | 1 | **Fixed** (round 2, reconfirmed round 3) |
+| C2 — multi-rater-off blends hidden rater into visible cell/total | CRITICAL | 1 | **Fixed** (round 2, reconfirmed round 3) |
+| C2-R2 — deleting seeded "Me" rater then toggling off silently wipes data, no dialog | CRITICAL | 2 | **Fixed** (round 3, verified against 4 independent attack vectors) |
+| C2-R3 — importing a crafted/edited session JSON whose sole rater isn't `r_me` reaches the identical silent-wipe outcome | CRITICAL | 3 | **Open** — recommend one more fix pass before GO |
+| Finding 3 — Markdown export used unweighted mean instead of `cellValue` | (unranked, real defect) | 1 | **Fixed** (round 2, reconfirmed round 3) |
+| Finding 4 — Print button bypassed export gating | (unranked, real defect) | 1 | **Fixed** (round 2, reconfirmed round 3, re-tried 3 bypass methods again this round with no new attempts needed as none succeeded previously) |
+| A14 process gap — self-test count never actually run in round 1 | (process gap) | 2 | **Closed** — 32/0 confirmed in rounds 2 and 3 |
+| M1 — tied rank-1 options both show "Recommended" badge | MEDIUM | 1 | **Accepted-as-is** — judgment call per spec's tie-handling rule (A13), not treated as a defect by the coder across 3 rounds, reconfirmed unchanged |
+| L1 — decimal score input truncated via `parseInt` instead of rounded/rejected | LOW | 1 | **Open, accepted-as-is** — unchanged across 3 rounds, low real-world impact (native `type=number step=1` makes it hard to trigger without deliberate scripting) |
+| L2 — dead tab-order controls at session start | LOW | 1 | **Fixed** (round 2, direct consequence of C1's fix, reconfirmed round 3 via unchanged CSS) |
+
+---
+
 # ROUND 2 STATUS (2026-08-23)
 
 Round-2 driver scripts are saved under `/tmp/claude-0/-home-user-ClaudeAgents/2c19d920-0d83-5ba7-a188-5f5447493b4c/scratchpad/pw2/` if reruns are needed. Round-1 scripts remain under `.../scratchpad/pw/`.
@@ -240,7 +377,7 @@ Documented under C1's downstream effects; listed separately here only because it
 
 ---
 
-## Summary (round 1, superseded by "ROUND 2 STATUS" table above)
+## Summary (round 1, superseded by "ROUND 2 STATUS" / "ROUND 3 STATUS" tables above)
 
 | Severity | Count | Items |
 |---|---|---|
