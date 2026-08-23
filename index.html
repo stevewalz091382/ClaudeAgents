@@ -106,6 +106,12 @@
   #clipboard-fallback-textarea { width: 100%; height: 8rem; margin-top: 0.5rem; }
   footer#app-footer { text-align: center; color: var(--muted); font-size: 0.85rem; padding: 1rem 0; }
 
+  #levers-subsection, #lever-alignment-map-section { margin-top: 1rem; padding-top: 0.8rem; border-top: 1px dashed var(--border); }
+  .chart-wrap { overflow-x: auto; margin-top: 0.4rem; }
+  .chart-wrap svg { display: block; max-width: 100%; height: auto; }
+  .radar-legend { list-style: none; padding: 0; margin: 0.5rem 0 0; display: flex; flex-wrap: wrap; gap: 0.9rem; font-size: 0.85rem; }
+  .radar-legend li { display: flex; align-items: center; gap: 0.35rem; }
+
   @media (max-width: 720px) {
     #app { padding: 0.5rem 0.6rem 3rem; }
     .header-controls { flex-direction: column; align-items: stretch; }
@@ -181,6 +187,11 @@
         <label for="field-assumption">Load-bearing assumption</label>
         <textarea id="field-assumption" rows="2"></textarea>
       </div>
+      <div class="field">
+        <label for="field-reasoning">Reasoning</label>
+        <textarea id="field-reasoning" rows="2" aria-describedby="field-reasoning-help"></textarea>
+        <p id="field-reasoning-help" class="readout">The connective narrative from the assumption to the choice &mdash; distinct from the assumption itself.</p>
+      </div>
       <div class="field-row">
         <div class="field">
           <label for="field-trigger-condition">Revisit trigger &mdash; condition</label>
@@ -195,10 +206,25 @@
 
     <section id="section-criteria" data-section aria-labelledby="criteria-heading">
       <h2 id="criteria-heading">2. Criteria</h2>
+
+      <div id="levers-subsection">
+        <h3 id="levers-heading">Levers</h3>
+        <p class="readout">The handful of things leadership is actually measured on. Each criterion below can serve one.</p>
+        <p id="levers-empty" class="empty-state" hidden>No levers yet. Add one, then connect criteria to it below.</p>
+        <div id="levers-list"></div>
+        <button type="button" id="btn-add-lever">Add lever</button>
+        <p id="levers-cap-msg" class="badge-warning" hidden>Maximum of 8 levers reached.</p>
+      </div>
+
       <p id="criteria-empty" class="empty-state" hidden>No criteria yet. Add at least two to rank options.</p>
       <div id="criteria-list"></div>
       <button type="button" id="btn-add-criterion">Add criterion</button>
       <p id="criteria-cap-msg" class="badge-warning" hidden>Maximum of 12 criteria reached.</p>
+
+      <div id="lever-alignment-map-section">
+        <h3 id="alignment-map-heading">Lever alignment map</h3>
+        <div id="lever-alignment-map-container"></div>
+      </div>
     </section>
 
     <section id="section-options" data-section aria-labelledby="options-heading">
@@ -232,7 +258,9 @@
       <h2 id="results-heading">5. Result</h2>
       <p id="results-summary" aria-live="polite"></p>
       <div id="close-call-banner" class="banner banner-info" hidden>Too close to call &mdash; the top two options are within 5% of each other.</div>
+      <div id="results-bar-chart-container"></div>
       <div id="results-list"></div>
+      <div id="radar-chart-container"></div>
     </section>
 
     <section id="section-record" data-section aria-labelledby="record-heading">
@@ -292,14 +320,17 @@
     uid: function (prefix) {
       return prefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
     },
-    makeCriterion: function (name, weight, direction) {
-      return { id: Factories.uid('c'), name: name || 'New criterion', weight: weight || 5, direction: direction || 'higher' };
+    makeCriterion: function (name, weight, direction, leverId) {
+      return { id: Factories.uid('c'), name: name || 'New criterion', weight: weight || 5, direction: direction || 'higher', leverId: leverId || null };
     },
     makeOption: function (name, isStatusQuo, premortem) {
       return { id: Factories.uid('o'), name: name || 'New option', isStatusQuo: !!isStatusQuo, premortem: premortem || '' };
     },
     makeRater: function (name, weight) {
       return { id: Factories.uid('r'), name: name || 'Rater', weight: weight || 1 };
+    },
+    makeLever: function (name) {
+      return { id: Factories.uid('lv'), name: name || 'Lever' };
     },
     makeDecision: function (title) {
       var c1 = Factories.makeCriterion('Cost', 5, 'lower');
@@ -314,11 +345,13 @@
         updatedAt: now,
         reversibility: null,
         loadBearingAssumption: '',
+        reasoning: '',
         revisitTrigger: { condition: '', date: null },
         multiRater: false,
         raters: [rater],
         criteria: [c1, c2],
         options: [statusQuo],
+        levers: [],
         scores: {}
       };
     },
@@ -333,7 +366,17 @@
       id: (c && c.id) || Factories.uid('c'),
       name: (c && typeof c.name === 'string') ? c.name : 'Criterion',
       weight: (c && Number.isFinite(c.weight)) ? clamp(Math.round(c.weight), 1, 10) : 5,
-      direction: (c && (c.direction === 'higher' || c.direction === 'lower')) ? c.direction : 'higher'
+      direction: (c && (c.direction === 'higher' || c.direction === 'lower')) ? c.direction : 'higher',
+      // leverId is cross-validated against the decision's actual levers list in repairDecision
+      // (this function has no access to that list), so a dangling/unknown id is left as-is here
+      // and nulled out there — mirrors how scores are validated against ids after the fact below.
+      leverId: (c && typeof c.leverId === 'string' && c.leverId) ? c.leverId : null
+    };
+  }
+  function repairLever(lv) {
+    return {
+      id: (lv && lv.id) || Factories.uid('lv'),
+      name: (lv && typeof lv.name === 'string') ? lv.name : 'Lever'
     };
   }
   function repairOption(o) {
@@ -383,6 +426,13 @@
         if (sqFound) o.isStatusQuo = false; else sqFound = true;
       }
     });
+    var levers = Array.isArray(d.levers) ? d.levers.map(repairLever) : [];
+    // Cross-validate each criterion's leverId against the actual levers list, exactly like
+    // scores are cross-validated against option/criterion/rater ids below. A dangling leverId
+    // (deleted lever, hand-edited/foreign session, or a pre-extension session with no levers at
+    // all) is repaired to null — the orphan state — rather than left pointing at nothing.
+    var validLeverIds = {}; levers.forEach(function (lv) { validLeverIds[lv.id] = true; });
+    criteria.forEach(function (c) { if (c.leverId && !validLeverIds[c.leverId]) c.leverId = null; });
     var validOptionIds = {}; options.forEach(function (o) { validOptionIds[o.id] = true; });
     var validCritIds = {}; criteria.forEach(function (c) { validCritIds[c.id] = true; });
     var validRaterIds = {}; raters.forEach(function (r) { validRaterIds[r.id] = true; });
@@ -416,6 +466,7 @@
       updatedAt: (typeof d.updatedAt === 'string' && d.updatedAt) || now,
       reversibility: (d.reversibility === 'reversible' || d.reversibility === 'hard_to_reverse') ? d.reversibility : null,
       loadBearingAssumption: typeof d.loadBearingAssumption === 'string' ? d.loadBearingAssumption : '',
+      reasoning: typeof d.reasoning === 'string' ? d.reasoning : '',
       revisitTrigger: {
         condition: (d.revisitTrigger && typeof d.revisitTrigger.condition === 'string') ? d.revisitTrigger.condition : '',
         date: (d.revisitTrigger && typeof d.revisitTrigger.date === 'string' && d.revisitTrigger.date) ? d.revisitTrigger.date : null
@@ -424,6 +475,7 @@
       raters: raters,
       criteria: criteria,
       options: options,
+      levers: levers,
       scores: scores
     };
   }
@@ -463,6 +515,31 @@
       return raw.map(function (r, i) {
         return { id: r.id, weight: r.weight, normalized: r.normalized, percentDisplay: tenths[i] / 10 };
       });
+    },
+
+    // Orphan/unserved-lever detection for the Lever Alignment Map (E3/E10). Pure: takes only the
+    // decision's criteria/levers arrays, no DOM. An orphan criterion has no leverId, or a leverId
+    // that doesn't match any lever (shouldn't happen post-repair, but handled defensively here
+    // too). An unserved lever has zero criteria referencing it.
+    computeLeverAlignment: function (decision) {
+      var levers = decision.levers || [];
+      var criteria = decision.criteria || [];
+      var leverCriteria = {};
+      levers.forEach(function (lv) { leverCriteria[lv.id] = []; });
+      var orphanCriteriaIds = [];
+      var edges = [];
+      criteria.forEach(function (c) {
+        if (c.leverId && leverCriteria.hasOwnProperty(c.leverId)) {
+          leverCriteria[c.leverId].push(c.id);
+          edges.push({ criterionId: c.id, leverId: c.leverId });
+        } else {
+          orphanCriteriaIds.push(c.id);
+        }
+      });
+      var unservedLeverIds = levers
+        .filter(function (lv) { return leverCriteria[lv.id].length === 0; })
+        .map(function (lv) { return lv.id; });
+      return { edges: edges, orphanCriteriaIds: orphanCriteriaIds, unservedLeverIds: unservedLeverIds, leverCriteria: leverCriteria };
     },
 
     cellValue: function (decision, optionId, criterionId) {
@@ -544,6 +621,66 @@
       return { ranked: ranked, closeCall: closeCall, margin: margin, sufficient: true };
     },
 
+    // Ranked-results bar chart layout (E5/E10): pure coordinate/scaling math, no DOM. `fraction`
+    // is the bar length as a share of the full 0-10 scale (total is always 1-10 per the calc
+    // spec, so a total of 10 is a full-length bar and a total of 1 is a 10%-length bar).
+    barChartLayout: function (decision) {
+      var rank = DecisionEngine.rankOptions(decision);
+      if (!rank.sufficient) return { bars: [], closeCall: false, margin: null, sufficient: false };
+      var options = decision.options || [];
+      var bars = rank.ranked.map(function (r) {
+        var opt = null;
+        options.forEach(function (o) { if (o.id === r.optionId) opt = o; });
+        return {
+          optionId: r.optionId,
+          name: opt ? opt.name : '',
+          total: r.total,
+          fraction: clamp(r.total / SCALE_MAX, 0, 1),
+          rank: r.rank,
+          tied: r.tied,
+          isStatusQuo: !!(opt && opt.isStatusQuo)
+        };
+      });
+      return { bars: bars, closeCall: rank.closeCall, margin: rank.margin, sufficient: true };
+    },
+
+    // Radar-chart point generation (E6/E10): pure coordinate/scaling math, no DOM. `radius`,
+    // `centerX`, `centerY` are plain numbers supplied by the caller (the UI layer, in practice)
+    // so this stays testable with known fixed inputs. Axis 0 points straight up (-90deg / -PI/2)
+    // and axes are spaced evenly clockwise. Each point's distance from center is proportional to
+    // the criterion's effective score on the 1-10 scale (score 1 -> center, score 10 -> radius).
+    radarChartData: function (decision, radius, centerX, centerY) {
+      var criteria = decision.criteria || [];
+      var count = criteria.length;
+      var axes = criteria.map(function (c, i) {
+        var theta = -Math.PI / 2 + (2 * Math.PI * i / Math.max(count, 1));
+        return {
+          criterionId: c.id,
+          name: c.name,
+          angle: theta,
+          x: centerX + radius * Math.cos(theta),
+          y: centerY + radius * Math.sin(theta)
+        };
+      });
+      var series = (decision.options || []).map(function (o) {
+        var points = criteria.map(function (c, i) {
+          var cv = DecisionEngine.cellValue(decision, o.id, c.id);
+          var frac = clamp((cv.value - SCALE_MIN) / (SCALE_MAX - SCALE_MIN), 0, 1);
+          var theta = axes[i].angle;
+          var r = frac * radius;
+          return {
+            criterionId: c.id,
+            value: cv.value,
+            scored: cv.scored,
+            x: centerX + r * Math.cos(theta),
+            y: centerY + r * Math.sin(theta)
+          };
+        });
+        return { optionId: o.id, name: o.name, points: points };
+      });
+      return { axes: axes, series: series };
+    },
+
     validateForExport: function (decision) {
       if (decision.reversibility !== 'hard_to_reverse') {
         return { ok: true, missing: [] };
@@ -551,6 +688,9 @@
       var missing = [];
       if (!decision.loadBearingAssumption || !decision.loadBearingAssumption.trim()) {
         missing.push({ field: 'loadBearingAssumption', label: 'Load-bearing assumption', elementId: 'field-assumption' });
+      }
+      if (!decision.reasoning || !decision.reasoning.trim()) {
+        missing.push({ field: 'reasoning', label: 'Reasoning', elementId: 'field-reasoning' });
       }
       var trig = decision.revisitTrigger || {};
       var hasCondition = trig.condition && trig.condition.trim();
@@ -604,6 +744,11 @@
         if (rank.margin !== null) lines.push('Margin over runner-up: ' + (rank.margin * 100).toFixed(1) + '%');
         if (rank.closeCall) lines.push('');
         if (rank.closeCall) lines.push('_Too close to call — the top two options are within 5% of each other._');
+      }
+      if (decision.reasoning && decision.reasoning.trim()) {
+        lines.push('');
+        lines.push('## Reasoning');
+        lines.push(decision.reasoning);
       }
       lines.push('');
       lines.push('## Alternatives considered');
@@ -789,6 +934,14 @@
     });
   }
 
+  // Reassigns any criterion referencing a lever that no longer exists back to "No lever"
+  // (leverId: null), i.e. an orphan, rather than leaving a dangling leverId (E-A7). Mirrors
+  // pruneScores' approach of validating references against the current id set after a delete.
+  function pruneLeverRefs(d) {
+    var validLeverIds = {}; d.levers.forEach(function (lv) { validLeverIds[lv.id] = true; });
+    d.criteria.forEach(function (c) { if (c.leverId && !validLeverIds[c.leverId]) c.leverId = null; });
+  }
+
   // Collapses decision.raters down to just the implicit rater 'r_me' (keeping its
   // existing scores) and prunes every score belonging to any other rater id.
   // Used when the user turns multi-rater mode off, so DecisionEngine.cellValue
@@ -847,11 +1000,12 @@
     'btn-delete-decision', 'save-status', 'import-file-input', 'import-errors',
     'corrupt-banner', 'corrupt-banner-text', 'btn-dismiss-corrupt-banner', 'quota-banner', 'btn-quota-export',
     'section-framing', 'reversibility-reversible', 'reversibility-hard', 'reversibility-unset',
-    'reversibility-consequence', 'field-assumption', 'field-trigger-condition', 'field-trigger-date',
+    'reversibility-consequence', 'field-assumption', 'field-reasoning', 'field-trigger-condition', 'field-trigger-date',
+    'levers-empty', 'levers-list', 'btn-add-lever', 'levers-cap-msg', 'lever-alignment-map-container',
     'criteria-empty', 'criteria-list', 'btn-add-criterion', 'criteria-cap-msg',
     'options-empty', 'status-quo-nudge', 'options-list', 'btn-add-option', 'options-cap-msg',
     'toggle-multirater', 'raters-panel', 'raters-list', 'btn-add-rater', 'select-scoring-as', 'matrix-container',
-    'results-summary', 'close-call-banner', 'results-list',
+    'results-summary', 'close-call-banner', 'results-bar-chart-container', 'results-list', 'radar-chart-container',
     'export-gating', 'btn-export-md', 'btn-export-json', 'btn-copy-clipboard', 'btn-print',
     'copy-status', 'clipboard-fallback-textarea', 'markdown-preview'
   ];
@@ -915,9 +1069,110 @@
         ? 'Hard to reverse: assumption, trigger, and a premortem are required before you can export.'
         : '';
     if (EL.fieldAssumption.value !== d.loadBearingAssumption) EL.fieldAssumption.value = d.loadBearingAssumption;
+    if (EL.fieldReasoning.value !== d.reasoning) EL.fieldReasoning.value = d.reasoning;
     if (EL.fieldTriggerCondition.value !== d.revisitTrigger.condition) EL.fieldTriggerCondition.value = d.revisitTrigger.condition;
     var dateVal = d.revisitTrigger.date || '';
     if (EL.fieldTriggerDate.value !== dateVal) EL.fieldTriggerDate.value = dateVal;
+  };
+
+  /* ---------- Levers ---------- */
+  UI.buildLeversList = function (d) {
+    EL.leversEmpty.hidden = d.levers.length > 0;
+    EL.leversList.innerHTML = d.levers.map(function (lv) {
+      return '<div class="row lever-row" data-id="' + lv.id + '">' +
+        '<div class="field">' +
+        '<label for="lever-name-' + lv.id + '">Name</label>' +
+        '<input type="text" id="lever-name-' + lv.id + '" value="' + escapeAttr(lv.name) + '" data-role="lever-name" data-id="' + lv.id + '">' +
+        '</div>' +
+        '<button type="button" class="btn-danger" data-role="delete-lever" data-id="' + lv.id + '" aria-label="Delete lever ' + escapeAttr(lv.name) + '">Delete</button>' +
+        '</div>';
+    }).join('');
+    EL.btnAddLever.disabled = d.levers.length >= 8;
+    EL.leversCapMsg.hidden = d.levers.length < 8;
+  };
+
+  /* ---------- Lever Alignment Map (E3) ---------- */
+  UI.leverAlignmentSummaryText = function (d, align) {
+    var levers = d.levers || [], criteria = d.criteria || [];
+    var servedCount = criteria.length - align.orphanCriteriaIds.length;
+    var parts = ['Lever alignment map: ' + servedCount + ' of ' + criteria.length + ' criteria are linked to a lever.'];
+    if (align.orphanCriteriaIds.length) {
+      var orphanNames = align.orphanCriteriaIds.map(function (id) {
+        var c = null; criteria.forEach(function (x) { if (x.id === id) c = x; });
+        return c ? c.name : id;
+      });
+      parts.push('Orphan criteria (no lever assigned): ' + orphanNames.join(', ') + '.');
+    } else {
+      parts.push('No orphan criteria.');
+    }
+    if (align.unservedLeverIds.length) {
+      var unservedNames = align.unservedLeverIds.map(function (id) {
+        var lv = null; levers.forEach(function (x) { if (x.id === id) lv = x; });
+        return lv ? lv.name : id;
+      });
+      parts.push('Unserved levers (no criteria connect to them): ' + unservedNames.join(', ') + '.');
+    } else if (levers.length) {
+      parts.push('No unserved levers.');
+    }
+    return parts.join(' ');
+  };
+  UI.buildLeverAlignmentMap = function (d) {
+    var container = EL.leverAlignmentMapContainer;
+    if (!container) return;
+    var levers = d.levers || [], criteria = d.criteria || [];
+    if (levers.length === 0) {
+      container.innerHTML = '<p class="empty-state">Add levers above to see how your criteria map to what leadership is actually measured on. A criterion with no lever is an orphan; a lever with no criteria is unserved.</p>';
+      return;
+    }
+    var align = DecisionEngine.computeLeverAlignment(d);
+    var orphanSet = {}; align.orphanCriteriaIds.forEach(function (id) { orphanSet[id] = true; });
+    var unservedSet = {}; align.unservedLeverIds.forEach(function (id) { unservedSet[id] = true; });
+
+    var rowH = 34, padTop = 18, nodeR = 6;
+    var rows = Math.max(levers.length, criteria.length, 1);
+    var height = padTop * 2 + rows * rowH;
+    // Label widths are estimated from character count (~6.5px/char at 12px font) rather than
+    // fixed, so long lever/criterion names get enough room on their side of the diagram instead
+    // of being clipped by the SVG's own viewBox (a fixed-width layout clipped names like
+    // "Visible win before the vote" during manual verification — this sizing replaces that).
+    function estLabelWidth(s) { return clamp(String(s || '').length * 6.5, 60, 260); }
+    var maxLeverLabel = levers.reduce(function (m, lv) { return Math.max(m, estLabelWidth(lv.name + (unservedSet[lv.id] ? ' ⚠ unserved' : ''))); }, 60);
+    var maxCritLabel = criteria.reduce(function (m, c) { return Math.max(m, estLabelWidth(c.name + (orphanSet[c.id] ? ' ⚠ orphan' : ''))); }, 60);
+    var connectorZone = 200;
+    var leverX = 20 + maxLeverLabel + nodeR;
+    var critX = leverX + connectorZone;
+    var width = critX + maxCritLabel + nodeR + 20;
+
+    var leverPos = {}; levers.forEach(function (lv, i) { leverPos[lv.id] = padTop + i * rowH + rowH / 2; });
+    var critPos = {}; criteria.forEach(function (c, i) { critPos[c.id] = padTop + i * rowH + rowH / 2; });
+
+    var svg = '<svg viewBox="0 0 ' + width + ' ' + height + '" width="100%" height="' + height + '" role="img" aria-label="Lever alignment map" xmlns="http://www.w3.org/2000/svg">';
+
+    criteria.forEach(function (c) {
+      var y = critPos[c.id];
+      if (c.leverId && leverPos.hasOwnProperty(c.leverId)) {
+        svg += '<line x1="' + critX + '" y1="' + y + '" x2="' + leverX + '" y2="' + leverPos[c.leverId] + '" stroke="#1a5fb4" stroke-width="2"/>';
+      } else {
+        svg += '<line x1="' + (critX - nodeR) + '" y1="' + y + '" x2="' + (critX - 70) + '" y2="' + y + '" stroke="#a5150a" stroke-width="2" stroke-dasharray="4,3"/>';
+      }
+    });
+    levers.forEach(function (lv) {
+      var y = leverPos[lv.id];
+      var unserved = unservedSet[lv.id];
+      svg += '<circle cx="' + leverX + '" cy="' + y + '" r="' + nodeR + '" fill="' + (unserved ? '#fff4dd' : '#e7f3e8') + '" stroke="' + (unserved ? '#e8c468' : '#4a8a4f') + '" stroke-width="2"' + (unserved ? ' stroke-dasharray="3,2"' : '') + '/>';
+      svg += '<text x="' + (leverX - nodeR - 8) + '" y="' + (y + 4) + '" text-anchor="end" font-size="12">' + escapeHtml(lv.name) + (unserved ? ' ⚠ unserved' : '') + '</text>';
+    });
+    criteria.forEach(function (c) {
+      var y = critPos[c.id];
+      var orphan = orphanSet[c.id];
+      svg += '<circle cx="' + critX + '" cy="' + y + '" r="' + nodeR + '" fill="' + (orphan ? '#fbe9e7' : '#e7eefc') + '" stroke="' + (orphan ? '#a5150a' : '#1a5fb4') + '" stroke-width="2"' + (orphan ? ' stroke-dasharray="3,2"' : '') + '/>';
+      svg += '<text x="' + (critX + nodeR + 8) + '" y="' + (y + 4) + '" text-anchor="start" font-size="12">' + escapeHtml(c.name) + (orphan ? ' ⚠ orphan' : '') + '</text>';
+    });
+    svg += '</svg>';
+
+    var summary = UI.leverAlignmentSummaryText(d, align);
+    container.innerHTML = '<div class="chart-wrap">' + svg + '</div>' +
+      '<p class="visually-hidden" data-role="alignment-map-text-alt">' + escapeHtml(summary) + '</p>';
   };
 
   /* ---------- Criteria ---------- */
@@ -927,6 +1182,8 @@
     EL.criteriaEmpty.hidden = d.criteria.length > 0;
     EL.criteriaList.innerHTML = d.criteria.map(function (c) {
       var n = normMap[c.id];
+      var leverOptions = '<option value=""' + (!c.leverId ? ' selected' : '') + '>No lever</option>' +
+        d.levers.map(function (lv) { return '<option value="' + lv.id + '"' + (c.leverId === lv.id ? ' selected' : '') + '>' + escapeHtml(lv.name) + '</option>'; }).join('');
       return '' +
         '<div class="row criterion-row" data-id="' + c.id + '">' +
         '<div class="field">' +
@@ -947,6 +1204,10 @@
         '<option value="higher"' + (c.direction === 'higher' ? ' selected' : '') + '>Higher is better</option>' +
         '<option value="lower"' + (c.direction === 'lower' ? ' selected' : '') + '>Lower is better</option>' +
         '</select>' +
+        '</div>' +
+        '<div class="field">' +
+        '<label for="crit-lever-' + c.id + '">Serves lever</label>' +
+        '<select id="crit-lever-' + c.id + '" data-role="criterion-lever" data-id="' + c.id + '">' + leverOptions + '</select>' +
         '</div>' +
         '<button type="button" class="btn-danger" data-role="delete-criterion" data-id="' + c.id + '" aria-label="Delete criterion ' + escapeAttr(c.name) + '">Delete</button>' +
         '</div>';
@@ -1084,6 +1345,8 @@
       EL.resultsSummary.textContent = 'Add at least 2 criteria and 2 options to see a ranked recommendation.';
       EL.closeCallBanner.hidden = true;
       EL.resultsList.innerHTML = '<p class="empty-state">Not enough data yet.</p>';
+      EL.resultsBarChartContainer.innerHTML = '';
+      UI.buildRadarChart(d);
       return;
     }
     var top = rank.ranked[0];
@@ -1125,6 +1388,109 @@
         '<table class="breakdown-table"><thead><tr><th scope="col">Criterion</th><th scope="col">Weight %</th><th scope="col">Score</th><th scope="col">Contribution</th></tr></thead><tbody>' + breakdownRows + '</tbody></table>' +
         '</div>';
     }).join('');
+    UI.buildResultsBarChart(d);
+    UI.buildRadarChart(d);
+  };
+
+  /* ---------- Ranked results bar chart (E5) ---------- */
+  UI.buildResultsBarChart = function (d) {
+    var container = EL.resultsBarChartContainer;
+    if (!container) return;
+    var layout = DecisionEngine.barChartLayout(d);
+    if (!layout.sufficient || layout.bars.length === 0) {
+      container.innerHTML = '';
+      return;
+    }
+    var leftW = 170, barAreaW = 320, rightPad = 160, rowH = 30, gap = 8;
+    var width = leftW + barAreaW + rightPad;
+    var height = layout.bars.length * (rowH + gap);
+    var svg = '<svg viewBox="0 0 ' + width + ' ' + height + '" width="100%" height="' + height + '" role="img" aria-label="Ranked totals bar chart" xmlns="http://www.w3.org/2000/svg">';
+    layout.bars.forEach(function (b, i) {
+      var y = i * (rowH + gap);
+      var barW = b.fraction * barAreaW;
+      var isTop = b.rank === 1;
+      var label = (isTop ? '★ ' : '') + b.name + (b.tied ? ' (tied)' : '');
+      svg += '<text x="' + (leftW - 8) + '" y="' + (y + rowH / 2 + 4) + '" font-size="12" text-anchor="end"' + (isTop ? ' font-weight="bold"' : '') + '>' + escapeHtml(label) + '</text>';
+      svg += '<rect x="' + leftW + '" y="' + y + '" width="' + barW.toFixed(1) + '" height="' + (rowH - 6) + '" fill="' + (isTop ? '#1a5fb4' : '#7d97b8') + '"' + (isTop ? ' stroke="#0d3a73" stroke-width="2"' : '') + '/>';
+      svg += '<text x="' + (leftW + barW + 6) + '" y="' + (y + rowH / 2 + 4) + '" font-size="12">' + b.total.toFixed(2) + '/10</text>';
+    });
+    if (layout.closeCall && layout.bars.length >= 2) {
+      var y1 = rowH / 2 - 3;
+      var y2 = (rowH + gap) + rowH / 2 - 3;
+      var bx = leftW + barAreaW + 75;
+      svg += '<line x1="' + bx + '" y1="' + y1 + '" x2="' + bx + '" y2="' + y2 + '" stroke="#7a5b00" stroke-width="2"/>';
+      svg += '<line x1="' + (bx - 5) + '" y1="' + y1 + '" x2="' + bx + '" y2="' + y1 + '" stroke="#7a5b00" stroke-width="2"/>';
+      svg += '<line x1="' + (bx - 5) + '" y1="' + y2 + '" x2="' + bx + '" y2="' + y2 + '" stroke="#7a5b00" stroke-width="2"/>';
+      svg += '<text x="' + (bx + 6) + '" y="' + ((y1 + y2) / 2 + 4) + '" font-size="11" fill="#7a5b00">within 5%</text>';
+    }
+    svg += '</svg>';
+    var summary = 'Bar chart: ' + layout.bars.map(function (b) {
+      return b.name + ' at ' + b.total.toFixed(1) + ' of 10' + (b.rank === 1 ? ' (recommended)' : '');
+    }).join(', ') + '.' + (layout.closeCall ? ' The top two options are within 5% of each other — too close to call.' : '');
+    container.innerHTML = '<h3>Ranked totals</h3><div class="chart-wrap">' + svg + '</div>' +
+      '<p class="visually-hidden" data-role="bar-chart-text-alt">' + escapeHtml(summary) + '</p>';
+  };
+
+  /* ---------- Criteria comparison radar chart (E6) ---------- */
+  UI.RADAR_PATTERNS = ['none', '7,4', '2,3', '9,3,2,3', '1,4'];
+  UI.RADAR_COLORS = ['#1a5fb4', '#a5150a', '#2a7d2e', '#8a5b00', '#6b3fa0', '#0e7c86', '#b3541e', '#4a4a4a'];
+  UI.radarMarker = function (shape, x, y, color) {
+    x = +x.toFixed(1); y = +y.toFixed(1);
+    if (shape === 'square') return '<rect x="' + (x - 3) + '" y="' + (y - 3) + '" width="6" height="6" fill="' + color + '"/>';
+    if (shape === 'triangle') return '<polygon points="' + x + ',' + (y - 4) + ' ' + (x + 4) + ',' + (y + 3) + ' ' + (x - 4) + ',' + (y + 3) + '" fill="' + color + '"/>';
+    if (shape === 'diamond') return '<polygon points="' + x + ',' + (y - 4) + ' ' + (x + 4) + ',' + y + ' ' + x + ',' + (y + 4) + ' ' + (x - 4) + ',' + y + '" fill="' + color + '"/>';
+    return '<circle cx="' + x + '" cy="' + y + '" r="3" fill="' + color + '"/>';
+  };
+  UI.buildRadarChart = function (d) {
+    var container = EL.radarChartContainer;
+    if (!container) return;
+    var criteria = d.criteria || [];
+    if (criteria.length < 3) {
+      container.innerHTML = '<h3>Criteria comparison (radar)</h3><p class="empty-state">Add at least 3 criteria to see how options compare across dimensions in a radar chart.</p>';
+      return;
+    }
+    var options = d.options || [];
+    if (options.length === 0) {
+      container.innerHTML = '<h3>Criteria comparison (radar)</h3><p class="empty-state">Add options to compare them on the radar chart.</p>';
+      return;
+    }
+    var radius = 120, centerX = 210, centerY = 170, width = 420, height = 340;
+    var data = DecisionEngine.radarChartData(d, radius, centerX, centerY);
+    var shapes = ['circle', 'square', 'triangle', 'diamond'];
+    var svg = '<svg viewBox="0 0 ' + width + ' ' + height + '" width="100%" height="' + height + '" role="img" aria-label="Criteria comparison radar chart" xmlns="http://www.w3.org/2000/svg">';
+    [0.25, 0.5, 0.75, 1].forEach(function (frac) {
+      svg += '<circle cx="' + centerX + '" cy="' + centerY + '" r="' + (frac * radius).toFixed(1) + '" fill="none" stroke="#d3d7dc" stroke-width="1"/>';
+    });
+    data.axes.forEach(function (ax) {
+      svg += '<line x1="' + centerX + '" y1="' + centerY + '" x2="' + ax.x.toFixed(1) + '" y2="' + ax.y.toFixed(1) + '" stroke="#d3d7dc" stroke-width="1"/>';
+      var cosv = Math.cos(ax.angle);
+      var anchor = cosv > 0.25 ? 'start' : (cosv < -0.25 ? 'end' : 'middle');
+      var lx = centerX + (radius + 14) * Math.cos(ax.angle);
+      var ly = centerY + (radius + 14) * Math.sin(ax.angle);
+      svg += '<text x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" font-size="11" text-anchor="' + anchor + '">' + escapeHtml(ax.name) + '</text>';
+    });
+    data.series.forEach(function (s, idx) {
+      var pattern = UI.RADAR_PATTERNS[idx % UI.RADAR_PATTERNS.length];
+      var color = UI.RADAR_COLORS[idx % UI.RADAR_COLORS.length];
+      var shape = shapes[idx % shapes.length];
+      var pts = s.points.map(function (p) { return p.x.toFixed(1) + ',' + p.y.toFixed(1); }).join(' ');
+      svg += '<polygon points="' + pts + '" fill="' + color + '" fill-opacity="0.08" stroke="' + color + '" stroke-width="2"' + (pattern !== 'none' ? ' stroke-dasharray="' + pattern + '"' : '') + '/>';
+      s.points.forEach(function (p) { svg += UI.radarMarker(shape, p.x, p.y, color); });
+    });
+    svg += '</svg>';
+    var legendHtml = '<ul class="radar-legend">' + data.series.map(function (s, idx) {
+      var pattern = UI.RADAR_PATTERNS[idx % UI.RADAR_PATTERNS.length];
+      var color = UI.RADAR_COLORS[idx % UI.RADAR_COLORS.length];
+      return '<li><svg width="28" height="12" aria-hidden="true"><line x1="0" y1="6" x2="28" y2="6" stroke="' + color + '" stroke-width="2"' + (pattern !== 'none' ? ' stroke-dasharray="' + pattern + '"' : '') + '/></svg> ' + escapeHtml(s.name) + '</li>';
+    }).join('') + '</ul>';
+    var summary = 'Radar chart comparing options across criteria on a 1 to 10 scale: ' + data.series.map(function (s) {
+      return s.name + ' — ' + s.points.map(function (p) {
+        var crit = null; criteria.forEach(function (c) { if (c.id === p.criterionId) crit = c; });
+        return (crit ? crit.name : '?') + ': ' + (p.scored ? p.value.toFixed(1) : 'unscored (5.5)');
+      }).join(', ');
+    }).join('; ') + '.';
+    container.innerHTML = '<h3>Criteria comparison (radar)</h3><div class="chart-wrap">' + svg + '</div>' + legendHtml +
+      '<p class="visually-hidden" data-role="radar-chart-text-alt">' + escapeHtml(summary) + '</p>';
   };
 
   /* ---------- Record / export ---------- */
@@ -1152,8 +1518,14 @@
     if (!d) return;
     UI.renderHeader(d);
     UI.renderFraming(d);
+    if (!isProtectedFocus(EL.leversList)) UI.buildLeversList(d);
     if (isProtectedFocus(EL.criteriaList)) UI.updateCriteriaLiveReadouts(d);
     else UI.buildCriteriaList(d);
+    // The alignment map container has no focusable inputs of its own (it's a read-only SVG
+    // diagram), so it always rebuilds live — it must NOT be nested inside, or gated by, the
+    // criteria list's protected-focus check above, or typing a criterion name would stop the
+    // map from reflecting lever/criterion changes made elsewhere until focus left the list.
+    UI.buildLeverAlignmentMap(d);
     if (!isProtectedFocus(EL.optionsList)) UI.buildOptionsList(d);
     UI.renderScoreSection(d);
     UI.renderResultsSection(d);
@@ -1232,6 +1604,11 @@
       d.loadBearingAssumption = EL.fieldAssumption.value;
       UI.onStateChange();
     });
+    EL.fieldReasoning.addEventListener('input', function () {
+      var d = getActiveDecision();
+      d.reasoning = EL.fieldReasoning.value;
+      UI.onStateChange();
+    });
     EL.fieldTriggerCondition.addEventListener('input', function () {
       var d = getActiveDecision();
       d.revisitTrigger.condition = EL.fieldTriggerCondition.value;
@@ -1241,6 +1618,33 @@
       var d = getActiveDecision();
       d.revisitTrigger.date = EL.fieldTriggerDate.value || null;
       UI.onStateChange();
+    });
+
+    /* Levers */
+    EL.leversList.addEventListener('input', function (e) {
+      var t = e.target, id = t.dataset.id;
+      if (!id || t.dataset.role !== 'lever-name') return;
+      var d = getActiveDecision();
+      var lv = null; d.levers.forEach(function (x) { if (x.id === id) lv = x; });
+      if (!lv) return;
+      lv.name = t.value;
+      UI.onStateChange();
+    });
+    EL.leversList.addEventListener('click', function (e) {
+      var t = e.target.closest('[data-role="delete-lever"]');
+      if (!t) return;
+      var d = getActiveDecision();
+      d.levers = d.levers.filter(function (lv) { return lv.id !== t.dataset.id; });
+      pruneLeverRefs(d);
+      UI.onStateChange();
+    });
+    EL.btnAddLever.addEventListener('click', function () {
+      var d = getActiveDecision();
+      if (d.levers.length >= 8) return;
+      var lv = Factories.makeLever('New lever');
+      d.levers.push(lv);
+      UI.onStateChange();
+      focusLater('lever-name-' + lv.id);
     });
 
     /* Criteria */
@@ -1260,6 +1664,7 @@
       var c = null; d.criteria.forEach(function (x) { if (x.id === id) c = x; });
       if (!c) return;
       if (t.dataset.role === 'criterion-direction') { c.direction = t.value; UI.onStateChange(); }
+      else if (t.dataset.role === 'criterion-lever') { c.leverId = t.value || null; UI.onStateChange(); }
     });
     EL.criteriaList.addEventListener('click', function (e) {
       var t = e.target.closest('[data-role="delete-criterion"]');
@@ -1635,13 +2040,14 @@
       var dv3 = fixtureDecision();
       dv3.reversibility = 'hard_to_reverse';
       dv3.loadBearingAssumption = 'Because X';
+      dv3.reasoning = 'Because X plus the runner-up not clearing the bar, therefore this option.';
       dv3.revisitTrigger = { condition: 'If Y happens', date: null };
       var rankTop = DecisionEngine.rankOptions(dv3);
       var topOpt = null;
       dv3.options.forEach(function (o) { if (o.id === rankTop.ranked[0].optionId) topOpt = o; });
       topOpt.premortem = 'It might fail because Z';
       var val3 = DecisionEngine.validateForExport(dv3);
-      self.assert('validateForExport: hard_to_reverse passes when all three filled', val3.ok === true);
+      self.assert('validateForExport: hard_to_reverse passes when assumption, reasoning, trigger, and premortem are all filled', val3.ok === true);
 
       /* 9. fromSessionJSON rejecting malformed input without throwing */
       var bad1 = DecisionEngine.fromSessionJSON('not json{{{');
@@ -1730,6 +2136,161 @@
         !repaired14.scores.o1 || !repaired14.scores.o1.c2 || repaired14.scores.o1.c2.r_other === undefined);
       var cv14 = DecisionEngine.cellValue(repaired14, 'o1', 'c2');
       self.assertClose('cellValue: after collapse, only r_me\'s score (2, c2 is higher-is-better) drives the ranking, not the blend', cv14.value, 2, 1e-9);
+
+      /* ===================== v1.1 extension: Levers, Reasoning, Charts ===================== */
+
+      /* 15-17. computeLeverAlignment: orphan-criteria and unserved-lever detection (E10) */
+      var lever1 = { id: 'lv1', name: 'Cost certainty' };
+      var lever2 = { id: 'lv2', name: 'Visible win before the vote' };
+      var alignCrit1 = { id: 'ac1', name: 'Budget impact', weight: 5, direction: 'lower', leverId: 'lv1' };
+      var alignCrit2 = { id: 'ac2', name: 'Team morale', weight: 5, direction: 'higher', leverId: null };
+      var alignCrit3 = { id: 'ac3', name: 'Time to ship', weight: 5, direction: 'lower', leverId: 'lv1' };
+      var alignDecision = {
+        id: 'align1', title: 'align', createdAt: '', updatedAt: '', reversibility: null, loadBearingAssumption: '',
+        reasoning: '', revisitTrigger: { condition: '', date: null }, multiRater: false,
+        raters: [{ id: 'r_me', name: 'Me', weight: 1 }],
+        criteria: [alignCrit1, alignCrit2, alignCrit3],
+        options: [{ id: 'ao1', name: 'A', isStatusQuo: false, premortem: '' }],
+        levers: [lever1, lever2],
+        scores: {}
+      };
+      var align15 = DecisionEngine.computeLeverAlignment(alignDecision);
+      self.assert('computeLeverAlignment: criterion with no leverId is an orphan',
+        align15.orphanCriteriaIds.length === 1 && align15.orphanCriteriaIds[0] === 'ac2');
+      self.assert('computeLeverAlignment: lever with zero referencing criteria is unserved',
+        align15.unservedLeverIds.length === 1 && align15.unservedLeverIds[0] === 'lv2');
+      self.assert('computeLeverAlignment: criteria that reference a real lever are not orphans and produce edges',
+        align15.edges.length === 2 &&
+        align15.edges.every(function (e) { return e.leverId === 'lv1'; }) &&
+        align15.orphanCriteriaIds.indexOf('ac1') === -1 && align15.orphanCriteriaIds.indexOf('ac3') === -1);
+      self.assert('computeLeverAlignment: a served lever is not in unservedLeverIds',
+        align15.unservedLeverIds.indexOf('lv1') === -1);
+
+      /* 18. Deleting a lever reassigns referencing criteria to "No lever" (E-A7) */
+      var pruneDecision = {
+        id: 'prune1', title: 'prune', createdAt: '', updatedAt: '', reversibility: null, loadBearingAssumption: '',
+        reasoning: '', revisitTrigger: { condition: '', date: null }, multiRater: false,
+        raters: [{ id: 'r_me', name: 'Me', weight: 1 }],
+        criteria: [{ id: 'pc1', name: 'X', weight: 5, direction: 'higher', leverId: 'lv1' }],
+        options: [{ id: 'po1', name: 'A', isStatusQuo: false, premortem: '' }],
+        levers: [lever1],
+        scores: {}
+      };
+      pruneDecision.levers = pruneDecision.levers.filter(function (lv) { return lv.id !== 'lv1'; });
+      pruneLeverRefs(pruneDecision);
+      self.assert('pruneLeverRefs: deleting a lever reassigns referencing criteria to leverId null, not a dangling id',
+        pruneDecision.criteria[0].leverId === null);
+
+      /* 19. A pre-extension session (no levers array, no reasoning, criteria without leverId)
+         loads cleanly with sensible defaults and no thrown errors (E-A8/E11). */
+      var preExtensionRaw = {
+        id: 'pre1', title: 'Pre-extension decision', createdAt: '', updatedAt: '',
+        reversibility: null, loadBearingAssumption: '', revisitTrigger: { condition: '', date: null },
+        multiRater: false, raters: [{ id: 'r_me', name: 'Me', weight: 1 }],
+        criteria: [{ id: 'pe1', name: 'Cost', weight: 5, direction: 'lower' }],
+        options: [{ id: 'peo1', name: 'A', isStatusQuo: true, premortem: '' }],
+        scores: {}
+        // note: no `levers`, no `reasoning`, and the criterion above has no `leverId` at all
+      };
+      var preImport = DecisionEngine.fromSessionJSON(JSON.stringify({ decision: preExtensionRaw }));
+      self.assert('fromSessionJSON: pre-extension session (no levers/reasoning/leverId) is accepted without throwing', preImport.ok === true);
+      var preDecision = preImport.decision;
+      self.assert('repairDecision: pre-extension session defaults levers to []', Array.isArray(preDecision.levers) && preDecision.levers.length === 0);
+      self.assert('repairDecision: pre-extension session defaults reasoning to \'\'', preDecision.reasoning === '');
+      self.assert('repairDecision: pre-extension criterion defaults leverId to null', preDecision.criteria[0].leverId === null);
+
+      /* 20. repairDecision nulls out a leverId that doesn't match any lever in the decision
+         (e.g. a hand-edited/foreign session, or a lever deleted before the levers array itself
+         was saved) rather than leaving it dangling. */
+      var danglingRaw = {
+        id: 'dangle1', title: 'dangle', createdAt: '', updatedAt: '', reversibility: null, loadBearingAssumption: '',
+        revisitTrigger: { condition: '', date: null }, multiRater: false, raters: [{ id: 'r_me', name: 'Me', weight: 1 }],
+        criteria: [{ id: 'dg1', name: 'X', weight: 5, direction: 'higher', leverId: 'ghost-lever' }],
+        options: [{ id: 'dgo1', name: 'A', isStatusQuo: false, premortem: '' }],
+        levers: [], scores: {}
+      };
+      var danglingImport = DecisionEngine.fromSessionJSON(JSON.stringify({ decision: danglingRaw }));
+      self.assert('repairDecision: a leverId with no matching lever is repaired to null, not left dangling',
+        danglingImport.ok === true && danglingImport.decision.criteria[0].leverId === null);
+
+      /* 21. barChartLayout: bar fraction is proportional to the option's actual computed total
+         on the 0-10 scale (E-A5), spot-checkable against scoreOption's own total. */
+      var d21 = fixtureDecision();
+      d21.scores.o2.c1 = { r_me: 4 };
+      d21.scores.o2.c2 = { r_me: 6 };
+      var layout21 = DecisionEngine.barChartLayout(d21);
+      self.assert('barChartLayout: sufficient decision produces one bar per option', layout21.sufficient === true && layout21.bars.length === 2);
+      layout21.bars.forEach(function (b) {
+        var so = DecisionEngine.scoreOption(d21, b.optionId);
+        self.assertClose('barChartLayout: bar fraction equals total/10 for ' + b.optionId, b.fraction, so.total / 10, 1e-9);
+      });
+      self.assert('barChartLayout: rank 1 bar corresponds to the higher total',
+        layout21.bars[0].total >= layout21.bars[1].total);
+
+      /* 22. radarChartData: point-generation math for a known input (E10). With centerX=100,
+         centerY=100, radius=100 and a criterion scored at the maximum (10), axis 0 (index 0,
+         pointing straight up) should land at (100, 0); axis 1 of a 4-axis chart (90deg clockwise,
+         pointing right) should land at (200, 100). */
+      var radarCrit = ['rc0', 'rc1', 'rc2', 'rc3'].map(function (id) {
+        return { id: id, name: id, weight: 1, direction: 'higher' };
+      });
+      var radarDecision = {
+        id: 'radar1', title: 'radar', createdAt: '', updatedAt: '', reversibility: null, loadBearingAssumption: '',
+        reasoning: '', revisitTrigger: { condition: '', date: null }, multiRater: false,
+        raters: [{ id: 'r_me', name: 'Me', weight: 1 }],
+        criteria: radarCrit,
+        options: [{ id: 'ro1', name: 'Only option', isStatusQuo: false, premortem: '' }],
+        levers: [],
+        scores: { ro1: { rc0: { r_me: 10 }, rc1: { r_me: 10 }, rc2: { r_me: 10 }, rc3: { r_me: 10 } } }
+      };
+      var radarData = DecisionEngine.radarChartData(radarDecision, 100, 100, 100);
+      var series0 = radarData.series[0];
+      self.assertClose('radarChartData: axis 0 (pointing up) at max score lands at centerX', series0.points[0].x, 100, 1e-6);
+      self.assertClose('radarChartData: axis 0 (pointing up) at max score lands at centerY - radius', series0.points[0].y, 0, 1e-6);
+      self.assertClose('radarChartData: axis 1 of 4 (90deg clockwise, pointing right) at max score lands at centerX + radius', series0.points[1].x, 200, 1e-6);
+      self.assertClose('radarChartData: axis 1 of 4 at max score lands at centerY', series0.points[1].y, 100, 1e-6);
+      var radarDataMid = DecisionEngine.radarChartData(
+        { id: 'radar2', criteria: radarCrit, options: [{ id: 'ro1', name: 'Only option', isStatusQuo: false, premortem: '' }], raters: [{ id: 'r_me', name: 'Me', weight: 1 }], scores: { ro1: { rc0: { r_me: 5.5 } } } },
+        100, 100, 100
+      );
+      // A midpoint score of 5.5 is exactly halfway along the 1-10 scale, so it sits at half the
+      // radius from center (r=50) along axis 0 (pointing up): y = centerY - 50 = 50.
+      self.assertClose('radarChartData: midpoint score (5.5) sits at half the radius along the axis', radarDataMid.series[0].points[0].y, 50, 1e-6);
+
+      /* 23. validateForExport: reasoning empty blocks export and appears in the missing-items
+         list; filling it removes it from that list (E-A3). */
+      var dv4 = fixtureDecision();
+      dv4.reversibility = 'hard_to_reverse';
+      dv4.loadBearingAssumption = 'X';
+      dv4.revisitTrigger = { condition: 'Y', date: null };
+      dv4.reasoning = '';
+      var rankTop4 = DecisionEngine.rankOptions(dv4);
+      var topOpt4 = null;
+      dv4.options.forEach(function (o) { if (o.id === rankTop4.ranked[0].optionId) topOpt4 = o; });
+      topOpt4.premortem = 'Z';
+      var val4a = DecisionEngine.validateForExport(dv4);
+      self.assert('validateForExport: empty reasoning blocks export and is listed as missing',
+        val4a.ok === false && val4a.missing.some(function (m) { return m.field === 'reasoning'; }));
+      dv4.reasoning = 'Because of X, and because the runner-up did not clear the bar.';
+      var val4b = DecisionEngine.validateForExport(dv4);
+      self.assert('validateForExport: filling reasoning (with the other three) unblocks export', val4b.ok === true);
+
+      /* 24. toMarkdown: a "Reasoning" section appears after Recommendation and before
+         Alternatives considered when reasoning is non-empty (E-A4), and is omitted when empty. */
+      var d24 = fixtureDecision();
+      d24.reasoning = 'The narrative connecting the assumption to the choice.';
+      var md24 = d24 && DecisionEngine.toMarkdown(d24);
+      var recIdx = md24.indexOf('## Recommendation');
+      var reasonIdx = md24.indexOf('## Reasoning');
+      var altIdx = md24.indexOf('## Alternatives considered');
+      self.assert('toMarkdown: Reasoning section present when non-empty', reasonIdx !== -1);
+      self.assert('toMarkdown: Reasoning section is positioned after Recommendation and before Alternatives considered',
+        recIdx !== -1 && reasonIdx > recIdx && altIdx !== -1 && reasonIdx < altIdx);
+      self.assert('toMarkdown: Reasoning section body contains the reasoning text', md24.indexOf('The narrative connecting the assumption to the choice.') !== -1);
+      var d24b = fixtureDecision();
+      d24b.reasoning = '';
+      var md24b = DecisionEngine.toMarkdown(d24b);
+      self.assert('toMarkdown: Reasoning section omitted when reasoning is empty', md24b.indexOf('## Reasoning') === -1);
     },
     renderPage: function () {
       var res = this.run();
