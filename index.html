@@ -291,6 +291,13 @@
      Utilities
   ========================================================= */
   function clamp(n, min, max) { return Math.min(max, Math.max(min, n)); }
+  // Shared by every inline-SVG chart/diagram that lays out text labels next to a shape
+  // (alignment map, bar chart), so a long option/criterion/lever name gets enough room
+  // instead of being clipped by a fixed-width layout. Ceiling raised to 420 (was found
+  // clipping realistic names, e.g. "Incremental migration to the new vendor platform",
+  // at a lower cap) rather than removed outright, so a pathological name can't blow the
+  // SVG viewBox out to an unusable width.
+  function estLabelWidth(s) { return clamp(String(s || '').length * 6.5, 60, 420); }
   function escapeHtml(s) {
     return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (ch) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
@@ -638,7 +645,9 @@
           fraction: clamp(r.total / SCALE_MAX, 0, 1),
           rank: r.rank,
           tied: r.tied,
-          isStatusQuo: !!(opt && opt.isStatusQuo)
+          isStatusQuo: !!(opt && opt.isStatusQuo),
+          unscoredCount: r.unscoredCount,
+          criteriaCount: r.criteriaCount
         };
       });
       return { bars: bars, closeCall: rank.closeCall, margin: rank.margin, sufficient: true };
@@ -726,7 +735,7 @@
       lines.push('');
       lines.push('## Reversibility');
       if (decision.reversibility === 'hard_to_reverse') {
-        lines.push('**Hard to reverse.** Assumption, trigger, and a premortem are required before you can export.');
+        lines.push('**Hard to reverse.** Assumption, trigger, reasoning, and a premortem are required before you can export.');
       } else if (decision.reversibility === 'reversible') {
         lines.push('**Reversible.** Decide fast, keep it cheap and move.');
       } else {
@@ -1066,7 +1075,7 @@
     EL.reversibilityConsequence.textContent = val === 'reversible'
       ? 'Reversible: decide fast, keep it cheap and move.'
       : val === 'hard_to_reverse'
-        ? 'Hard to reverse: assumption, trigger, and a premortem are required before you can export.'
+        ? 'Hard to reverse: assumption, trigger, reasoning, and a premortem are required before you can export.'
         : '';
     if (EL.fieldAssumption.value !== d.loadBearingAssumption) EL.fieldAssumption.value = d.loadBearingAssumption;
     if (EL.fieldReasoning.value !== d.reasoning) EL.fieldReasoning.value = d.reasoning;
@@ -1131,11 +1140,9 @@
     var rowH = 34, padTop = 18, nodeR = 6;
     var rows = Math.max(levers.length, criteria.length, 1);
     var height = padTop * 2 + rows * rowH;
-    // Label widths are estimated from character count (~6.5px/char at 12px font) rather than
-    // fixed, so long lever/criterion names get enough room on their side of the diagram instead
-    // of being clipped by the SVG's own viewBox (a fixed-width layout clipped names like
-    // "Visible win before the vote" during manual verification — this sizing replaces that).
-    function estLabelWidth(s) { return clamp(String(s || '').length * 6.5, 60, 260); }
+    // Label widths are estimated (estLabelWidth, shared with the other charts) from character
+    // count rather than fixed, so long lever/criterion names get enough room on their side of
+    // the diagram instead of being clipped by the SVG's own viewBox.
     var maxLeverLabel = levers.reduce(function (m, lv) { return Math.max(m, estLabelWidth(lv.name + (unservedSet[lv.id] ? ' ⚠ unserved' : ''))); }, 60);
     var maxCritLabel = criteria.reduce(function (m, c) { return Math.max(m, estLabelWidth(c.name + (orphanSet[c.id] ? ' ⚠ orphan' : ''))); }, 60);
     var connectorZone = 200;
@@ -1401,7 +1408,14 @@
       container.innerHTML = '';
       return;
     }
-    var leftW = 170, barAreaW = 320, rightPad = 160, rowH = 30, gap = 8;
+    // Label column is sized from the longest bar label (estLabelWidth, shared with the other
+    // charts) rather than fixed, so a long option name doesn't clip — including clipping the
+    // ★ recommended marker itself, which is the non-color cue N5 requires for the top result.
+    var leftW = layout.bars.reduce(function (m, b) {
+      var label = (b.rank === 1 ? '★ ' : '') + b.name + (b.tied ? ' (tied)' : '');
+      return Math.max(m, estLabelWidth(label) + 16);
+    }, 60);
+    var barAreaW = 320, rightPad = 160, rowH = 30, gap = 8;
     var width = leftW + barAreaW + rightPad;
     var height = layout.bars.length * (rowH + gap);
     var svg = '<svg viewBox="0 0 ' + width + ' ' + height + '" width="100%" height="' + height + '" role="img" aria-label="Ranked totals bar chart" xmlns="http://www.w3.org/2000/svg">';
@@ -1425,7 +1439,8 @@
     }
     svg += '</svg>';
     var summary = 'Bar chart: ' + layout.bars.map(function (b) {
-      return b.name + ' at ' + b.total.toFixed(1) + ' of 10' + (b.rank === 1 ? ' (recommended)' : '');
+      return b.name + ' at ' + b.total.toFixed(1) + ' of 10' + (b.rank === 1 ? ' (recommended)' : '') +
+        (b.unscoredCount > 0 ? ' (' + b.unscoredCount + ' of ' + b.criteriaCount + ' criteria unscored)' : '');
     }).join(', ') + '.' + (layout.closeCall ? ' The top two options are within 5% of each other — too close to call.' : '');
     container.innerHTML = '<h3>Ranked totals</h3><div class="chart-wrap">' + svg + '</div>' +
       '<p class="visually-hidden" data-role="bar-chart-text-alt">' + escapeHtml(summary) + '</p>';
@@ -1454,7 +1469,14 @@
       container.innerHTML = '<h3>Criteria comparison (radar)</h3><p class="empty-state">Add options to compare them on the radar chart.</p>';
       return;
     }
-    var radius = 120, centerX = 210, centerY = 170, width = 420, height = 340;
+    // Side margin (and so centerX/width) is sized from the longest criterion name
+    // (estLabelWidth, shared with the other charts) rather than fixed, so a long axis
+    // label has room to extend past the radius+14 label-offset without clipping against
+    // the SVG viewBox edge on either side.
+    var radius = 120, centerY = 170, height = 340;
+    var maxAxisLabelW = criteria.reduce(function (m, c) { return Math.max(m, estLabelWidth(c.name)); }, 60);
+    var sideMargin = 14 + maxAxisLabelW;
+    var centerX = radius + sideMargin, width = 2 * (radius + sideMargin);
     var data = DecisionEngine.radarChartData(d, radius, centerX, centerY);
     var shapes = ['circle', 'square', 'triangle', 'diamond'];
     var svg = '<svg viewBox="0 0 ' + width + ' ' + height + '" width="100%" height="' + height + '" role="img" aria-label="Criteria comparison radar chart" xmlns="http://www.w3.org/2000/svg">';
