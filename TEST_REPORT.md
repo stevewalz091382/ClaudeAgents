@@ -1,14 +1,130 @@
 # TEST_REPORT.md — Weighted Decision Engine (`index.html`)
 
-Tested by: Tester agent. Method: static code review plus live rendering/interaction testing in a real Chromium instance (Playwright, `executablePath: /opt/pw-browsers/chromium`) loaded via `file://`, opened directly against `/home/user/ClaudeAgents/index.html` (no server). All findings below were reproduced live, not inferred from source alone; the driver scripts referenced are saved under `/tmp/claude-0/-home-user-ClaudeAgents/2c19d920-0d83-5ba7-a188-5f5447493b4c/scratchpad/pw/` if reruns are needed.
+Tested by: Tester agent. Method: static code review plus live rendering/interaction testing in a real Chromium instance (Playwright, `executablePath: /opt/pw-browsers/chromium`) loaded via `file://`, opened directly against `/home/user/ClaudeAgents/index.html` (no server). All findings below were reproduced live, not inferred from source alone.
 
-Verdict up front: the calculation engine, persistence, gating, export/import, keyboard flow, and responsive layout are all solid and match the BUILD_PLAN spec closely — I could not break the math, the focus/caret handling (A15), or the keyboard-only flow (A17). But there are two CRITICAL defects that undermine trust in the app on literally every session, plus a handful of lower-severity issues.
+---
+
+# ROUND 2 STATUS (2026-08-23)
+
+Round-2 driver scripts are saved under `/tmp/claude-0/-home-user-ClaudeAgents/2c19d920-0d83-5ba7-a188-5f5447493b4c/scratchpad/pw2/` if reruns are needed. Round-1 scripts remain under `.../scratchpad/pw/`.
+
+**Verdict up front: 3 of the 4 claimed fixes hold up completely under adversarial re-testing. The 4th (C2, multi-rater collapse) fixes the exact scenario originally reported but introduces a new, narrower CRITICAL silent-data-loss edge case that was not covered by the coder's self-tests. Recommend GO WITH FIXES, not GO, until the new finding (C2-R2) is addressed.**
+
+## Fix-by-fix results
+
+### C1 (hidden/display CSS bug) — **FIXED, no regressions found**
+Verified the global `[hidden] { display: none !important; }` rule (index.html line 28) live for all 7 previously-affected elements:
+
+| id | Fresh load | Real trigger fired | Result |
+|---|---|---|---|
+| `#corrupt-banner` | hidden, `display:none`, `offsetHeight:0` | Injected corrupt `localStorage` + reload | Shown (`display:flex`, real backup-key text), Dismiss button now actually hides it (`display:none` after click) |
+| `#quota-banner` | hidden | Monkeypatched `localStorage.setItem` to throw on save | Shown, save-status correctly flips to "Not saved — see warning" |
+| `#import-errors` | hidden | Imported a malformed JSON file via the real file input | Shown with the real parse-error text |
+| `#criteria-cap-msg` | hidden | Added criteria up to 12 | Shown at exactly 12, not before |
+| `#options-cap-msg` | hidden | Added options up to 12 | Shown at exactly 12, not before |
+| `#close-call-banner` | hidden | Scored two options to an 8.0 vs 7.9 total (1.25% margin) | Shown correctly, hidden again when margin is wide |
+| `#export-gating` | hidden | Set Hard-to-reverse with empty required fields | Shown with the correct missing-items list; correctly hides again once all three fields are filled |
+
+Also reconfirmed **L2** (dead tab-order controls) is resolved as a direct consequence: on a fresh session, the second Tab stop after the skip-link is now `#decision-title-input`, not the phantom "Dismiss"/"Export session JSON" controls.
+
+I could not break C1. Tried: rapid toggling of trigger conditions, re-triggering after dismiss, combining multiple banners active simultaneously (export-gating + close-call-banner both showed correctly side-by-side with correct independent visibility).
+
+### C2 (multi-rater-off blending hidden raters) — **PARTIALLY FIXED — original bug gone, but a new CRITICAL silent-data-loss edge case exists**
+
+**What now works correctly (verified live):**
+- Turning multi-rater off with 2+ raters present now shows `window.confirm('Turning off multi-rater mode will discard scores from the other rater(s). Continue?')`.
+- **Cancel path**: toggle checkbox reverts to checked=true, raters panel stays visible, both raters and their scores remain completely intact (verified rater count stays 2, no `UI.onStateChange()` side effects fire).
+- **Confirm path**: `decision.raters` collapses to exactly `[{id:'r_me', ...}]`, all non-`r_me` score entries are pruned, and — critically — the visible score-cell now shows **Me's own value** (verified: scored Me=10/Rater2=2 with weights 1/3 on a higher-is-better criterion, blended readout correctly showed 4.0 before collapse, and after collapse the cell showed "10", not "2" or "4" — the original bug's symptom is gone).
+- Survives a full page reload: cell value and toggle state both correct after reload.
+- Exported session JSON after collapse contains `"raters":[{"id":"r_me",...}]` only, and `scores` contains no orphaned non-`r_me` keys.
+- Self-test 11 (new, added by the coder) exercises this path at the engine level and passes.
+
+**New finding — C2-R2 (CRITICAL): silently wipes rater data with *no* confirmation dialog if the surviving rater's id isn't literally `r_me`**
+
+**What I did:** Enabled multi-rater, added "Rater 2", scored a cell as "Rater 2" = 7 (never scored as "Me" at all), then **deleted the original "Me" rater** (deleting is allowed as long as ≥1 rater remains, and deleting "Me" is not specially protected). This leaves `decision.raters` as a single, non-`r_me`-id rater ("Rater 2") holding real scored data. I then turned multi-rater mode off.
+
+**What happened:**
+- No `confirm()` dialog fired at all — the code's dialog guard is `var hasOtherRaters = d.raters.length > 1;`, which is `false` here because there is only one rater left (Rater 2), even though that one rater is not the implicit "Me".
+- `collapseRatersToSingle(d)` then ran unconditionally: it looks for a rater with `id === 'r_me'`, finds none, and falls back to a **brand new** `{id:'r_me', name:'Me', weight:1}` object — discarding "Rater 2" entirely, including its id.
+- `pruneScores(d)` then deletes every score whose rater id isn't in the new `[r_me]` roster — which is *all* of them, since every existing score was keyed under "Rater 2"'s original id.
+- Net effect: the cell that showed "7" a moment before now shows **empty ("N/A")**, the score is gone from `localStorage`, and the user got **zero warning** that this would happen — worse than the original C2 bug in one respect, because the original bug at least kept "Me"'s data intact; this path deletes the *only* data that existed, silently, without even the confirm dialog the fix otherwise added.
+
+**Reproduction:** `/tmp/claude-0/-home-user-ClaudeAgents/2c19d920-0d83-5ba7-a188-5f5447493b4c/scratchpad/pw2/round2_C2_edge_delete_me.js`. Steps:
+1. New decision → enable Multi-rater mode → Add rater ("Rater 2").
+2. Switch "Scoring as" to Rater 2, score any cell (e.g. 7).
+3. Delete the "Me" rater from the Raters panel (leaves only "Rater 2", which now has id `r_...` not `r_me`).
+4. Turn multi-rater mode off. **No confirmation dialog appears.**
+5. Observe the previously-scored cell is now blank, and `localStorage`'s `scores` object for that decision is now `{}`.
+
+**Why CRITICAL, not HIGH:** It is a real, deterministic, easily-triggered workflow (delete the default rater, keep a custom one — nothing prevents this, and multi-rater's whole premise is that "Me" isn't necessarily the important rater) that causes **total, silent, unrecoverable loss of scored data** with **no warning of any kind**, which is a strictly worse outcome than the bug this round's fix was meant to close. The guard condition (`raters.length > 1`) conflates "are there multiple raters to warn about" with "is the sole remaining rater already the canonical single-rater identity" — those are not the same thing once a user can delete the seeded `r_me` rater.
+
+**Fix direction (for the Coder, not applied by me):** The dialog condition and the collapse logic both need to key off "does collapsing lose any data / change any rater identity," not `raters.length > 1`. Concretely: fire the confirm whenever `d.raters.length > 1` **or** the sole remaining rater's id isn't `r_me`; and `collapseRatersToSingle` should preserve the sole remaining rater's *scores* under the canonical `r_me` id (re-keying rather than discarding) when there's exactly one rater left, regardless of its original id — or, more conservatively, just refuse to silently drop it and always route through the same confirm-or-preserve path used for the ≥2-rater case.
+
+### Finding 3 (Markdown export unweighted-mean bug) — **FIXED, confirmed**
+`toMarkdown`'s score matrix now calls `DecisionEngine.cellValue` (index.html line 620). Live-verified with weights 1 (Me) and 3 (Rater 2), scores 10 and 2 on a higher-is-better criterion: UI blend readout showed "Blended: 4.0", and the exported Markdown's `## Full score matrix` table showed the same **4.0** — not the old incorrect unweighted mean of 6.0. Self-test 12 (new) also asserts this at the engine level and passes.
+
+### Finding 4 (Print bypassing export gate) — **FIXED, confirmed, tried to force it 3 ways**
+With reversibility = Hard to reverse and required fields empty, `#btn-print` is now in the same disabled group as Markdown/JSON/clipboard (`[EL.btnExportMd, EL.btnExportJson, EL.btnCopyClipboard, EL.btnPrint].forEach(...)`), and the click handler itself re-validates before calling `window.print()`. I instrumented `window.print` and tried to force the click three ways while the button was disabled:
+1. Playwright's `page.click()` (real synthetic mouse event, actionability-checked) — correctly refused to click a disabled element (timed out as expected).
+2. `document.getElementById('btn-print').click()` from the console — disabled elements don't dispatch `click` per HTML spec — `window.print` was **not** called.
+3. `element.dispatchEvent(new MouseEvent('click', ...))` directly — same result, **not** called.
+
+Once the required fields were filled, the button correctly became enabled and a real click did call `window.print()` exactly once. Could not bypass the gate.
+
+## Process gaps closed
+
+### A14 — self-test count, actually run this time
+`index.html?selftest=1` renders **`SELFTEST PASS: 32 FAIL: 0`** — confirmed live via Playwright, 0 failures listed. Matches the coder's claim of 32.
+
+### Clipboard export (F13b) — all three tiers tested live
+- **Tier 1** (`navigator.clipboard.writeText`): granted clipboard permissions in a real Chromium context, clicked Copy, then independently read back `navigator.clipboard.readText()` — content matched the exported Markdown (`starts with "# "` confirmed true), and `#copy-status` showed "Copied to clipboard."
+- **Tier 2** (`document.execCommand('copy')`): stubbed `navigator.clipboard` to `undefined` before load, clicked Copy — `#copy-status` still showed "Copied to clipboard." and the fallback textarea correctly stayed hidden (execCommand succeeded in this Chromium build).
+- **Tier 3** (last-resort textarea reveal): stubbed both `navigator.clipboard` to `undefined` **and** `document.execCommand` to always return `false`, clicked Copy — `#copy-status` correctly changed to "Press Ctrl+C to copy (automatic copy unavailable)." and `#clipboard-fallback-textarea` became visible, focused, text-selected, and populated with the correct Markdown content.
+
+All three tiers work exactly as designed. Could not break the clipboard fallback chain.
+
+## Regression pass (A5–A9, A15, A17) — all held, no regressions
+
+- **A5** (hand-computed totals): 2-criteria/2-option matrix, one cell deliberately left unscored — totals matched hand calculation exactly (7.00 and 7.25).
+- **A6** (direction flip): flipping "Cost" from lower→higher-is-better correctly changed the status-quo option's total from 7.00 to 4.50 (recomputed from raw scores, not cached).
+- **A7** (unscored-cell handling): the option with 1 unscored criterion correctly showed the "1 of 2 criteria unscored" badge and still ranked using the 5.5 midpoint fallback.
+- **A8** (persistence): a title change survived a full page reload.
+- **A9** (export gating + focus links): Hard-to-reverse with empty fields correctly listed exactly 3 missing items with working links; clicking the first link correctly moved focus to `#field-assumption`.
+- **A15** (typing/caret stability): typed a 26-character string character-by-character with delays into the title field — value and focus were both intact afterward, no drops or caret jumps.
+- **A17** (keyboard flow, spot check only per instructions): quick keyboard interaction sanity check, no console errors, focus moved as expected.
+
+Nothing regressed from the shared code paths (`pruneScores`, render logic, button gating) that the C1/C2 fixes touched.
+
+## Summary of round-2 status
+
+| Item | Round-1 status | Round-2 status |
+|---|---|---|
+| C1 (7 hidden/display elements) | CRITICAL | **FIXED** |
+| C2 (multi-rater-off blending) — original scenario | CRITICAL | **FIXED** |
+| C2-R2 (multi-rater-off after deleting "Me") | *new in round 2* | **CRITICAL — open** |
+| Finding 3 (Markdown unweighted mean) | (unranked, noted) | **FIXED** |
+| Finding 4 (Print bypassing gate) | (unranked, noted) | **FIXED** |
+| A14 (selftest count) | skipped in round 1 | **Run: PASS 32 / FAIL 0** |
+| F13b (clipboard tiers) | not tested in round 1 | **All 3 tiers verified working** |
+| M1 (dual "Recommended" badge on ties) | MEDIUM, judgment call | Not re-tested this round (untouched by the fixes); presumed unchanged |
+| L1 (decimal truncation on score input) | LOW | Not re-tested this round; presumed unchanged (untouched code path) |
+| L2 (dead tab-order controls) | LOW, consequence of C1 | **FIXED** (confirmed: 2nd Tab stop is now `#decision-title-input`) |
+
+**Recommendation: GO WITH FIXES.** All four originally-requested fixes were genuinely applied and 3 of 4 are fully solid under adversarial re-testing. However, the C2 fix's own guard condition (`raters.length > 1`) introduces a new CRITICAL silent-data-loss path that is easy to trigger (delete the default rater, keep a custom one, turn multi-rater off) and strictly worse than the original bug because it deletes real data with zero warning. This should go back to the coder for one more pass before GO.
+
+---
+
+# ROUND 1 REPORT (original, kept for context)
+
+Verdict up front (round 1): the calculation engine, persistence, gating, export/import, keyboard flow, and responsive layout are all solid and match the BUILD_PLAN spec closely — I could not break the math, the focus/caret handling (A15), or the keyboard-only flow (A17). But there are two CRITICAL defects that undermine trust in the app on literally every session, plus a handful of lower-severity issues.
 
 ---
 
 ## CRITICAL
 
 ### C1. Every "hidden" banner/message that also carries `.banner` or `.badge-warning` is permanently visible, regardless of `hidden` state — confirmed on 7 elements, not just the 1 originally spotted
+
+**[ROUND 2: FIXED — see "ROUND 2 STATUS" above for live re-verification of all 7 elements.]**
 
 **What I did:** Loaded a brand-new session (cleared profile) and inspected every element carrying the `hidden` attribute via `getComputedStyle(...).display` and `offsetHeight`. Also toggled the underlying JS state (dismiss button, quota error injection, export gating) to confirm the `hidden` attribute *is* being set/cleared correctly by the JS, but has no visual effect.
 
@@ -51,6 +167,8 @@ All 7 print `true` for `hidden` but a non-`none` `display`.
 
 ### C2. Turning multi-rater mode OFF does not return the app to a true single-rater state — it keeps silently blending scores from now-invisible raters into the ranking, while the visible score-matrix cell shows a different (wrong) raw value
 
+**[ROUND 2: FIXED for the originally-reported scenario, but see C2-R2 in "ROUND 2 STATUS" above for a new, narrower CRITICAL edge case introduced by the fix.]**
+
 **What I did:** Enabled multi-rater mode, added a second rater with a different weight, scored one cell as "Me" = 10 and the same cell as "Rater 2" = 2 (weights 1 and 1, then repeated with weights 1 and 3), then turned multi-rater mode **off** (per F9, this should hide all rater UI and behave as a single implicit rater "Me" with weight 1) and inspected (a) what the now-single score cell displays/edits and (b) what the Results breakdown table actually used to compute the total.
 
 **What happened:**
@@ -90,11 +208,13 @@ When two options are exactly tied at rank 1 (verified: identical totals → both
 Programmatically driving the score-cell `input` event with `"3.7"` results in a stored score of `3` (`parseInt` truncation) rather than rejecting the value or rounding to nearest integer (4). Low impact because the native `<input type="number" step="1">` control makes it hard for a real user to end up with a fractional string in practice (arrow keys/spinner respect `step`), but the value could arrive via paste or programmatic autofill and the resulting silent truncation is a bit surprising (3.7 "rounds down" instead of rounding to nearest). Also note: a raw value of `"0"` (below the documented 1–10 scale) is silently clamped to `1` rather than rejected — consistent with the app's general clamp-not-reject philosophy elsewhere, so I'm not flagging that half separately, just noting it for awareness.
 
 ### L2. Tab order includes two dead controls at the very start of every session (consequence of C1)
+**[ROUND 2: FIXED — confirmed the 2nd Tab stop after the skip-link is now `#decision-title-input`.]**
+
 Documented under C1's downstream effects; listed separately here only because it's independently an N5 (keyboard navigability) concern: a screen-reader or keyboard user starting a fresh session tabs into "Dismiss" (for a corruption banner that doesn't exist) and "Export session JSON" (for a quota error that hasn't happened) before reaching the app's real controls. Will resolve automatically once C1 is fixed.
 
 ---
 
-## What I verified working correctly (i.e., could not break)
+## What I verified working correctly (i.e., could not break) — round 1
 
 - **A1/A2** — Fresh load: zero console messages, zero network requests beyond the initial `file://` document load, no external `src=`/`href=`/`@import`/`fetch`/`XHR` references found in the file.
 - **A3** — New decisions always seed "Do Nothing (status quo)" flagged `isStatusQuo: true`.
@@ -120,7 +240,7 @@ Documented under C1's downstream effects; listed separately here only because it
 
 ---
 
-## Summary
+## Summary (round 1, superseded by "ROUND 2 STATUS" table above)
 
 | Severity | Count | Items |
 |---|---|---|
