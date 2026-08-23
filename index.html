@@ -981,7 +981,9 @@
         '<div class="field"><label for="rater-weight-' + r.id + '">Weight</label>' +
         '<input type="range" min="1" max="10" step="1" id="rater-weight-' + r.id + '" value="' + r.weight + '" data-role="rater-weight" data-id="' + r.id + '">' +
         '<span class="readout" id="rater-weight-readout-' + r.id + '">' + r.weight + '</span></div>' +
-        (d.raters.length > 1 ? '<button type="button" class="btn-danger" data-role="delete-rater" data-id="' + r.id + '">Delete</button>' : '') +
+        (r.id === 'r_me' ?
+          '<button type="button" class="btn-danger" data-role="delete-rater" data-id="' + r.id + '" disabled title="The implicit &#39;Me&#39; rater can&#39;t be removed — delete other raters or turn off multi-rater mode instead.">Delete</button>' :
+          (d.raters.length > 1 ? '<button type="button" class="btn-danger" data-role="delete-rater" data-id="' + r.id + '">Delete</button>' : '')) +
         '</div>';
     }).join('');
     EL.selectScoringAs.innerHTML = d.raters.map(function (r) {
@@ -1326,6 +1328,7 @@
       var d = getActiveDecision();
       if (d.raters.length <= 1) return;
       var id = del.dataset.id;
+      if (id === 'r_me') return; // The implicit 'Me' rater can never be deleted (data-model invariant).
       d.raters = d.raters.filter(function (r) { return r.id !== id; });
       pruneScores(d);
       if (App.scoringAsRaterId === id) App.scoringAsRaterId = null;
