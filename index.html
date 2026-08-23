@@ -364,6 +364,19 @@
     // replacing them, so no rater or its scores are silently discarded here.
     var hasMeRater = raters.some(function (r) { return r.id === 'r_me'; });
     if (!hasMeRater) raters.push({ id: 'r_me', name: 'Me', weight: 1 });
+    // Data-model invariant: whenever multiRater is false, exactly one rater (r_me)
+    // may exist. cellValue() blends over every entry in `raters` unconditionally
+    // by design (no branching in the math layer) — that is only safe if this
+    // holds. A hand-edited or foreign session JSON with "multiRater": false and
+    // more than one rater would otherwise blend a rater the UI never shows into
+    // the ranking, with no way for the user to detect it. Collapse here, before
+    // scores are filtered below, so the pruning of non-surviving raters' scores
+    // falls out of the existing validRaterIds check rather than needing its own.
+    if (!d.multiRater && raters.length > 1) {
+      var meRater = null;
+      raters.forEach(function (r) { if (r.id === 'r_me') meRater = r; });
+      raters = [meRater];
+    }
     var sqFound = false;
     options.forEach(function (o) {
       if (o.isStatusQuo) {
@@ -1306,7 +1319,7 @@
       var d = getActiveDecision();
       var turningOff = !EL.toggleMultirater.checked;
       if (turningOff) {
-        var hasOtherRaters = d.raters.length > 1;
+        var hasOtherRaters = d.raters.some(function (r) { return r.id !== 'r_me'; });
         if (hasOtherRaters) {
           var confirmed = window.confirm('Turning off multi-rater mode will discard scores from the other rater(s). Continue?');
           if (!confirmed) {
@@ -1700,6 +1713,23 @@
       self.assert('repairDecision: original non-r_me rater is preserved, not replaced', hasCustom13);
       self.assert('repairDecision: original rater\'s score is left intact (not destroyed at import time)',
         repaired13.scores.o1 && repaired13.scores.o1.c1 && repaired13.scores.o1.c1.r_custom === 7);
+
+      /* 14. repairDecision (Fix: multiRater:false invariant): a foreign/hand-edited decision with
+         multiRater false but more than one rater must collapse to exactly r_me on repair, so
+         cellValue() can never silently blend a rater the UI isn't showing into the ranking. */
+      var d14 = fixtureDecision();
+      d14.multiRater = false;
+      d14.raters = [{ id: 'r_me', name: 'Me', weight: 1 }, { id: 'r_other', name: 'Other', weight: 3 }];
+      d14.scores.o1.c2 = { r_me: 2, r_other: 8 };
+      var imported14 = DecisionEngine.fromSessionJSON(DecisionEngine.toSessionJSON(d14));
+      self.assert('fromSessionJSON: multiRater:false decision with extra raters is still accepted', imported14.ok === true);
+      var repaired14 = imported14.decision;
+      self.assert('repairDecision: multiRater:false collapses raters to exactly 1', repaired14.raters.length === 1);
+      self.assert('repairDecision: the surviving rater is r_me', repaired14.raters[0].id === 'r_me');
+      self.assert('repairDecision: the non-me rater\'s score is pruned, not left dangling',
+        !repaired14.scores.o1 || !repaired14.scores.o1.c2 || repaired14.scores.o1.c2.r_other === undefined);
+      var cv14 = DecisionEngine.cellValue(repaired14, 'o1', 'c2');
+      self.assertClose('cellValue: after collapse, only r_me\'s score (2, c2 is higher-is-better) drives the ranking, not the blend', cv14.value, 2, 1e-9);
     },
     renderPage: function () {
       var res = this.run();
