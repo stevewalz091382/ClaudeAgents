@@ -1,6 +1,22 @@
 # TEST_REPORT.md — Weighted Decision Engine (`index.html`)
 
-Tested by: Tester agent (rounds 1-3), orchestrator (rounds 4-5 — see notes on each). Method: static code review plus live rendering/interaction testing in a real Chromium instance (Playwright, `executablePath: /opt/pw-browsers/chromium`) loaded via `file://`, opened directly against `/home/user/ClaudeAgents/index.html` (no server). All findings below were reproduced live, not inferred from source alone.
+Tested by: Tester agent (rounds 1-3, 6), orchestrator (rounds 4-5, 7 — see notes on each). Method: static code review plus live rendering/interaction testing in a real Chromium instance (Playwright, `executablePath: /opt/pw-browsers/chromium`) loaded via `file://`, opened directly against `/home/user/ClaudeAgents/index.html` (no server). All findings below were reproduced live, not inferred from source alone.
+
+---
+
+# ROUND 7 STATUS (2026-08-23) — v1.1 manager findings closed
+
+The round-6 manager review (verdict: GO WITH FIXES) independently re-derived the chart math correctly and found the extension real and additive, but flagged three issues: (1) MEDIUM — long option/criterion/lever names clip in all three new inline-SVG visuals, and on the bar chart the clipping can eat the ★ recommended marker, the required non-color cue; (2) LOW — the Markdown export's and live UI's reversibility consequence text still said "assumption, trigger, and a premortem" after `reasoning` became a fourth required gating field; (3) LOW — the bar chart's accessible text alternative omitted the "N of M criteria unscored" caveat that the radar chart and visible result cards both include.
+
+**All three fixed directly by the orchestrator** (commit `82e4a98`), given how precisely the manager scoped them:
+
+- Extracted `estLabelWidth` (previously duplicated and lower-capped, 60–260px, only inside the alignment map builder) into a shared top-level helper with a raised ceiling (60–420px), and applied it to size the bar chart's label column and the radar chart's side margins dynamically, instead of the previous fixed widths (170px / centerX=210,width=420). Reproduced the manager's exact repro (an option named "Incremental migration to the new vendor platform" plus a long criterion name) live: verified via `getBBox()` against each SVG's `viewBox` that no text node overflows on either chart, and confirmed visually via screenshot that the ★ marker and full label are intact.
+- Added `unscoredCount`/`criteriaCount` to `DecisionEngine.barChartLayout`'s per-bar output (already computed by the underlying `scoreOption`/`rankOptions`, just not threaded through) and included the caveat in the bar chart's accessible text summary when applicable, matching the radar chart's existing pattern.
+- Updated both the live "Hard to reverse" consequence text (`#reversibility-consequence`) and the Markdown export's Reversibility section to list all four required fields (assumption, trigger, **reasoning**, premortem). Verified live: both now read correctly, and no self-test asserted the old three-field wording (so nothing needed updating there).
+
+**Verification**: `index.html?selftest=1` → `SELFTEST PASS: 66 FAIL: 0`, no regressions. Live Playwright verification of all three fixes (label overflow via `getBBox`, reversibility text via `textContent` and `DecisionEngine.toMarkdown`) confirms each holds.
+
+**Not independently re-reviewed by a fresh manager pass** — the fixes are small, precisely scoped to exactly what was flagged, verified against the manager's own stated repro, and don't touch the multi-rater subsystem or any other previously-fragile area. Given five prior rounds already established the core app's correctness and this extension has now been through one full external review cycle (tester clean pass + manager's three real findings, now closed), re-spending a full manager round on cosmetic/text fixes was judged not worth the cost. Flagging this explicitly rather than silently calling it GO.
 
 ---
 
