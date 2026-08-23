@@ -306,6 +306,246 @@
   }
 
   // ---------------------------------------------------------------------
+  // Word (.docx) export
+  // ---------------------------------------------------------------------
+  function hex6(c) { return String(c || '000000').replace('#', '').toUpperCase(); }
+
+  function buildWordDocument() {
+    const {
+      Document, Paragraph, TextRun, Table, TableRow, TableCell, AlignmentType,
+      WidthType, BorderStyle, ShadingType, VerticalAlign, convertInchesToTwip
+    } = docx;
+
+    const NO_BORDERS = {
+      top: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+      bottom: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+      left: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' },
+      right: { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' }
+    };
+
+    function run(text, opts) {
+      opts = opts || {};
+      return new TextRun({
+        text: text == null ? '' : String(text),
+        bold: !!opts.bold,
+        italics: !!opts.italics,
+        color: opts.color ? hex6(opts.color) : undefined,
+        size: opts.size || 16,
+        font: opts.font || 'Arial'
+      });
+    }
+    function p(textOrRuns, opts) {
+      opts = opts || {};
+      return new Paragraph({
+        children: typeof textOrRuns === 'string' ? [run(textOrRuns, opts)] : textOrRuns,
+        alignment: opts.align,
+        spacing: { before: opts.before || 0, after: opts.after != null ? opts.after : 60 },
+        pageBreakBefore: !!opts.pageBreakBefore
+      });
+    }
+    function cell(children, opts) {
+      opts = opts || {};
+      return new TableCell({
+        children: Array.isArray(children) ? children : [children],
+        width: opts.width != null ? { size: opts.width, type: WidthType.PERCENTAGE } : undefined,
+        shading: opts.fill ? { fill: hex6(opts.fill), type: ShadingType.CLEAR, color: 'auto' } : undefined,
+        borders: opts.noBorder ? NO_BORDERS : undefined,
+        margins: { top: 60, bottom: 60, left: 100, right: 100 },
+        verticalAlign: VerticalAlign.CENTER
+      });
+    }
+    function fullTable(rows, opts) {
+      return new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows,
+        borders: (opts && opts.noBorder) ? NO_BORDERS : undefined
+      });
+    }
+
+    const agg = computeAggregates();
+    const children = [];
+
+    // ---- Cover ----
+    children.push(p(state.settings.eyebrow || '', { size: 15, color: '888888', bold: true, after: 40 }));
+    children.push(new Paragraph({
+      children: [run(state.settings.title || 'Program & Strategy Update', { bold: true, size: 36, color: '1F3864', font: 'Georgia' })],
+      spacing: { after: 40 }
+    }));
+    children.push(p(state.settings.subtitle || '', { size: 18, color: '666666', after: 200 }));
+
+    if (state.settings.summary || state.settings.contactEmail) {
+      const lines = (state.settings.summary || '').split('\n').filter(Boolean);
+      lines.forEach((line, i) => {
+        children.push(new Paragraph({
+          shading: { fill: 'F0F5FB', type: ShadingType.CLEAR, color: 'auto' },
+          border: i === 0 ? { left: { style: BorderStyle.SINGLE, size: 24, color: '185FA5' } } : undefined,
+          children: [run(line, { bold: i === 0, color: i === 0 ? '1F3864' : '333333', size: i === 0 ? 18 : 16 })],
+          spacing: { before: i === 0 ? 100 : 0, after: 60 }
+        }));
+      });
+      if (state.settings.contactName || state.settings.contactEmail) {
+        const parts = [run('Questions or follow-up? Contact ', { color: '555555', size: 16 })];
+        if (state.settings.contactEmail) parts.push(run(state.settings.contactEmail, { bold: true, color: '185FA5', size: 16 }));
+        if (state.settings.contactName) parts.push(run(state.settings.contactEmail ? ` (${state.settings.contactName})` : state.settings.contactName, { color: '555555', size: 16 }));
+        parts.push(run(' directly.', { color: '555555', size: 16 }));
+        children.push(new Paragraph({ shading: { fill: 'F0F5FB', type: ShadingType.CLEAR, color: 'auto' }, children: parts, spacing: { after: 200 } }));
+      }
+    }
+
+    children.push(p('Portfolio at a Glance', { bold: true, color: '1F3864', size: 22, after: 120 }));
+
+    // KPI tiles
+    const kpiVals = [
+      [agg.total, 'Total initiatives', '1F3864'],
+      [agg.active, 'Active & underway', '185FA5'],
+      [agg.earlyWins, 'Early wins (25%+)', '0F6E56'],
+      [agg.pillarCount, 'Strategic pillars', '1F3864']
+    ];
+    children.push(fullTable([new TableRow({
+      children: kpiVals.map(([num, label, color]) => cell([
+        p(String(num), { bold: true, size: 36, color, align: AlignmentType.CENTER, after: 20 }),
+        p(label, { size: 14, color: '777777', align: AlignmentType.CENTER, after: 0 })
+      ], { width: 25, fill: 'F4F6FA' }))
+    })]));
+
+    children.push(p('', { after: 160 }));
+
+    // Average completion by pillar (as a table with shaded "bar" cells)
+    children.push(p('AVERAGE COMPLETION BY PILLAR', { bold: true, size: 14, color: '888888', after: 100 }));
+    const maxAvg = Math.max(25, ...agg.byPillar.map(x => x.avg));
+    const barRows = agg.byPillar.map(x => {
+      const pct = Math.max(2, Math.min(100, Math.round((x.avg / maxAvg) * 100)));
+      const barInner = new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        borders: NO_BORDERS,
+        rows: [new TableRow({
+          children: [
+            cell(p(''), { width: pct, fill: x.color, noBorder: true }),
+            cell(p(''), { width: Math.max(1, 100 - pct), fill: 'F0F2F5', noBorder: true })
+          ]
+        })]
+      });
+      return new TableRow({ children: [
+        cell(p(x.pillar, { bold: true, color: x.color, size: 15 }), { width: 25, noBorder: true }),
+        cell(barInner, { width: 60, noBorder: true }),
+        cell(p(fmtPct(x.avg), { bold: true, size: 15, align: AlignmentType.RIGHT }), { width: 15, noBorder: true })
+      ] });
+    });
+    children.push(fullTable(barRows, { noBorder: true }));
+
+    children.push(p('', { after: 160 }));
+
+    // Portfolio status
+    children.push(p('PORTFOLIO STATUS', { bold: true, size: 14, color: '888888', after: 100 }));
+    const sc = agg.statusCounts;
+    const statusRows = [
+      ['Gaining momentum (25%+)', sc.momentum, '1D9E75'],
+      ['Early stage (1–24%)', sc.progress, '378ADD'],
+      ['Not started', sc.none, 'CCCCCC']
+    ].map(([label, count, color]) => new TableRow({ children: [
+      cell(p(''), { width: 6, fill: color, noBorder: true }),
+      cell(p(`${label}: ${count}`, { size: 15 }), { width: 94, noBorder: true })
+    ] }));
+    children.push(fullTable(statusRows, { noBorder: true }));
+
+    children.push(p('', { after: 160 }));
+
+    // Pillar overview table
+    children.push(p('Pillar Overview', { bold: true, color: '1F3864', size: 22, after: 120 }));
+    const overviewHeader = new TableRow({ children: [
+      cell(p('Pillar', { bold: true, color: 'FFFFFF' }), { width: 20, fill: '1F3864' }),
+      cell(p('Count', { bold: true, color: 'FFFFFF' }), { width: 10, fill: '1F3864' }),
+      cell(p('Avg %', { bold: true, color: 'FFFFFF' }), { width: 11, fill: '1F3864' }),
+      cell(p('Top performing initiative', { bold: true, color: 'FFFFFF' }), { width: 59, fill: '1F3864' })
+    ] });
+    const overviewRows = agg.byPillar.map(x => new TableRow({ children: [
+      cell(p(x.pillar, { bold: true, color: x.color }), { width: 20, fill: pillarTint(x.pillar) }),
+      cell(p(String(x.count)), { width: 10 }),
+      cell(p(fmtPct(x.avg), { bold: true, color: avgTierColor(x.avg) }), { width: 11 }),
+      cell(p(x.top ? `${x.top.project} — ${fmtPct(x.top.pct)}` : '—'), { width: 59 })
+    ] }));
+    children.push(fullTable([overviewHeader].concat(overviewRows)));
+
+    // Early wins
+    const wins = state.rows.filter(r => r.pct >= 25).sort((a, b) => b.pct - a.pct);
+    if (wins.length) {
+      children.push(p('★ Early wins — initiatives at 25%+', { bold: true, color: '555555', size: 15, before: 300, after: 120 }));
+      const wHeader = new TableRow({ children: [
+        cell(p('Initiative', { bold: true, color: 'FFFFFF' }), { width: 40, fill: '5F5E5A' }),
+        cell(p('Pillar · Project Manager', { bold: true, color: 'FFFFFF' }), { width: 40, fill: '5F5E5A' }),
+        cell(p('%', { bold: true, color: 'FFFFFF' }), { width: 20, fill: '5F5E5A' })
+      ] });
+      const wRows = wins.map(r => new TableRow({ children: [
+        cell(p(r.project, { bold: true })),
+        cell(p(`${r.pillar}${r.pm ? ' · ' + r.pm : ''}`, { color: '888888' })),
+        cell(p(fmtPct(r.pct), { bold: true }))
+      ] }));
+      children.push(fullTable([wHeader].concat(wRows)));
+    }
+
+    // Coming up / milestones
+    const milestoneRows = state.milestones.filter(m => m.when || m.text);
+    if (milestoneRows.length) {
+      children.push(p(state.settings.milestonesTitle || 'Coming Up', { bold: true, color: '1F3864', size: 22, before: 300, after: 80 }));
+      if (state.settings.milestonesIntro) children.push(p(state.settings.milestonesIntro, { color: '555555', size: 16, after: 120 }));
+      const mRows = milestoneRows.map(m => new TableRow({ children: [
+        cell(p(m.when || '', { bold: true, color: '185FA5' }), { width: 20 }),
+        cell(p(m.text || ''), { width: 80 })
+      ] }));
+      children.push(fullTable(mRows));
+    }
+
+    // Per-pillar detail tables (each starts on a fresh page)
+    agg.pillars.forEach(pillar => {
+      const items = state.rows.filter(r => r.pillar === pillar);
+      if (!items.length) return;
+      const pAgg = agg.byPillar.find(x => x.pillar === pillar);
+      children.push(new Paragraph({
+        children: [
+          run(pillar, { bold: true, color: pAgg.color, size: 22 }),
+          run(`   |   ${items.length} initiative${items.length === 1 ? '' : 's'} · ${fmtPct(pAgg.avg)} avg completion`, { color: '888888', size: 15 })
+        ],
+        spacing: { before: 0, after: 120 },
+        pageBreakBefore: true
+      }));
+      const dHeader = new TableRow({ children: [
+        cell(p('Initiative', { bold: true, color: 'FFFFFF' }), { width: 26, fill: pAgg.color }),
+        cell(p('Project Manager', { bold: true, color: 'FFFFFF' }), { width: 13, fill: pAgg.color }),
+        cell(p('%', { bold: true, color: 'FFFFFF' }), { width: 7, fill: pAgg.color }),
+        cell(p('Status', { bold: true, color: 'FFFFFF' }), { width: 18, fill: pAgg.color }),
+        cell(p('Key update', { bold: true, color: 'FFFFFF' }), { width: 36, fill: pAgg.color })
+      ] });
+      const dRows = items.map(r => {
+        const s = statusFor(r.pct);
+        const statusColor = s.cls === 'status-momentum' ? '0F6E56' : (s.cls === 'status-progress' ? '185FA5' : '999999');
+        return new TableRow({ children: [
+          cell(p(r.project, { bold: s.cls === 'status-momentum' })),
+          cell(p(r.pm || '—', { color: '555555' })),
+          cell(p(fmtPct(r.pct), { bold: true })),
+          cell(p(s.label, { bold: true, color: statusColor, size: 15 })),
+          cell(p(r.updates || '—', { color: '555555' }))
+        ] });
+      });
+      children.push(fullTable([dHeader].concat(dRows)));
+    });
+
+    return new Document({
+      sections: [{
+        properties: {
+          page: {
+            size: { width: convertInchesToTwip(8.5), height: convertInchesToTwip(11) },
+            margin: {
+              top: convertInchesToTwip(0.56), bottom: convertInchesToTwip(0.56),
+              left: convertInchesToTwip(0.56), right: convertInchesToTwip(0.56)
+            }
+          }
+        },
+        children
+      }]
+    });
+  }
+
+  // ---------------------------------------------------------------------
   // File download helpers
   // ---------------------------------------------------------------------
   function downloadBlob(filename, blob) {
@@ -768,6 +1008,14 @@
     return false;
   }
 
+  function checkDocxAvailable() {
+    if (typeof docx !== 'undefined') return true;
+    const btn = document.getElementById('btnExportWord');
+    btn.disabled = true;
+    btn.title = 'The Word export library failed to load (no internet connection?).';
+    return false;
+  }
+
   function init() {
     load();
     renderEditor();
@@ -777,6 +1025,7 @@
     wireSettingsForm();
     renderReport();
     checkXlsxAvailable();
+    checkDocxAvailable();
 
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => switchTab(btn.dataset.view));
@@ -863,6 +1112,18 @@
 
     document.getElementById('btnExportPdf').addEventListener('click', () => {
       window.print();
+    });
+
+    document.getElementById('btnExportWord').addEventListener('click', () => {
+      if (typeof docx === 'undefined') {
+        showImportStatus('The Word export library is unavailable (no internet connection?).', true);
+        return;
+      }
+      docx.Packer.toBlob(buildWordDocument()).then(blob => {
+        downloadBlob(`report-${timestamp()}.docx`, blob);
+      }).catch(err => {
+        showImportStatus(`Word export failed: ${err.message}`, true);
+      });
     });
 
     document.getElementById('btnImport').addEventListener('click', () => {

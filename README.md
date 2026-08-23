@@ -43,12 +43,13 @@ runs client-side; data is kept only in the browser's local storage and in
 files you explicitly export — nothing is uploaded anywhere.
 
 The XLSX import/export/template features load the
-[SheetJS](https://sheetjs.com) library from a CDN (`cdn.jsdelivr.net`, with
-a Subresource Integrity hash pinned in `index.html`), so those specific
+[SheetJS](https://sheetjs.com) library, and the Word export loads the
+[docx](https://docx.js.org) library, each from a CDN (`cdn.jsdelivr.net`,
+with a Subresource Integrity hash pinned in `index.html`), so those specific
 buttons need one outbound request on first load. Everything else — the
 editor, the report, PDF export, and CSV import/export — works fully offline
-even without that request succeeding; the app detects a failed load and
-disables just the XLSX buttons with an explanatory message.
+even without those requests succeeding; the app detects a failed load and
+disables just the affected buttons with an explanatory message.
 
 - **Data Editor** — an editable table of initiatives: Strategic Pillar,
   Project Name, Accomplishments/Updates, Approximate Completion Percentage,
@@ -70,3 +71,8 @@ disables just the XLSX buttons with an explanatory message.
 - **Export PDF** — opens the browser's print dialog against a print-only
   layout of the report; choose "Save as PDF" (or print) for a paginated,
   vector-quality PDF matching the on-screen report.
+- **Export Word (.docx)** — generates a real, editable Word document
+  covering the same content (cover/summary, KPI tiles, average-completion
+  chart as a shaded table, portfolio status, pillar overview, early wins,
+  milestones, and one table per pillar with a page break between each) so
+  it can be opened and modified directly in Word.
