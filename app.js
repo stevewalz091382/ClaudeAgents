@@ -46,15 +46,25 @@
     'Digital Platforms', 'Data', 'Technology Innovation',
     'Quality', 'Execution & Delivery', 'Implementation'
   ];
+  // Exact hex values extracted from the reference report's PDF (text + fill colors).
   const PILLAR_COLORS = {
-    'Digital Platforms': '#1d4ed8',
-    'Data': '#15803d',
-    'Technology Innovation': '#6d28d9',
-    'Quality': '#9a3324',
-    'Execution & Delivery': '#c2760c',
-    'Implementation': '#52525b'
+    'Digital Platforms': '#185fa5',
+    'Data': '#0f6e56',
+    'Technology Innovation': '#534ab7',
+    'Quality': '#993c1d',
+    'Execution & Delivery': '#ba7517',
+    'Implementation': '#5f5e5a'
+  };
+  const PILLAR_TINTS = {
+    'Digital Platforms': '#ddeaf7',
+    'Data': '#d6efe6',
+    'Technology Innovation': '#e3e1f4',
+    'Quality': '#f1ddd5',
+    'Execution & Delivery': '#f5ead5',
+    'Implementation': '#e7e7e5'
   };
   const FALLBACK_PALETTE = ['#0891b2', '#be185d', '#4d7c0f', '#a16207', '#334155', '#7c2d12', '#0f766e', '#b91c1c'];
+  const FALLBACK_TINT_PALETTE = ['#d9eef2', '#fbe1ec', '#e6efd8', '#f4e9d3', '#dee1e6', '#f1ddd0', '#d7ece7', '#f7dcdc'];
 
   const STORAGE_KEY = 'reportBuilder.v1';
 
@@ -71,7 +81,9 @@
       subtitle: 'Executive Leadership Summary',
       summary: '',
       contactName: '',
-      contactEmail: ''
+      contactEmail: '',
+      milestonesTitle: 'Coming Up',
+      milestonesIntro: ''
     }
   };
 
@@ -110,6 +122,21 @@
     const extra = getExtraPillars();
     const idx = extra.indexOf(pillar);
     return FALLBACK_PALETTE[(idx >= 0 ? idx : (indexHint || 0)) % FALLBACK_PALETTE.length];
+  }
+
+  function pillarTint(pillar, indexHint) {
+    if (PILLAR_TINTS[pillar]) return PILLAR_TINTS[pillar];
+    const extra = getExtraPillars();
+    const idx = extra.indexOf(pillar);
+    return FALLBACK_TINT_PALETTE[(idx >= 0 ? idx : (indexHint || 0)) % FALLBACK_TINT_PALETTE.length];
+  }
+
+  // Avg-completion tier color used only in the Pillar Overview table, matching
+  // the reference report: <10% gray, 10-19% blue, >=20% green.
+  function avgTierColor(avg) {
+    if (avg >= 20) return '#0f6e56';
+    if (avg >= 10) return '#185fa5';
+    return '#888888';
   }
 
   function getExtraPillars() {
@@ -428,12 +455,15 @@
     document.getElementById('setSummary').value = state.settings.summary || '';
     document.getElementById('setContactName').value = state.settings.contactName || '';
     document.getElementById('setContactEmail').value = state.settings.contactEmail || '';
+    document.getElementById('setMilestonesTitle').value = state.settings.milestonesTitle || '';
+    document.getElementById('setMilestonesIntro').value = state.settings.milestonesIntro || '';
   }
 
   function wireSettingsForm() {
     const map = {
       setEyebrow: 'eyebrow', setTitle: 'title', setSubtitle: 'subtitle',
-      setSummary: 'summary', setContactName: 'contactName', setContactEmail: 'contactEmail'
+      setSummary: 'summary', setContactName: 'contactName', setContactEmail: 'contactEmail',
+      setMilestonesTitle: 'milestonesTitle', setMilestonesIntro: 'milestonesIntro'
     };
     Object.keys(map).forEach(id => {
       document.getElementById(id).addEventListener('input', (e) => {
@@ -477,12 +507,16 @@
   // ---------------------------------------------------------------------
   function fmtPct(n) { return `${n}%`; }
 
+  // Fixed KPI tile accent colors, left to right, matching the reference report.
+  const KPI_COLORS = ['#1f3864', '#185fa5', '#0f6e56', '#1f3864'];
+  const DONUT_COLORS = { momentum: '#1d9e75', progress: '#378add', none: '#cccccc' };
+
   function renderReport() {
     const root = document.getElementById('reportRoot');
     root.innerHTML = '';
     const agg = computeAggregates();
 
-    // ---- Cover / summary section ----
+    // ---- Cover / summary section (always starts its own printed page) ----
     const cover = el('section', { class: 'r-page r-cover' });
     cover.appendChild(el('div', { class: 'r-eyebrow', text: state.settings.eyebrow || '' }));
     cover.appendChild(el('h1', { class: 'r-title', text: state.settings.title || 'Program & Strategy Update' }));
@@ -491,21 +525,27 @@
 
     if (state.settings.summary || state.settings.contactEmail) {
       const box = el('div', { class: 'r-summary-box' });
-      (state.settings.summary || '').split('\n').filter(Boolean).forEach(line => {
-        box.appendChild(el('p', { text: line }));
+      const lines = (state.settings.summary || '').split('\n').filter(Boolean);
+      lines.forEach((line, i) => {
+        box.appendChild(el('p', { class: i === 0 ? 'r-summary-lead' : '', text: line }));
       });
       if (state.settings.contactName || state.settings.contactEmail) {
         const p = el('p', { class: 'r-contact' });
         p.appendChild(document.createTextNode('Questions or follow-up? Contact '));
-        const strong = el('strong', { text: state.settings.contactName || state.settings.contactEmail || '' });
-        p.appendChild(strong);
         if (state.settings.contactEmail) {
-          p.appendChild(document.createTextNode(' — ' + state.settings.contactEmail));
+          const strong = el('strong', { text: state.settings.contactEmail });
+          p.appendChild(strong);
         }
+        if (state.settings.contactName) {
+          p.appendChild(document.createTextNode(state.settings.contactEmail ? ' (' + state.settings.contactName + ')' : state.settings.contactName));
+        }
+        p.appendChild(document.createTextNode(' directly.'));
         box.appendChild(p);
       }
       cover.appendChild(box);
     }
+
+    cover.appendChild(el('div', { class: 'r-section-title', text: 'Portfolio at a Glance' }));
 
     // KPI tiles
     const tiles = el('div', { class: 'r-tiles' });
@@ -514,9 +554,9 @@
       [agg.active, 'Active & underway'],
       [agg.earlyWins, 'Early wins (25%+)'],
       [agg.pillarCount, 'Strategic pillars']
-    ].forEach(([num, label]) => {
+    ].forEach(([num, label], i) => {
       tiles.appendChild(el('div', { class: 'r-tile' }, [
-        el('div', { class: 'r-tile-num', text: String(num) }),
+        el('div', { class: 'r-tile-num', style: `color:${KPI_COLORS[i]}`, text: String(num) }),
         el('div', { class: 'r-tile-label', text: label })
       ]));
     });
@@ -529,19 +569,31 @@
     barBox.appendChild(el('div', { class: 'r-chart-title', text: 'AVERAGE COMPLETION BY PILLAR' }));
     const barChart = el('div', { class: 'r-barchart' });
     const maxAvg = Math.max(25, ...agg.byPillar.map(p => p.avg));
+    const axisMax = Math.ceil(maxAvg / 5) * 5;
     agg.byPillar.forEach(p => {
       const row = el('div', { class: 'r-bar-row' });
       row.appendChild(el('div', { class: 'r-bar-label', text: p.pillar, style: `color:${p.color}` }));
       const track = el('div', { class: 'r-bar-track' });
+      const pctOfMax = Math.min(100, (p.avg / axisMax) * 100);
       const fill = el('div', { class: 'r-bar-fill' });
-      fill.style.width = Math.min(100, (p.avg / maxAvg) * 100) + '%';
+      fill.style.width = pctOfMax + '%';
       fill.style.background = p.color;
+      const value = el('div', { class: 'r-bar-value', text: fmtPct(p.avg) });
+      value.style.left = `calc(${pctOfMax}% + 4pt)`;
       track.appendChild(fill);
+      track.appendChild(value);
       row.appendChild(track);
-      row.appendChild(el('div', { class: 'r-bar-value', text: fmtPct(p.avg) }));
       barChart.appendChild(row);
     });
     barBox.appendChild(barChart);
+    const axis = el('div', { class: 'r-bar-axis' });
+    axis.appendChild(el('div', { class: 'r-bar-axis-spacer' }));
+    const ticks = el('div', { class: 'r-bar-axis-ticks' });
+    for (let t = 0; t <= axisMax; t += axisMax / 5) {
+      ticks.appendChild(el('span', { text: Math.round(t) + '%' }));
+    }
+    axis.appendChild(ticks);
+    barBox.appendChild(axis);
     chartsRow.appendChild(barBox);
 
     const donutBox = el('div', { class: 'r-chart-box r-donut-box' });
@@ -552,7 +604,7 @@
     const momentumDeg = (sc.momentum / totalForDonut) * 360;
     const progressDeg = (sc.progress / totalForDonut) * 360;
     const donut = el('div', { class: 'r-donut' });
-    donut.style.background = `conic-gradient(#16a34a 0deg ${momentumDeg}deg, #2563eb ${momentumDeg}deg ${momentumDeg + progressDeg}deg, #d1d5db ${momentumDeg + progressDeg}deg 360deg)`;
+    donut.style.background = `conic-gradient(${DONUT_COLORS.momentum} 0deg ${momentumDeg}deg, ${DONUT_COLORS.progress} ${momentumDeg}deg ${momentumDeg + progressDeg}deg, ${DONUT_COLORS.none} ${momentumDeg + progressDeg}deg 360deg)`;
     const donutHole = el('div', { class: 'r-donut-hole' }, [
       el('div', { class: 'r-donut-num', text: String(agg.total) }),
       el('div', { class: 'r-donut-label', text: 'initiatives' })
@@ -560,9 +612,9 @@
     donut.appendChild(donutHole);
     donutWrap.appendChild(donut);
     const legend = el('div', { class: 'r-legend' }, [
-      legendItem('#16a34a', `Gaining momentum (25%+): ${sc.momentum}`),
-      legendItem('#2563eb', `Early stage (1–24%): ${sc.progress}`),
-      legendItem('#d1d5db', `Not started: ${sc.none}`)
+      legendItem(DONUT_COLORS.momentum, `Gaining momentum (25%+): ${sc.momentum}`),
+      legendItem(DONUT_COLORS.progress, `Early stage (1–24%): ${sc.progress}`),
+      legendItem(DONUT_COLORS.none, `Not started: ${sc.none}`)
     ]);
     donutWrap.appendChild(legend);
     donutBox.appendChild(donutWrap);
@@ -572,7 +624,7 @@
 
     // Pillar overview table
     cover.appendChild(el('div', { class: 'r-section-title', text: 'Pillar Overview' }));
-    const table = el('table', { class: 'r-table' });
+    const table = el('table', { class: 'r-table r-overview-table' });
     const thead = el('thead', {}, [el('tr', {}, [
       el('th', { text: 'Pillar' }), el('th', { text: 'Count' }), el('th', { text: 'Avg %' }), el('th', { text: 'Top performing initiative' })
     ])]);
@@ -580,11 +632,11 @@
     const tbody = el('tbody');
     agg.byPillar.forEach(p => {
       const tr = el('tr');
-      const nameTd = el('td', { class: 'r-pillar-name', style: `color:${p.color}`, text: p.pillar });
+      const nameTd = el('td', { class: 'r-pillar-name', style: `color:${p.color};background:${pillarTint(p.pillar)}`, text: p.pillar });
       tr.appendChild(nameTd);
-      tr.appendChild(el('td', { text: String(p.count) }));
-      tr.appendChild(el('td', { text: fmtPct(p.avg) }));
-      tr.appendChild(el('td', { text: p.top ? `${p.top.project} — ${fmtPct(p.top.pct)}` : '—' }));
+      tr.appendChild(el('td', { class: 'r-count-cell', text: String(p.count) }));
+      tr.appendChild(el('td', { class: 'r-avg-cell', style: `color:${avgTierColor(p.avg)}`, text: fmtPct(p.avg) }));
+      tr.appendChild(el('td', { class: 'r-top-cell', text: p.top ? `${p.top.project} — ${fmtPct(p.top.pct)}` : '—' }));
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
@@ -595,8 +647,10 @@
     // ---- Early wins ----
     const wins = state.rows.filter(r => r.pct >= 25).sort((a, b) => b.pct - a.pct);
     if (wins.length) {
-      const sec = el('section', { class: 'r-page' });
-      sec.appendChild(el('div', { class: 'r-section-title', text: `Early wins — initiatives at 25%+` }));
+      const wrap = el('div', { class: 'r-earlywins' });
+      wrap.appendChild(el('div', { class: 'r-earlywins-title' }, [
+        document.createTextNode('★ Early wins — initiatives at 25%+')
+      ]));
       const grid = el('div', { class: 'r-cards' });
       wins.forEach(r => {
         const card = el('div', { class: 'r-card' });
@@ -608,19 +662,21 @@
         const bar = el('div', { class: 'r-card-bar' });
         const fill = el('div', { class: 'r-card-bar-fill' });
         fill.style.width = r.pct + '%';
-        fill.style.background = pillarColor(r.pillar);
         bar.appendChild(fill);
         card.appendChild(bar);
         grid.appendChild(card);
       });
-      sec.appendChild(grid);
-      root.appendChild(sec);
+      wrap.appendChild(grid);
+      root.appendChild(wrap);
     }
 
     // ---- Coming up / milestones ----
     if (state.milestones.length) {
-      const sec = el('section', { class: 'r-page' });
-      sec.appendChild(el('div', { class: 'r-section-title', text: 'Coming Up' }));
+      const sec = el('section', { class: 'r-block' });
+      sec.appendChild(el('div', { class: 'r-section-title', text: state.settings.milestonesTitle || 'Coming Up' }));
+      if (state.settings.milestonesIntro) {
+        sec.appendChild(el('p', { class: 'r-block-intro', text: state.settings.milestonesIntro }));
+      }
       const mtable = el('table', { class: 'r-table r-milestone-table' });
       const mbody = el('tbody');
       state.milestones.forEach(m => {
@@ -640,11 +696,10 @@
       const items = state.rows.filter(r => r.pillar === pillar);
       if (!items.length) return;
       const pAgg = agg.byPillar.find(p => p.pillar === pillar);
-      const sec = el('section', { class: 'r-page r-pillar-section' });
+      const sec = el('section', { class: 'r-block r-pillar-section' });
       const head = el('div', { class: 'r-pillar-head', style: `border-color:${pAgg.color}` });
-      head.appendChild(el('span', { class: 'r-pillar-swatch', style: `background:${pAgg.color}` }));
-      head.appendChild(el('span', { class: 'r-pillar-head-name', text: pillar }));
-      head.appendChild(el('span', { class: 'r-pillar-head-meta', text: `${items.length} initiative${items.length === 1 ? '' : 's'} · ${fmtPct(pAgg.avg)} avg completion` }));
+      head.appendChild(el('span', { class: 'r-pillar-head-name', style: `color:${pAgg.color}`, text: pillar }));
+      head.appendChild(el('span', { class: 'r-pillar-head-meta', text: `| ${items.length} initiative${items.length === 1 ? '' : 's'} · ${fmtPct(pAgg.avg)} avg completion` }));
       sec.appendChild(head);
 
       const dtable = el('table', { class: 'r-table r-detail-table' });
@@ -657,11 +712,8 @@
       items.forEach(r => {
         const s = statusFor(r.pct);
         const tr = el('tr');
-        const nameTd = el('td', { class: 'r-detail-name' });
-        nameTd.appendChild(el('div', { class: 'r-detail-project', text: r.project }));
-        if (r.description) nameTd.appendChild(el('div', { class: 'r-detail-desc', text: r.description }));
-        tr.appendChild(nameTd);
-        tr.appendChild(el('td', { text: r.pm || '—' }));
+        tr.appendChild(el('td', { class: 'r-detail-name' + (s.cls === 'status-momentum' ? ' r-detail-name-bold' : ''), text: r.project }));
+        tr.appendChild(el('td', { class: 'r-detail-pm', text: r.pm || '—' }));
         tr.appendChild(el('td', { class: 'r-detail-pct', text: fmtPct(r.pct) }));
         tr.appendChild(el('td', {}, [el('span', { class: 'r-status-pill ' + s.cls, text: s.label })]));
         tr.appendChild(el('td', { class: 'r-detail-update', text: r.updates || '—' }));
@@ -762,6 +814,8 @@
         state.settings.title = 'Program & Strategy Update';
         state.settings.subtitle = 'Executive Leadership Summary — Sample Data';
         state.settings.summary = 'This is sample data loaded to demonstrate the report builder.\nReplace it by clearing all data and importing your own CSV or XLSX file.';
+        state.settings.milestonesTitle = 'Coming Up: June & July 2026';
+        state.settings.milestonesIntro = 'The next 6–8 weeks are loaded with high-visibility milestones. Several initiatives in scoping or preparation are set to launch.';
       }
       save();
       renderEditor();
@@ -774,7 +828,7 @@
 
     document.getElementById('btnClearAll').addEventListener('click', () => {
       if (!confirm('Clear all initiatives, milestones, and report settings? This cannot be undone.')) return;
-      state = { rows: [], milestones: [], settings: { eyebrow: '', title: '', subtitle: '', summary: '', contactName: '', contactEmail: '' } };
+      state = { rows: [], milestones: [], settings: { eyebrow: '', title: '', subtitle: '', summary: '', contactName: '', contactEmail: '', milestonesTitle: 'Coming Up', milestonesIntro: '' } };
       save();
       renderEditor();
       renderPillarDatalist();
