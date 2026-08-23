@@ -228,3 +228,67 @@ These are the Tester's target. Each must be verifiable by opening the file direc
 6. **Multi-rater surface area.** Even in the "scoring as" design, it roughly doubles the matrix's state paths. If it threatens the core flow's quality during implementation, ship it hidden behind the toggle exactly as specified and do not expand it further.
 7. **Open question (non-blocking, deferred to v2).** No sensitivity analysis: the app flags a close call but does not tell the user which weight change would flip the result. Explicitly out of scope per the Q9 default.
 8. **Open question (non-blocking).** Nothing in the plan versions or timestamps a *decided* decision — the revisit trigger is recorded but never surfaces again. A future "decisions due for review" view would close that loop; out of scope for v1.
+
+---
+
+## Extension: Levers, Reasoning, and Charts (v1.1)
+
+Source: the user supplied the novel *Load-Bearing* (the book the framework in this project's context was excerpted from) and asked for two gaps to be closed, plus the tool made more visual, matching what the book's Chapter 5 ("What the Business Is Actually Buying") and Chapter 7 ("Deciding Without a Right Answer") describe and what the Atlas appendix depicts as hand-drawn diagrams. Scope call made by the orchestrator: the book's Ceiling (depth/leverage) and Ledger (output/outcome) sketches are about personal career leverage, not about evaluating options between alternatives, so they don't fit this tool and are excluded. The **Strategy Alignment Map** (initiatives traced to the levers leadership is actually measured on) and the scoring visualizations are what's in scope, since both map directly onto what this tool already does: score options against criteria.
+
+### New requirements
+
+- [ ] E1. **Levers list.** A decision gains an optional, small named list of levers (e.g. "Cost certainty," "Visible win before the vote"), managed like the existing Raters list (add/rename/delete), capped at 8. Matches the book's "leadership is measured on five or six levers."
+- [ ] E2. **Criterion → lever mapping.** Each criterion gets an optional single-select "Serves lever" dropdown (one of the decision's levers, or "No lever"). A criterion with no lever assigned is an **orphan** per the book's usage ("orphans connect to no lever, kill or connect, no third option"). This is a single-select simplification of the book's many-to-many map — deliberate, to keep the UI a dropdown per criterion rather than an NxM checkbox grid.
+- [ ] E3. **Lever Alignment Map** — a new subsection under Criteria (or its own step) rendering an inline-SVG bipartite diagram: levers in one column, criteria in the other, a line connecting each criterion to its lever. Orphan criteria (no lever) are visually flagged (e.g. a dashed stub with a warning color, no line to any lever). Levers with zero incoming criteria are visually flagged as **unserved** (per the book: "a lever no initiative serves is an opportunity, not a gap") — different visual treatment from an orphan criterion, since the two are opposite problems. Updates live as criteria/levers/mappings change. If there are zero levers defined, show an empty state explaining what the map is for rather than an empty diagram.
+- [ ] E4. **Reasoning field.** Add a `reasoning` free-text field to the decision (alongside the existing load-bearing assumption and revisit trigger, in "1. Frame the decision"), matching the book's four-part decision record (decided / alternatives / assumptions / **reasoning**) — the connective narrative from assumptions to the choice, distinct from the assumption itself. Include it in export gating: when reversibility is "Hard to reverse," `reasoning` becomes a required field alongside the existing three (assumption, trigger, top option's premortem). Include it in the Markdown decision record, positioned after "Recommendation" and before "Load-bearing assumption."
+- [ ] E5. **Ranked results bar chart.** Replace or augment the current ranked list in "5. Result" with an inline-SVG horizontal bar chart, one bar per option, length proportional to weighted total (0–10 scale), labeled with the option name and total, recommended option visually distinguished (not by color alone — also a badge/marker, consistent with N5's existing color-blindness rule). Show the close-call margin visually when it applies (e.g. a bracket or tick between the top two bars), not just as the existing text banner.
+- [ ] E6. **Criteria comparison radar/spider chart.** A new inline-SVG radar chart in "5. Result," one axis per criterion (using each option's effective per-criterion score, 1–10 scale, already computed by `cellValue`), one polygon per option, overlaid, with a legend mapping polygon style (not color alone) to option name. This is the tool's answer to "which option wins on which dimension," genuinely new insight beyond the existing text breakdown table. Only render when there are at least 3 criteria (a radar chart with 1–2 axes is degenerate); show a short note instead below that threshold.
+- [ ] E7. Both new charts and the alignment map must update live on every relevant input change, matching the rest of the app's live-recompute behavior, and must not cause the focus/caret-loss regression class from A15 — they render in the read-only Results/Criteria areas, which are not text-input-focusable, so this should be low-risk, but must be verified.
+
+### Non-functional additions
+
+- [ ] E8. All new charts/diagrams are inline SVG, hand-built with plain JS (no chart library, no CDN, no network — consistent with N1/N2). Must render correctly in the existing dark/light-agnostic, `file://`, no-network constraints.
+- [ ] E9. Charts must be keyboard/screen-reader accessible per N5: an `aria-label` or adjacent visually-hidden text summarizing what the chart shows in words (e.g. "Bar chart: Option B leads at 8.0 of 10, Option A at 2.0 of 10"), since SVG shapes alone aren't screen-reader-legible. Data must also remain available in the existing text form (the breakdown table, the ranked list) — charts are additive, not a replacement for the accessible text representation.
+- [ ] E10. Must not regress any of the existing 41 self-test assertions or A1–A20 acceptance criteria. New pure logic (lever-orphan detection, unserved-lever detection, chart coordinate/scaling math) should get self-test coverage of its own where it's non-trivial (e.g. an orphan/unserved-lever detector, and the radar-chart point-generation math for a known input).
+- [ ] E11. `toSessionJSON`/`fromSessionJSON`/`migrate`/`repairDecision` must be extended to cover `levers` and each criterion's `leverId`, and `reasoning`, with the same repair/backward-compatibility discipline as every other field (a decision saved before this extension, with no `levers` array and no `reasoning` field, must load cleanly with `levers: []`, every criterion's `leverId: null`, and `reasoning: ''`).
+
+### Data model additions
+
+```
+Decision gains:
+  reasoning: string
+  levers: Lever[]            // capped at 8, like raters
+
+Lever { id, name: string, weight: 1..10 }   // weight: same slider pattern as Rater weight, but the model does not (yet) do "outcome, not activity" weighted scoring by lever value in v1.1 — it is a
+                                              // future direction, not required here. Keep it if easy, but the alignment map itself (E3) does not depend on lever weight, only lever identity.
+Criterion gains:
+  leverId: string | null      // null = orphan (no lever assigned)
+```
+
+Note on `Lever.weight`: it is optional scope — E3's alignment map only needs lever *names*, not weights. Do not let a lever-weighting feature expand this extension's surface; if it adds complexity, cut it and keep `Lever` as just `{ id, name }`.
+
+### Task breakdown (extends the original task list)
+
+1. Data model: `Lever` factory/repair function, `levers` and `reasoning` on `Decision`, `leverId` on `Criterion`, all wired through `repairDecision`/`migrate`/`fromSessionJSON`/`toSessionJSON` per E11.
+2. Levers UI: add/rename/delete list (reuse the Raters-panel UI pattern), capped at 8.
+3. Criterion "Serves lever" dropdown, populated from the decision's levers, defaulting to "No lever."
+4. Pure engine function(s) for orphan-criteria and unserved-lever detection, self-tested.
+5. Lever Alignment Map SVG rendering, live-updating, with the empty state and both flagged states (orphan criterion, unserved lever).
+6. Reasoning field UI in "1. Frame the decision," wired to state/store.
+7. Export gating (E4) and Markdown export (E4) updated for `reasoning`.
+8. Ranked results bar chart (E5), live-updating, with the accessible text summary (E9).
+9. Criteria comparison radar chart (E6), live-updating, with the 3-criteria-minimum guard and accessible text summary (E9).
+10. Full self-test pass plus a manual walkthrough of the new UI; confirm no regression in the existing 41 assertions.
+
+### Acceptance criteria (extends A1–A20)
+
+- **E-A1.** A criterion with no lever assigned renders as a visually flagged orphan in the alignment map; assigning it a lever removes the flag and draws the connecting line, live, without a page reload.
+- **E-A2.** A lever with no criteria assigned to it renders as a visually flagged "unserved" lever in the alignment map, distinguishable from the orphan-criterion flag (different treatment, since they're opposite problems).
+- **E-A3.** With reversibility set to "Hard to reverse," `reasoning` empty blocks export and appears in the missing-items checklist (per the existing F12 gating pattern); filling it (alongside the other three) enables export.
+- **E-A4.** The Markdown export contains a "Reasoning" section, positioned after the recommendation and before the load-bearing assumption, when `reasoning` is non-empty.
+- **E-A5.** The ranked results bar chart's bar lengths are proportional to each option's actual computed total (spot-checkable against the existing breakdown table's numbers) and the recommended option is distinguishable by more than color.
+- **E-A6.** The radar chart's per-axis position for each option matches that option's `cellValue` for that criterion (spot-checkable), and it does not render (shows the fallback note instead) with fewer than 3 criteria.
+- **E-A7.** Deleting a lever that criteria reference reassigns those criteria to "No lever" (orphan) rather than leaving a dangling `leverId`, mirroring the existing criterion/option/rater deletion-pruning discipline.
+- **E-A8.** A session saved before this extension (no `levers`, no `reasoning`, criteria with no `leverId`) imports/loads cleanly with sensible defaults and no thrown errors.
+- **E-A9.** All charts and the alignment map have an accessible text alternative (E9) confirmed present via the DOM (not just visually).
+- **E-A10.** The full existing self-test suite (41 assertions) still reports 0 failures, and a manual pass confirms A15 (focus/caret preservation) is unaffected by the new live-updating charts.
