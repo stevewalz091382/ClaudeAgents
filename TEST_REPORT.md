@@ -1,6 +1,51 @@
 # TEST_REPORT.md — Weighted Decision Engine (`index.html`)
 
-Tested by: Tester agent. Method: static code review plus live rendering/interaction testing in a real Chromium instance (Playwright, `executablePath: /opt/pw-browsers/chromium`) loaded via `file://`, opened directly against `/home/user/ClaudeAgents/index.html` (no server). All findings below were reproduced live, not inferred from source alone.
+Tested by: Tester agent (rounds 1-3), orchestrator (round 4 — the round-4 tester subagent hit an account-level API session limit mid-task and could not finish; the orchestrator completed the verification directly). Method: static code review plus live rendering/interaction testing in a real Chromium instance (Playwright, `executablePath: /opt/pw-browsers/chromium`) loaded via `file://`, opened directly against `/home/user/ClaudeAgents/index.html` (no server). All findings below were reproduced live, not inferred from source alone.
+
+---
+
+# ROUND 4 STATUS (2026-08-23) — closing verification after the repairDecision fix (C2-R3)
+
+Driver scripts: `/tmp/claude-0/-home-user-ClaudeAgents/2c19d920-0d83-5ba7-a188-5f5447493b4c/scratchpad/final_verify.js`, `final_verify2.js`, `final_verify3.js`.
+
+**Verdict up front: C2-R3 is closed, and I could not find a fifth door into the rater-invariant failure class after specifically probing for one. Self-tests hold at 36/36. Recommend GO.**
+
+## What was verified
+
+1. **Self-test**: `index.html?selftest=1` → `SELFTEST PASS: 36 FAIL: 0`, zero page errors. Matches the coder's claim from the C2-R3 fix.
+
+2. **A 4th door was specifically probed and found closed: hand-edited/corrupted localStorage, not just Import.** Round 3 verified the fix via the Import (F14) file-picker path (`fromSessionJSON`). This round targeted the other realistic entry point — a decision written directly into `localStorage['decisionEngine.v1']` (e.g. hand-edited, or corrupted by an external tool) with `multiRater: true` and a single non-`r_me` rater holding real scores, loaded via page navigation (not import) so it goes through `Store.load()` → `DecisionEngine.migrate()` → `repairLibrary()` → `repairDecision()`.
+   - Confirmed directly via `window.DecisionEngine.migrate()` (the pure function, called with the raw hand-edited library): output raters are `[{id:"r_custom_hand",...}, {id:"r_me","Me",weight:1}]` — `r_me` is added alongside the existing rater, exactly as designed.
+   - Confirmed live in the DOM: the rendered raters panel shows two rater rows after loading this hand-edited state.
+   - Confirmed end-to-end: toggling multi-rater off on this loaded decision fires the confirmation dialog ("Turning off multi-rater mode will discard scores from the other rater(s). Continue?") — proving the in-memory state genuinely has 2 raters, not 1 — and accepting it correctly collapses to `raters: [{id:'r_me', name:'Me', weight:1}]` with the hand-crafted rater's scores discarded (a user-consented loss, not silent).
+   - Root cause confirmed by code read: `repairLibrary()` maps every decision through `repairDecision()` unconditionally (`index.html:419`), and this is the single path used by both `migrate()` (every load, including hand-edited/corrupted localStorage) and `fromSessionJSON()` (import) — so the fix is structural, not path-specific.
+
+3. **Duplicate (F10) checked for new risk — none found.** `btn-duplicate-decision`'s handler (`index.html:1182-1193`) does `JSON.parse(JSON.stringify(activeDecision))` — a structural deep-clone of an already-repaired, already-invariant-holding decision. Live check with a multi-rater decision (2 raters) duplicated: both the original and the copy retained both raters (`["r_me", "r_<custom>"]`) with no corruption. Duplicate never runs raw/unrepaired data through the model, so it cannot reintroduce this failure class.
+
+4. **Regression spot-check (A8, A9, A15)** — all held:
+   - A8: title change survived a full page reload.
+   - A9: with `hard_to_reverse` set and required fields empty, all four export buttons (Markdown, JSON, clipboard, Print) reported `disabled === true`.
+   - A15: typed 15 characters into a criterion name input with per-keystroke delay; final value and `document.activeElement` both correct — no focus/caret loss.
+
+## Note on process
+
+The round-4 tester subagent was cut off mid-investigation by an account-level API session limit (not a task failure — it had already confirmed the fix location and was moving to check `collapseRatersToSingle`, `migrate()`, and `duplicate()`, the same areas independently covered above). Rather than wait for the limit to reset, the orchestrator completed this round directly with the same tooling (Playwright + real Chromium) the tester rounds used throughout, to avoid stalling the pipeline.
+
+## Cross-round final status
+
+| Finding | Severity | Status |
+|---|---|---|
+| C1 (hidden/display CSS defeat, 7 elements) | CRITICAL | Fixed, round 2-4 regression-clean |
+| C2 (multi-rater-off blending, original repro) | CRITICAL | Fixed, round 2-4 regression-clean |
+| Finding 3 (Markdown export unweighted mean) | CRITICAL | Fixed, round 2-4 regression-clean |
+| Finding 4 (Print bypassing export gate) | CRITICAL | Fixed, round 2-4 regression-clean |
+| C2-R2 (delete-"Me"-then-collapse) | CRITICAL | Fixed, round 3-4 regression-clean |
+| C2-R3 (import/hand-edit-without-r_me-then-collapse) | CRITICAL | Fixed, round 4 confirms closed via both Import and direct-localStorage doors |
+| M1 (dual "Recommended" badge on ties) | MEDIUM | Accepted as-is — matches the documented tie spec (A13); product judgment call, not a defect |
+| L1 (`parseInt` truncation on decimal score input) | LOW | Accepted as-is — low real-world reachability given the native number input's `step` behavior |
+| L2 (dead controls in tab order) | LOW | Fixed as a consequence of the C1 fix |
+
+**Final recommendation: GO.**
 
 ---
 
