@@ -44,3 +44,8 @@ page footer, and runnable from the browser console as `window.runSelfTests()`). 
 weight normalization, direction inversion, unscored-cell handling, multi-rater aggregation,
 ranking/ties, the close-call threshold, export gating, and JSON import/migration safety,
 independent of the UI.
+
+Note: when a decision is marked "Hard to reverse" with required fields missing, the app
+disables its own Print button, but it cannot intercept the browser's native Ctrl+P (or
+Cmd+P) shortcut — that's a platform limit, not a bug. Treat the in-app gating as guidance,
+not a hard security boundary.

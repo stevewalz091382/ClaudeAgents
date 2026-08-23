@@ -1,6 +1,25 @@
 # TEST_REPORT.md — Weighted Decision Engine (`index.html`)
 
-Tested by: Tester agent (rounds 1-3), orchestrator (round 4 — the round-4 tester subagent hit an account-level API session limit mid-task and could not finish; the orchestrator completed the verification directly). Method: static code review plus live rendering/interaction testing in a real Chromium instance (Playwright, `executablePath: /opt/pw-browsers/chromium`) loaded via `file://`, opened directly against `/home/user/ClaudeAgents/index.html` (no server). All findings below were reproduced live, not inferred from source alone.
+Tested by: Tester agent (rounds 1-3), orchestrator (rounds 4-5 — see notes on each). Method: static code review plus live rendering/interaction testing in a real Chromium instance (Playwright, `executablePath: /opt/pw-browsers/chromium`) loaded via `file://`, opened directly against `/home/user/ClaudeAgents/index.html` (no server). All findings below were reproduced live, not inferred from source alone.
+
+---
+
+# ROUND 5 STATUS (2026-08-23) — closing fix for the manager's final finding
+
+The round-4-closing manager review (see the manager's verdict text preserved in the project history) independently re-verified rounds 1-4's fixes as solid, but found a fifth door into the multi-rater failure class that all four prior rounds missed: **`repairDecision()` enforced that `r_me` is always present, but never enforced that `raters` collapses to exactly one entry when `multiRater` is false.** A hand-edited or foreign session JSON with `"multiRater": false` and 2+ raters therefore still let `cellValue()` (which blends over every rater in `decision.raters` unconditionally, by design) silently factor an invisible rater's score into the ranking and the exported Markdown record — with the Raters panel hidden (since `multiRater` is false) and nothing in the UI able to reveal the discrepancy. The manager called this the same root cause as C2/C2-R2/C2-R3, just a different door, and recommended one scoped patch rather than a fourth full pipeline loop.
+
+**This round's fix (applied and verified directly, without a further coder/tester subagent round, given the pipeline's 3-loop cap was already reached and the fix was small and precisely scoped by the manager):**
+
+- `repairDecision()` (`index.html`, in the block right after the `r_me`-presence fix) now also collapses `raters` down to exactly `[r_me]` whenever `!d.multiRater && raters.length > 1`, before scores are filtered — so the discarded rater's scores are pruned for free by the existing `validRaterIds` check, with no separate pruning logic needed.
+- The toggle-off confirmation guard (`hasOtherRaters`) was hardened from `d.raters.length > 1` to an explicit identity check (`d.raters.some(r => r.id !== 'r_me')`) per the manager's defense-in-depth recommendation, though this is now provably redundant given the invariant above always holds.
+- Added self-test #14 asserting: a `multiRater:false` decision with 2 raters and conflicting scores collapses to exactly 1 rater (`r_me`) on repair/import, the other rater's score is pruned (not left dangling), and `cellValue()` reflects only `r_me`'s score afterward.
+- README.md gained a one-line note (the manager's non-blocking loose end) that the in-app Print button is gated but the browser's native Ctrl+P/Cmd+P shortcut cannot be intercepted — a platform limit, not a bug.
+
+**Verification performed (real Chromium via Playwright, same tooling as all prior rounds):**
+- `index.html?selftest=1` → `SELFTEST PASS: 41 FAIL: 0` (was 36; 5 new assertions, one initial assertion had a math error caught and fixed — a test bug, not an app bug, from not accounting for a "lower is better" criterion's direction inversion).
+- **Reproduced the manager's exact scenario end-to-end**: a decision with `multiRater:false`, a hidden second rater ("Hidden"), Option A scored 2/2 (Me) vs 9/9 (Hidden), Option B scored 8/8 (both raters agree). After load: `raters` in the live app state collapses to `[r_me]` only, both options' scores prune to just `r_me`'s values. The live Results panel shows **Option A: 2.00/10, Option B: 8.00/10 (Recommended)** — exactly Me's own visible input, not the blended values (which would have shown Option A at 5.5). The Markdown export's score matrix shows `Option A | 2.0 | 2.0` and `Option B | 8.0 | 8.0`, matching the UI exactly. No trace of "Hidden" or its scores survives anywhere in the app state, the UI, or the export.
+
+**Recommendation: GO.** All CRITICAL findings across five rounds are now closed and independently re-verified end-to-end at least once each. The remaining open items are the two the manager and prior rounds already accepted as non-blocking: M1 (dual "Recommended" badge on exact ties — matches the documented tie spec) and L1 (`parseInt` truncation on adversarial decimal input — low real-world reachability). Safari-specific clipboard/blob-download behavior remains an accepted, documented residual risk (no Safari available in this environment, consistent with the plan's own risk register).
 
 ---
 
