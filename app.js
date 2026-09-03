@@ -4,10 +4,12 @@
   // ---------------------------------------------------------------------
   // Schema
   // ---------------------------------------------------------------------
-  const COLUMNS = ['pillar', 'project', 'updates', 'pct', 'pm', 'description'];
+  const COLUMNS = ['quarter', 'pillar', 'project', 'risks', 'updates', 'pct', 'pm', 'description'];
   const HEADERS = {
+    quarter: 'Quarter',
     pillar: 'Strategic Pillar',
     project: 'Project Name',
+    risks: 'Recent Risks and Blockers',
     updates: 'Accomplishments/Updates',
     pct: 'Approximate Completion Percentage',
     pm: 'Project Manager',
@@ -15,12 +17,20 @@
   };
   // Accepted alternate header spellings on import, normalized (lowercase, alnum only) -> internal key
   const HEADER_ALIASES = {
+    quarter: 'quarter',
+    period: 'quarter',
+    reportingperiod: 'quarter',
     strategicpillar: 'pillar',
     pillar: 'pillar',
     projectname: 'project',
     project: 'project',
     initiative: 'project',
     initiativename: 'project',
+    recentrisksandblockers: 'risks',
+    risksandblockers: 'risks',
+    risksblockers: 'risks',
+    risks: 'risks',
+    blockers: 'risks',
     accomplishmentsupdates: 'updates',
     accomplishments: 'updates',
     updates: 'updates',
@@ -67,6 +77,9 @@
   const FALLBACK_TINT_PALETTE = ['#d9eef2', '#fbe1ec', '#e6efd8', '#f4e9d3', '#dee1e6', '#f1ddd0', '#d7ece7', '#f7dcdc'];
 
   const STORAGE_KEY = 'reportBuilder.v1';
+  // "Early wins" highlight threshold — deliberately separate from the
+  // "Gaining momentum" status threshold (25%) used elsewhere in the report.
+  const EARLY_WIN_THRESHOLD = 50;
 
   // ---------------------------------------------------------------------
   // State
@@ -77,6 +90,7 @@
     milestones: [],
     settings: {
       eyebrow: 'PROGRAM STATUS UPDATE',
+      quarter: '',
       title: 'Program & Strategy Update',
       subtitle: 'Executive Leadership Summary',
       summary: '',
@@ -90,13 +104,22 @@
   function newRow(data) {
     return {
       id: 'r' + (nextId++),
+      quarter: (data && data.quarter) || '',
       pillar: (data && data.pillar) || '',
       project: (data && data.project) || '',
+      risks: (data && data.risks) || '',
       updates: (data && data.updates) || '',
       pct: data && data.pct != null && data.pct !== '' ? clampPct(data.pct) : 0,
       pm: (data && data.pm) || '',
       description: (data && data.description) || ''
     };
+  }
+
+  function eyebrowText() {
+    const base = (state.settings.eyebrow || '').trim();
+    const q = (state.settings.quarter || '').trim();
+    if (base && q) return `${base} · ${q}`;
+    return base || q;
   }
 
   function clampPct(v) {
@@ -245,7 +268,7 @@
     const [header, ...rest] = table;
     const mapped = mapHeaderRow(header);
     if (!mapped.includes('project') && !mapped.includes('pillar')) {
-      throw new Error('Could not find recognizable column headers (expected columns like "Strategic Pillar", "Project Name", "Accomplishments/Updates", "Approximate Completion Percentage", "Project Manager", "Initiative Description").');
+      throw new Error('Could not find recognizable column headers (expected columns like "Quarter", "Strategic Pillar", "Project Name", "Recent Risks and Blockers", "Accomplishments/Updates", "Approximate Completion Percentage", "Project Manager", "Initiative Description").');
     }
     return recordsFromTable(header, rest);
   }
@@ -271,7 +294,7 @@
     const aoa = [COLUMNS.map(c => HEADERS[c])];
     rows.forEach(r => aoa.push(COLUMNS.map(c => c === 'pct' ? r.pct : r[c])));
     const sheet = XLSX.utils.aoa_to_sheet(aoa);
-    sheet['!cols'] = [{ wch: 22 }, { wch: 28 }, { wch: 50 }, { wch: 14 }, { wch: 18 }, { wch: 40 }];
+    sheet['!cols'] = [{ wch: 10 }, { wch: 22 }, { wch: 28 }, { wch: 40 }, { wch: 40 }, { wch: 14 }, { wch: 18 }, { wch: 40 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, sheet, 'Initiatives');
     return wb;
@@ -279,8 +302,10 @@
 
   function buildTemplateWorkbook() {
     const example = newRow({
+      quarter: 'Q3 2026',
       pillar: 'Digital Platforms',
       project: 'Example Initiative Name',
+      risks: 'Any current risk, blocker, or dependency putting this initiative at risk (leave blank if none).',
       updates: 'Short narrative of what happened this period: milestones hit, blockers, next steps.',
       pct: 25,
       pm: 'Full Name',
@@ -292,13 +317,20 @@
       [''],
       ['1. Keep the header row on the "Initiatives" sheet exactly as provided.'],
       ['2. One row per initiative. Delete the example row before adding your own.'],
-      ['3. "Approximate Completion Percentage" is a number from 0-100 (do not include the % sign).'],
-      ['4. "Strategic Pillar" groups initiatives in the report. Use a consistent name per pillar' +
+      ['3. "Quarter" is the reporting period (e.g. "Q3 2026"). Use the same value for every row in one' +
+        ' import — the report header updates automatically to the quarter found in the file you import.'],
+      ['4. "Approximate Completion Percentage" is a number from 0-100 (do not include the % sign).'],
+      ['5. "Strategic Pillar" groups initiatives in the report. Use a consistent name per pillar' +
         ' (e.g. Digital Platforms, Data, Technology Innovation, Quality, Execution & Delivery, Implementation)' +
         ' — or your own pillar names.'],
-      ['5. Save as .xlsx or .csv and import it back into the Report Builder using "Import CSV / XLSX".'],
-      ['6. Completion status shown in the report (Not started / In progress / Gaining momentum) is calculated' +
-        ' automatically: 0% = Not started, 1-24% = In progress, 25%+ = Gaining momentum.']
+      ['6. "Recent Risks and Blockers" is optional — leave blank if there is nothing to flag. Any row with' +
+        ' text here appears in the report’s "Risks & Blockers" section.'],
+      ['7. "Accomplishments/Updates" is optional — any row with text here appears in the report’s' +
+        ' "Accomplishments" section.'],
+      ['8. Save as .xlsx or .csv and import it back into the Report Builder using "Import CSV / XLSX".'],
+      ['9. Completion status shown per initiative (Not started / In progress / Gaining momentum) is' +
+        ' calculated automatically: 0% = Not started, 1-24% = In progress, 25%+ = Gaining momentum. The' +
+        ' report’s separate "Early wins" highlight uses a higher bar: 50%+.']
     ]);
     instructions['!cols'] = [{ wch: 100 }];
     XLSX.utils.book_append_sheet(wb, instructions, 'Instructions');
@@ -366,7 +398,7 @@
     const children = [];
 
     // ---- Cover ----
-    children.push(p(state.settings.eyebrow || '', { size: 15, color: '888888', bold: true, after: 40 }));
+    children.push(p(eyebrowText(), { size: 15, color: '888888', bold: true, after: 40 }));
     children.push(new Paragraph({
       children: [run(state.settings.title || 'Program & Strategy Update', { bold: true, size: 36, color: '1F3864', font: 'Georgia' })],
       spacing: { after: 40 }
@@ -398,7 +430,7 @@
     const kpiVals = [
       [agg.total, 'Total initiatives', '1F3864'],
       [agg.active, 'Active & underway', '185FA5'],
-      [agg.earlyWins, 'Early wins (25%+)', '0F6E56'],
+      [agg.earlyWins, `Early wins (${EARLY_WIN_THRESHOLD}%+)`, '0F6E56'],
       [agg.pillarCount, 'Strategic pillars', '1F3864']
     ];
     children.push(fullTable([new TableRow({
@@ -467,9 +499,9 @@
     children.push(fullTable([overviewHeader].concat(overviewRows)));
 
     // Early wins
-    const wins = state.rows.filter(r => r.pct >= 25).sort((a, b) => b.pct - a.pct);
+    const wins = state.rows.filter(r => r.pct >= EARLY_WIN_THRESHOLD).sort((a, b) => b.pct - a.pct);
     if (wins.length) {
-      children.push(p('★ Early wins — initiatives at 25%+', { bold: true, color: '555555', size: 15, before: 300, after: 120 }));
+      children.push(p(`★ Early wins — initiatives at ${EARLY_WIN_THRESHOLD}%+`, { bold: true, color: '555555', size: 15, before: 300, after: 120 }));
       const wHeader = new TableRow({ children: [
         cell(p('Initiative', { bold: true, color: 'FFFFFF' }), { width: 40, fill: '5F5E5A' }),
         cell(p('Pillar · Project Manager', { bold: true, color: 'FFFFFF' }), { width: 40, fill: '5F5E5A' }),
@@ -481,6 +513,42 @@
         cell(p(fmtPct(r.pct), { bold: true }))
       ] }));
       children.push(fullTable([wHeader].concat(wRows)));
+    }
+
+    // Accomplishments (cross-pillar roundup of reported updates)
+    const accomplishmentRows = state.rows.filter(r => (r.updates || '').trim());
+    if (accomplishmentRows.length) {
+      children.push(p('Accomplishments', { bold: true, color: '1F3864', size: 22, before: 300, after: 120 }));
+      const aHeader = new TableRow({ children: [
+        cell(p('Initiative', { bold: true, color: 'FFFFFF' }), { width: 26, fill: '1F3864' }),
+        cell(p('Pillar', { bold: true, color: 'FFFFFF' }), { width: 18, fill: '1F3864' }),
+        cell(p('Accomplishment', { bold: true, color: 'FFFFFF' }), { width: 56, fill: '1F3864' })
+      ] });
+      const aRows = accomplishmentRows.map(r => new TableRow({ children: [
+        cell(p(r.project, { bold: true })),
+        cell(p(r.pillar, { color: pillarColor(r.pillar) })),
+        cell(p(r.updates, { color: '555555' }))
+      ] }));
+      children.push(fullTable([aHeader].concat(aRows)));
+    }
+
+    // Risks & Blockers (cross-pillar roundup)
+    const riskRows = state.rows.filter(r => (r.risks || '').trim());
+    if (riskRows.length) {
+      children.push(p('Risks & Blockers', { bold: true, color: '1F3864', size: 22, before: 300, after: 120 }));
+      const rHeader = new TableRow({ children: [
+        cell(p('Initiative', { bold: true, color: 'FFFFFF' }), { width: 22, fill: '993C1D' }),
+        cell(p('Pillar', { bold: true, color: 'FFFFFF' }), { width: 14, fill: '993C1D' }),
+        cell(p('Project Manager', { bold: true, color: 'FFFFFF' }), { width: 14, fill: '993C1D' }),
+        cell(p('Risk / Blocker', { bold: true, color: 'FFFFFF' }), { width: 50, fill: '993C1D' })
+      ] });
+      const rRows = riskRows.map(r => new TableRow({ children: [
+        cell(p(r.project, { bold: true })),
+        cell(p(r.pillar, { color: pillarColor(r.pillar) })),
+        cell(p(r.pm || '—', { color: '555555' })),
+        cell(p(r.risks, { color: '555555' }))
+      ] }));
+      children.push(fullTable([rHeader].concat(rRows)));
     }
 
     // Coming up / milestones
@@ -604,15 +672,18 @@
     const body = document.getElementById('editorBody');
     body.innerHTML = '';
     if (!state.rows.length) {
-      const tr = el('tr', {}, [el('td', { colspan: '7', class: 'empty-row', text: 'No initiatives yet. Add one, import a file, or load sample data.' })]);
+      const tr = el('tr', {}, [el('td', { colspan: '9', class: 'empty-row', text: 'No initiatives yet. Add one, import a file, or load sample data.' })]);
       body.appendChild(tr);
       return;
     }
     state.rows.forEach(row => {
       const tr = el('tr', { 'data-id': row.id });
 
+      const quarterInput = el('input', { type: 'text', value: row.quarter, 'data-field': 'quarter' });
       const pillarInput = el('input', { type: 'text', value: row.pillar, list: 'pillarSuggestions', 'data-field': 'pillar' });
       const projectInput = el('input', { type: 'text', value: row.project, 'data-field': 'project' });
+      const risksInput = el('textarea', { rows: '2', 'data-field': 'risks' });
+      risksInput.value = row.risks;
       const updatesInput = el('textarea', { rows: '2', 'data-field': 'updates' });
       updatesInput.value = row.updates;
       const pctInput = el('input', { type: 'number', min: '0', max: '100', step: '1', value: String(row.pct), 'data-field': 'pct' });
@@ -620,7 +691,7 @@
       const descInput = el('textarea', { rows: '2', 'data-field': 'description' });
       descInput.value = row.description;
 
-      [pillarInput, projectInput, updatesInput, pctInput, pmInput, descInput].forEach(inp => {
+      [quarterInput, pillarInput, projectInput, risksInput, updatesInput, pctInput, pmInput, descInput].forEach(inp => {
         inp.addEventListener('input', () => {
           const field = inp.getAttribute('data-field');
           row[field] = field === 'pct' ? clampPct(inp.value) : inp.value;
@@ -638,8 +709,10 @@
         renderReport();
       });
 
+      tr.appendChild(el('td', {}, [quarterInput]));
       tr.appendChild(el('td', {}, [pillarInput]));
       tr.appendChild(el('td', {}, [projectInput]));
+      tr.appendChild(el('td', {}, [risksInput]));
       tr.appendChild(el('td', {}, [updatesInput]));
       tr.appendChild(el('td', {}, [pctInput]));
       tr.appendChild(el('td', {}, [pmInput]));
@@ -690,6 +763,7 @@
 
   function renderSettingsForm() {
     document.getElementById('setEyebrow').value = state.settings.eyebrow || '';
+    document.getElementById('setQuarter').value = state.settings.quarter || '';
     document.getElementById('setTitle').value = state.settings.title || '';
     document.getElementById('setSubtitle').value = state.settings.subtitle || '';
     document.getElementById('setSummary').value = state.settings.summary || '';
@@ -701,7 +775,7 @@
 
   function wireSettingsForm() {
     const map = {
-      setEyebrow: 'eyebrow', setTitle: 'title', setSubtitle: 'subtitle',
+      setEyebrow: 'eyebrow', setQuarter: 'quarter', setTitle: 'title', setSubtitle: 'subtitle',
       setSummary: 'summary', setContactName: 'contactName', setContactEmail: 'contactEmail',
       setMilestonesTitle: 'milestonesTitle', setMilestonesIntro: 'milestonesIntro'
     };
@@ -721,7 +795,7 @@
     const rows = state.rows;
     const total = rows.length;
     const active = rows.filter(r => r.pct > 0).length;
-    const earlyWins = rows.filter(r => r.pct >= 25).length;
+    const earlyWins = rows.filter(r => r.pct >= EARLY_WIN_THRESHOLD).length;
     const pillars = orderedPillars();
 
     const byPillar = pillars.map(p => {
@@ -758,7 +832,7 @@
 
     // ---- Cover / summary section (always starts its own printed page) ----
     const cover = el('section', { class: 'r-page r-cover' });
-    cover.appendChild(el('div', { class: 'r-eyebrow', text: state.settings.eyebrow || '' }));
+    cover.appendChild(el('div', { class: 'r-eyebrow', text: eyebrowText() }));
     cover.appendChild(el('h1', { class: 'r-title', text: state.settings.title || 'Program & Strategy Update' }));
     cover.appendChild(el('div', { class: 'r-subtitle', text: state.settings.subtitle || '' }));
     cover.appendChild(el('div', { class: 'r-rule' }));
@@ -792,7 +866,7 @@
     [
       [agg.total, 'Total initiatives'],
       [agg.active, 'Active & underway'],
-      [agg.earlyWins, 'Early wins (25%+)'],
+      [agg.earlyWins, `Early wins (${EARLY_WIN_THRESHOLD}%+)`],
       [agg.pillarCount, 'Strategic pillars']
     ].forEach(([num, label], i) => {
       tiles.appendChild(el('div', { class: 'r-tile' }, [
@@ -885,11 +959,11 @@
     root.appendChild(cover);
 
     // ---- Early wins ----
-    const wins = state.rows.filter(r => r.pct >= 25).sort((a, b) => b.pct - a.pct);
+    const wins = state.rows.filter(r => r.pct >= EARLY_WIN_THRESHOLD).sort((a, b) => b.pct - a.pct);
     if (wins.length) {
       const wrap = el('div', { class: 'r-earlywins' });
       wrap.appendChild(el('div', { class: 'r-earlywins-title' }, [
-        document.createTextNode('★ Early wins — initiatives at 25%+')
+        document.createTextNode(`★ Early wins — initiatives at ${EARLY_WIN_THRESHOLD}%+`)
       ]));
       const grid = el('div', { class: 'r-cards' });
       wins.forEach(r => {
@@ -908,6 +982,53 @@
       });
       wrap.appendChild(grid);
       root.appendChild(wrap);
+    }
+
+    // ---- Accomplishments (cross-pillar roundup of reported updates) ----
+    const accomplishmentRows = state.rows.filter(r => (r.updates || '').trim());
+    if (accomplishmentRows.length) {
+      const sec = el('section', { class: 'r-block' });
+      sec.appendChild(el('div', { class: 'r-section-title', text: 'Accomplishments' }));
+      const atable = el('table', { class: 'r-table r-accomplishments-table' });
+      const athead = el('thead', {}, [el('tr', {}, [
+        el('th', { text: 'Initiative' }), el('th', { text: 'Pillar' }), el('th', { text: 'Accomplishment' })
+      ])]);
+      atable.appendChild(athead);
+      const abody = el('tbody');
+      accomplishmentRows.forEach(r => {
+        const tr = el('tr');
+        tr.appendChild(el('td', { class: 'r-detail-name', text: r.project }));
+        tr.appendChild(el('td', { style: `color:${pillarColor(r.pillar)}`, text: r.pillar }));
+        tr.appendChild(el('td', { class: 'r-detail-update', text: r.updates }));
+        abody.appendChild(tr);
+      });
+      atable.appendChild(abody);
+      sec.appendChild(atable);
+      root.appendChild(sec);
+    }
+
+    // ---- Risks & Blockers (cross-pillar roundup) ----
+    const riskRows = state.rows.filter(r => (r.risks || '').trim());
+    if (riskRows.length) {
+      const sec = el('section', { class: 'r-block' });
+      sec.appendChild(el('div', { class: 'r-section-title', text: 'Risks & Blockers' }));
+      const rtable = el('table', { class: 'r-table r-risks-table' });
+      const rthead = el('thead', {}, [el('tr', { class: 'r-risks-head' }, [
+        el('th', { text: 'Initiative' }), el('th', { text: 'Pillar' }), el('th', { text: 'Project Manager' }), el('th', { text: 'Risk / Blocker' })
+      ])]);
+      rtable.appendChild(rthead);
+      const rbody = el('tbody');
+      riskRows.forEach(r => {
+        const tr = el('tr');
+        tr.appendChild(el('td', { class: 'r-detail-name', text: r.project }));
+        tr.appendChild(el('td', { style: `color:${pillarColor(r.pillar)}`, text: r.pillar }));
+        tr.appendChild(el('td', { class: 'r-detail-pm', text: r.pm || '—' }));
+        tr.appendChild(el('td', { class: 'r-detail-update', text: r.risks }));
+        rbody.appendChild(tr);
+      });
+      rtable.appendChild(rbody);
+      sec.appendChild(rtable);
+      root.appendChild(sec);
     }
 
     // ---- Coming up / milestones ----
@@ -984,17 +1105,38 @@
     document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
   }
 
+  // Picks the most common non-empty "quarter" value among newly imported rows,
+  // so the report header can update automatically from a fresh import.
+  function detectQuarter(rows) {
+    const counts = {};
+    rows.forEach(r => {
+      const q = (r.quarter || '').trim();
+      if (q) counts[q] = (counts[q] || 0) + 1;
+    });
+    const entries = Object.entries(counts);
+    if (!entries.length) return null;
+    entries.sort((a, b) => b[1] - a[1]);
+    return entries[0][0];
+  }
+
   function handleImportedRows(rows, sourceLabel) {
     if (!rows.length) {
       showImportStatus(`No usable rows found in ${sourceLabel}.`, true);
       return;
     }
     state.rows = state.rows.concat(rows);
+    const quarter = detectQuarter(rows);
+    let quarterNote = '';
+    if (quarter && quarter !== state.settings.quarter) {
+      state.settings.quarter = quarter;
+      quarterNote = ` Report quarter updated to ${quarter}.`;
+      renderSettingsForm();
+    }
     save();
     renderEditor();
     renderPillarDatalist();
     renderReport();
-    showImportStatus(`Imported ${rows.length} initiative${rows.length === 1 ? '' : 's'} from ${sourceLabel}.`, false);
+    showImportStatus(`Imported ${rows.length} initiative${rows.length === 1 ? '' : 's'} from ${sourceLabel}.${quarterNote}`, false);
   }
 
   function checkXlsxAvailable() {
@@ -1047,8 +1189,10 @@
 
     document.getElementById('btnLoadSample').addEventListener('click', () => {
       if (!window.SAMPLE_DATA) return;
-      const rows = window.SAMPLE_DATA.map(d => newRow(d));
+      const rows = window.SAMPLE_DATA.map(d => newRow(Object.assign({ quarter: 'Q3 2026' }, d)));
       state.rows = state.rows.concat(rows);
+      const sampleQuarter = detectQuarter(rows);
+      if (sampleQuarter) state.settings.quarter = sampleQuarter;
       if (!state.milestones.length) {
         state.milestones = [
           { when: 'End of May', text: 'Copilot Agent goes live on DDC SharePoint — all users gain instant guidance and search.' },
@@ -1100,8 +1244,10 @@
 
     document.getElementById('btnTemplateCsv').addEventListener('click', () => {
       const example = newRow({
+        quarter: 'Q3 2026',
         pillar: 'Digital Platforms',
         project: 'Example Initiative Name',
+        risks: 'Any current risk, blocker, or dependency putting this initiative at risk (leave blank if none).',
         updates: 'Short narrative of what happened this period.',
         pct: 25,
         pm: 'Full Name',

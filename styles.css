@@ -227,6 +227,23 @@ footer { padding: 1rem 1.5rem; color: var(--muted); font-size: 0.78rem; text-ali
 .r-detail-table th:nth-child(4), .r-detail-table td:nth-child(4) { width: 18%; }
 .r-detail-table th:nth-child(5), .r-detail-table td:nth-child(5) { width: 36%; }
 
+/* Accomplishments (cross-pillar roundup) */
+.r-accomplishments-table th { background: var(--r-navy); color: #fff; }
+.r-accomplishments-table td { font-size: 7.9pt; }
+.r-accomplishments-table tbody tr:nth-child(even) td { background: #fafafa; }
+.r-accomplishments-table th:nth-child(1), .r-accomplishments-table td:nth-child(1) { width: 26%; }
+.r-accomplishments-table th:nth-child(2), .r-accomplishments-table td:nth-child(2) { width: 18%; }
+.r-accomplishments-table th:nth-child(3), .r-accomplishments-table td:nth-child(3) { width: 56%; }
+
+/* Risks & Blockers (cross-pillar roundup) */
+.r-risks-table th { background: #993c1d; color: #fff; }
+.r-risks-table td { font-size: 7.9pt; }
+.r-risks-table tbody tr:nth-child(even) td { background: #fafafa; }
+.r-risks-table th:nth-child(1), .r-risks-table td:nth-child(1) { width: 22%; }
+.r-risks-table th:nth-child(2), .r-risks-table td:nth-child(2) { width: 14%; }
+.r-risks-table th:nth-child(3), .r-risks-table td:nth-child(3) { width: 14%; }
+.r-risks-table th:nth-child(4), .r-risks-table td:nth-child(4) { width: 50%; }
+
 /* Early wins cards */
 .r-earlywins-title { font-size: 7.5pt; font-weight: 700; color: var(--r-meta-1); margin-bottom: 10pt; }
 .r-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9pt; }

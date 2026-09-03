@@ -51,19 +51,26 @@ editor, the report, PDF export, and CSV import/export — works fully offline
 even without those requests succeeding; the app detects a failed load and
 disables just the affected buttons with an explanatory message.
 
-- **Data Editor** — an editable table of initiatives: Strategic Pillar,
-  Project Name, Accomplishments/Updates, Approximate Completion Percentage,
-  Project Manager, Initiative Description. Completion status (Not started /
-  In progress / Gaining momentum) is derived automatically from the
-  percentage (0% / 1–24% / 25%+).
-- **Report Settings** — cover title, summary text, contact info, and an
-  optional "Coming Up" milestones list.
-- **Report Preview** — the executive report itself: KPI tiles, average
-  completion by pillar, portfolio status donut, pillar overview table, early
-  wins cards, and a detail table per pillar.
+- **Data Editor** — an editable table of initiatives: Quarter, Strategic
+  Pillar, Project Name, Recent Risks and Blockers, Accomplishments/Updates,
+  Approximate Completion Percentage, Project Manager, Initiative Description.
+  Completion status (Not started / In progress / Gaining momentum) is
+  derived automatically from the percentage (0% / 1–24% / 25%+).
+- **Report Settings** — program label (eyebrow), quarter, cover title,
+  summary text, contact info, and an optional "Coming Up" milestones list.
+  Importing a file updates the quarter automatically (see below).
+- **Report Preview** — the executive report itself: an overview/summary
+  cover, KPI tiles, average completion by pillar, portfolio status donut,
+  pillar overview table, an early wins highlight (initiatives at 50%+), an
+  Accomplishments roundup (any initiative with update text), a Risks &
+  Blockers roundup (any initiative with risk text), a Coming Up milestones
+  table, and a detail table per pillar.
 - **Import CSV / XLSX** — accepts files using the column headers above (a
   handful of common alternate spellings are also recognized). Additive: new
-  rows are appended to what's already loaded.
+  rows are appended to what's already loaded. The most common non-empty
+  "Quarter" value in the imported rows becomes the report's displayed
+  quarter (shown next to the eyebrow label), overriding whatever was there
+  before.
 - **Export CSV / Export XLSX** — download the current initiative list.
 - **Download Template (.xlsx / .csv)** — a blank starter workbook with the
   correct headers, one example row, and an Instructions sheet, for others to
