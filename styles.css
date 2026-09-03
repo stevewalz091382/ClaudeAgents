@@ -142,7 +142,6 @@ footer { padding: 1rem 1.5rem; color: var(--muted); font-size: 0.78rem; text-ali
   --r-meta-4: #888888;
   --r-meta-5: #444444;
   --r-border: #e0e4ea;
-  --r-border-card: #e0e0e0;
   --r-track: #e8e8e8;
   --r-axis-line: #cccccc;
   --r-serif: Georgia, "Times New Roman", Times, serif;
@@ -151,10 +150,9 @@ footer { padding: 1rem 1.5rem; color: var(--muted); font-size: 0.78rem; text-ali
 .report-view { background: #dfe4ea; padding: 18pt 0; }
 .report-root { width: 532pt; max-width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 14pt; font-size: 7.9pt; color: var(--r-ink); }
 
-.r-page, .r-block, .r-earlywins {
+.r-page, .r-block {
   background: #fff; padding: 22pt 20pt; border: 1px solid #d7dce3; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
-.r-earlywins { background: #f5f5f5; border-radius: 6pt; border-color: #eee; }
 .r-empty { text-align: center; color: var(--muted); padding: 40pt 10pt; }
 
 .r-eyebrow { font-size: 7.5pt; font-weight: 700; letter-spacing: 0.06em; color: var(--r-meta-4); text-transform: uppercase; }
@@ -244,17 +242,6 @@ footer { padding: 1rem 1.5rem; color: var(--muted); font-size: 0.78rem; text-ali
 .r-risks-table th:nth-child(3), .r-risks-table td:nth-child(3) { width: 14%; }
 .r-risks-table th:nth-child(4), .r-risks-table td:nth-child(4) { width: 50%; }
 
-/* Early wins cards */
-.r-earlywins-title { font-size: 7.5pt; font-weight: 700; color: var(--r-meta-1); margin-bottom: 10pt; }
-.r-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9pt; }
-.r-card { border: 0.75pt solid var(--r-border-card); border-radius: 4pt; padding: 8pt 9pt; background: #fff; break-inside: avoid; }
-.r-card-top { display: flex; justify-content: space-between; align-items: baseline; gap: 6pt; }
-.r-card-name { font-weight: 700; font-size: 8.2pt; line-height: 1.3; color: var(--r-ink); }
-.r-card-pct { font-weight: 700; color: var(--r-ink); font-size: 9pt; flex: none; }
-.r-card-meta { color: var(--r-meta-4); font-size: 7.5pt; margin: 3pt 0 6pt; }
-.r-card-bar { background: var(--r-track); border-radius: 2pt; height: 2.25pt; overflow: hidden; }
-.r-card-bar-fill { height: 100%; background: #1d9e75; }
-
 /* Generic non-cover section block (Coming Up, pillar tables) */
 .r-block-intro { font-size: 8.2pt; color: var(--r-meta-1); margin: -4pt 0 10pt; line-height: 1.5; }
 
@@ -297,16 +284,13 @@ footer { padding: 1rem 1.5rem; color: var(--muted); font-size: 0.78rem; text-ali
   #view-report.view { display: block !important; }
   .report-view { background: #fff; padding: 0; }
   .report-root { width: auto; max-width: none; margin: 0; gap: 0; }
-  .r-page, .r-block, .r-earlywins {
+  .r-page, .r-block {
     border: none; box-shadow: none; padding: 0; margin: 0 0 16pt;
   }
-  .r-earlywins { background: none; border-radius: 0; padding: 0 0 4pt; }
   .r-cover { break-after: page; page-break-after: always; }
   .r-pillar-head { break-after: avoid; page-break-after: avoid; }
-  .r-earlywins-title { break-after: avoid; page-break-after: avoid; }
-  .r-table tr, .r-card { break-inside: avoid; page-break-inside: avoid; }
+  .r-table tr { break-inside: avoid; page-break-inside: avoid; }
   .r-overview-table { break-inside: avoid; page-break-inside: avoid; }
-  .r-cards { grid-template-columns: repeat(3, 1fr) !important; }
 }
 
 /* ---------------- Responsive (screen only — must not affect print pagination) ---------------- */

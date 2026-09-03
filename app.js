@@ -93,7 +93,8 @@
       quarter: '',
       title: 'Program & Strategy Update',
       subtitle: 'Executive Leadership Summary',
-      summary: '',
+      programName: '',
+      missionText: '',
       contactName: '',
       contactEmail: '',
       milestonesTitle: 'Coming Up',
@@ -120,6 +121,35 @@
     const q = (state.settings.quarter || '').trim();
     if (base && q) return `${base} · ${q}`;
     return base || q;
+  }
+
+  // Builds the cover's overview paragraphs live from the current dataset —
+  // recomputed on every render so it always reflects whatever is loaded,
+  // instead of being hand-typed text that goes stale after a new import.
+  // Returns an array of { lead, text }; the first paragraph (lead: true) is
+  // the bold headline sentence, the rest render as regular paragraphs.
+  function buildOverviewParagraphs(agg) {
+    const paras = [];
+    const programName = (state.settings.programName || '').trim() || 'program';
+    const quarter = (state.settings.quarter || '').trim();
+
+    if (agg.total > 0) {
+      const opening = quarter ? `${quarter} is proving` : 'This period is proving';
+      paras.push({ lead: true, text: `${opening} to be a period of real, tangible momentum for the ${programName}.` });
+
+      const pillarCount = agg.pillarCount;
+      const momentum = agg.statusCounts.momentum;
+      const highTier = agg.earlyWins;
+      let sentence = `Across all ${pillarCount} strategic pillar${pillarCount === 1 ? '' : 's'}, our teams have moved quickly from planning into delivery.`;
+      sentence += ` ${momentum} of ${agg.total} initiative${agg.total === 1 ? '' : 's'} ${momentum === 1 ? 'has' : 'have'} already reached 25% or greater completion`;
+      sentence += highTier > 0 ? ` — ${highTier} of them tracking at ${EARLY_WIN_THRESHOLD}%+.` : '.';
+      paras.push({ lead: false, text: sentence });
+    }
+
+    const mission = (state.settings.missionText || '').trim();
+    if (mission) paras.push({ lead: false, text: mission });
+
+    return paras;
   }
 
   function clampPct(v) {
@@ -405,13 +435,13 @@
     }));
     children.push(p(state.settings.subtitle || '', { size: 18, color: '666666', after: 200 }));
 
-    if (state.settings.summary || state.settings.contactEmail) {
-      const lines = (state.settings.summary || '').split('\n').filter(Boolean);
-      lines.forEach((line, i) => {
+    const overviewParas = buildOverviewParagraphs(agg);
+    if (overviewParas.length || state.settings.contactEmail) {
+      overviewParas.forEach((para, i) => {
         children.push(new Paragraph({
           shading: { fill: 'F0F5FB', type: ShadingType.CLEAR, color: 'auto' },
           border: i === 0 ? { left: { style: BorderStyle.SINGLE, size: 24, color: '185FA5' } } : undefined,
-          children: [run(line, { bold: i === 0, color: i === 0 ? '1F3864' : '333333', size: i === 0 ? 18 : 16 })],
+          children: [run(para.text, { bold: para.lead, color: para.lead ? '1F3864' : '333333', size: para.lead ? 18 : 16 })],
           spacing: { before: i === 0 ? 100 : 0, after: 60 }
         }));
       });
@@ -498,27 +528,10 @@
     ] }));
     children.push(fullTable([overviewHeader].concat(overviewRows)));
 
-    // Early wins
-    const wins = state.rows.filter(r => r.pct >= EARLY_WIN_THRESHOLD).sort((a, b) => b.pct - a.pct);
-    if (wins.length) {
-      children.push(p(`★ Early wins — initiatives at ${EARLY_WIN_THRESHOLD}%+`, { bold: true, color: '555555', size: 15, before: 300, after: 120 }));
-      const wHeader = new TableRow({ children: [
-        cell(p('Initiative', { bold: true, color: 'FFFFFF' }), { width: 40, fill: '5F5E5A' }),
-        cell(p('Pillar · Project Manager', { bold: true, color: 'FFFFFF' }), { width: 40, fill: '5F5E5A' }),
-        cell(p('%', { bold: true, color: 'FFFFFF' }), { width: 20, fill: '5F5E5A' })
-      ] });
-      const wRows = wins.map(r => new TableRow({ children: [
-        cell(p(r.project, { bold: true })),
-        cell(p(`${r.pillar}${r.pm ? ' · ' + r.pm : ''}`, { color: '888888' })),
-        cell(p(fmtPct(r.pct), { bold: true }))
-      ] }));
-      children.push(fullTable([wHeader].concat(wRows)));
-    }
-
     // Accomplishments (cross-pillar roundup of reported updates)
     const accomplishmentRows = state.rows.filter(r => (r.updates || '').trim());
     if (accomplishmentRows.length) {
-      children.push(p('Accomplishments', { bold: true, color: '1F3864', size: 22, before: 300, after: 120 }));
+      children.push(p('Quarterly Accomplishments', { bold: true, color: '1F3864', size: 22, before: 300, after: 120 }));
       const aHeader = new TableRow({ children: [
         cell(p('Initiative', { bold: true, color: 'FFFFFF' }), { width: 26, fill: '1F3864' }),
         cell(p('Pillar', { bold: true, color: 'FFFFFF' }), { width: 18, fill: '1F3864' }),
@@ -535,7 +548,7 @@
     // Risks & Blockers (cross-pillar roundup)
     const riskRows = state.rows.filter(r => (r.risks || '').trim());
     if (riskRows.length) {
-      children.push(p('Risks & Blockers', { bold: true, color: '1F3864', size: 22, before: 300, after: 120 }));
+      children.push(p('Quarterly Risks & Blockers', { bold: true, color: '1F3864', size: 22, before: 300, after: 120 }));
       const rHeader = new TableRow({ children: [
         cell(p('Initiative', { bold: true, color: 'FFFFFF' }), { width: 22, fill: '993C1D' }),
         cell(p('Pillar', { bold: true, color: 'FFFFFF' }), { width: 14, fill: '993C1D' }),
@@ -766,7 +779,8 @@
     document.getElementById('setQuarter').value = state.settings.quarter || '';
     document.getElementById('setTitle').value = state.settings.title || '';
     document.getElementById('setSubtitle').value = state.settings.subtitle || '';
-    document.getElementById('setSummary').value = state.settings.summary || '';
+    document.getElementById('setProgramName').value = state.settings.programName || '';
+    document.getElementById('setMissionText').value = state.settings.missionText || '';
     document.getElementById('setContactName').value = state.settings.contactName || '';
     document.getElementById('setContactEmail').value = state.settings.contactEmail || '';
     document.getElementById('setMilestonesTitle').value = state.settings.milestonesTitle || '';
@@ -776,7 +790,8 @@
   function wireSettingsForm() {
     const map = {
       setEyebrow: 'eyebrow', setQuarter: 'quarter', setTitle: 'title', setSubtitle: 'subtitle',
-      setSummary: 'summary', setContactName: 'contactName', setContactEmail: 'contactEmail',
+      setProgramName: 'programName', setMissionText: 'missionText',
+      setContactName: 'contactName', setContactEmail: 'contactEmail',
       setMilestonesTitle: 'milestonesTitle', setMilestonesIntro: 'milestonesIntro'
     };
     Object.keys(map).forEach(id => {
@@ -837,11 +852,11 @@
     cover.appendChild(el('div', { class: 'r-subtitle', text: state.settings.subtitle || '' }));
     cover.appendChild(el('div', { class: 'r-rule' }));
 
-    if (state.settings.summary || state.settings.contactEmail) {
+    const overviewParas = buildOverviewParagraphs(agg);
+    if (overviewParas.length || state.settings.contactEmail) {
       const box = el('div', { class: 'r-summary-box' });
-      const lines = (state.settings.summary || '').split('\n').filter(Boolean);
-      lines.forEach((line, i) => {
-        box.appendChild(el('p', { class: i === 0 ? 'r-summary-lead' : '', text: line }));
+      overviewParas.forEach(para => {
+        box.appendChild(el('p', { class: para.lead ? 'r-summary-lead' : '', text: para.text }));
       });
       if (state.settings.contactName || state.settings.contactEmail) {
         const p = el('p', { class: 'r-contact' });
@@ -958,37 +973,11 @@
 
     root.appendChild(cover);
 
-    // ---- Early wins ----
-    const wins = state.rows.filter(r => r.pct >= EARLY_WIN_THRESHOLD).sort((a, b) => b.pct - a.pct);
-    if (wins.length) {
-      const wrap = el('div', { class: 'r-earlywins' });
-      wrap.appendChild(el('div', { class: 'r-earlywins-title' }, [
-        document.createTextNode(`★ Early wins — initiatives at ${EARLY_WIN_THRESHOLD}%+`)
-      ]));
-      const grid = el('div', { class: 'r-cards' });
-      wins.forEach(r => {
-        const card = el('div', { class: 'r-card' });
-        card.appendChild(el('div', { class: 'r-card-top' }, [
-          el('div', { class: 'r-card-name', text: r.project }),
-          el('div', { class: 'r-card-pct', text: fmtPct(r.pct) })
-        ]));
-        card.appendChild(el('div', { class: 'r-card-meta', text: `${r.pillar}${r.pm ? ' · ' + r.pm : ''}` }));
-        const bar = el('div', { class: 'r-card-bar' });
-        const fill = el('div', { class: 'r-card-bar-fill' });
-        fill.style.width = r.pct + '%';
-        bar.appendChild(fill);
-        card.appendChild(bar);
-        grid.appendChild(card);
-      });
-      wrap.appendChild(grid);
-      root.appendChild(wrap);
-    }
-
     // ---- Accomplishments (cross-pillar roundup of reported updates) ----
     const accomplishmentRows = state.rows.filter(r => (r.updates || '').trim());
     if (accomplishmentRows.length) {
       const sec = el('section', { class: 'r-block' });
-      sec.appendChild(el('div', { class: 'r-section-title', text: 'Accomplishments' }));
+      sec.appendChild(el('div', { class: 'r-section-title', text: 'Quarterly Accomplishments' }));
       const atable = el('table', { class: 'r-table r-accomplishments-table' });
       const athead = el('thead', {}, [el('tr', {}, [
         el('th', { text: 'Initiative' }), el('th', { text: 'Pillar' }), el('th', { text: 'Accomplishment' })
@@ -1011,7 +1000,7 @@
     const riskRows = state.rows.filter(r => (r.risks || '').trim());
     if (riskRows.length) {
       const sec = el('section', { class: 'r-block' });
-      sec.appendChild(el('div', { class: 'r-section-title', text: 'Risks & Blockers' }));
+      sec.appendChild(el('div', { class: 'r-section-title', text: 'Quarterly Risks & Blockers' }));
       const rtable = el('table', { class: 'r-table r-risks-table' });
       const rthead = el('thead', {}, [el('tr', { class: 'r-risks-head' }, [
         el('th', { text: 'Initiative' }), el('th', { text: 'Pillar' }), el('th', { text: 'Project Manager' }), el('th', { text: 'Risk / Blocker' })
@@ -1202,11 +1191,12 @@
           { when: 'July', text: 'Enterprise-wide DDD automation tool deployment begins organization-wide.' }
         ];
       }
-      if (!state.settings.summary) {
+      if (!state.settings.programName) {
         state.settings.eyebrow = 'PROGRAM STATUS UPDATE';
         state.settings.title = 'Program & Strategy Update';
         state.settings.subtitle = 'Executive Leadership Summary — Sample Data';
-        state.settings.summary = 'This is sample data loaded to demonstrate the report builder.\nReplace it by clearing all data and importing your own CSV or XLSX file.';
+        state.settings.programName = 'Design Technology Program';
+        state.settings.missionText = 'This update is designed to give our teams a clear, consolidated view of where we stand: the wins worth celebrating, the initiatives that need attention, and the full initiative landscape across every pillar. Replace this sample data by clearing all data and importing your own CSV or XLSX file.';
         state.settings.milestonesTitle = 'Coming Up: June & July 2026';
         state.settings.milestonesIntro = 'The next 6–8 weeks are loaded with high-visibility milestones. Several initiatives in scoping or preparation are set to launch.';
       }
@@ -1221,7 +1211,7 @@
 
     document.getElementById('btnClearAll').addEventListener('click', () => {
       if (!confirm('Clear all initiatives, milestones, and report settings? This cannot be undone.')) return;
-      state = { rows: [], milestones: [], settings: { eyebrow: '', title: '', subtitle: '', summary: '', contactName: '', contactEmail: '', milestonesTitle: 'Coming Up', milestonesIntro: '' } };
+      state = { rows: [], milestones: [], settings: { eyebrow: '', quarter: '', title: '', subtitle: '', programName: '', missionText: '', contactName: '', contactEmail: '', milestonesTitle: 'Coming Up', milestonesIntro: '' } };
       save();
       renderEditor();
       renderPillarDatalist();

@@ -83,7 +83,7 @@
     <section id="view-settings" class="view no-print">
       <div class="view-header">
         <h2>Report Settings</h2>
-        <p class="hint">These fields control the cover section of the exported report. Saved automatically in this browser.</p>
+        <p class="hint">These fields control the cover section of the exported report. Saved automatically in this browser. The overview paragraph below the title is generated automatically from your current data (initiative counts, completion tiers) every time you edit or import — it isn't typed by hand.</p>
       </div>
       <div class="settings-grid">
         <label class="field">
@@ -102,9 +102,13 @@
           <span>Subtitle</span>
           <input type="text" id="setSubtitle" placeholder="Executive Leadership Summary — May 2026">
         </label>
+        <label class="field">
+          <span>Program name (used in the auto-generated overview sentence)</span>
+          <input type="text" id="setProgramName" placeholder="Design Technology Program">
+        </label>
         <label class="field field-wide">
-          <span>Summary paragraph(s) — one per line</span>
-          <textarea id="setSummary" rows="5" placeholder="Give a short executive summary of the program's momentum this period."></textarea>
+          <span>Mission statement (optional, appears after the auto-generated overview)</span>
+          <textarea id="setMissionText" rows="3" placeholder="This update is designed to give our teams a clear, consolidated view of where we stand..."></textarea>
         </label>
         <label class="field">
           <span>Contact name</span>

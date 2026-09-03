@@ -57,14 +57,22 @@ disables just the affected buttons with an explanatory message.
   Completion status (Not started / In progress / Gaining momentum) is
   derived automatically from the percentage (0% / 1–24% / 25%+).
 - **Report Settings** — program label (eyebrow), quarter, cover title,
-  summary text, contact info, and an optional "Coming Up" milestones list.
-  Importing a file updates the quarter automatically (see below).
+  subtitle, program name, an optional mission statement, contact info, and
+  an optional "Coming Up" milestones list. Importing a file updates the
+  quarter automatically (see below). The cover's overview paragraph (the
+  bold headline plus the sentence about how many initiatives have reached
+  25%/50%+ completion) is **not** typed by hand — it's generated live from
+  whatever data is currently loaded and recalculates on every edit or
+  import, the same way the reference report's narrative referenced live
+  counts.
 - **Report Preview** — the executive report itself: an overview/summary
-  cover, KPI tiles, average completion by pillar, portfolio status donut,
-  pillar overview table, an early wins highlight (initiatives at 50%+), an
-  Accomplishments roundup (any initiative with update text), a Risks &
-  Blockers roundup (any initiative with risk text), a Coming Up milestones
-  table, and a detail table per pillar.
+  cover (see above), KPI tiles, average completion by pillar, portfolio
+  status donut, pillar overview table, a Quarterly Accomplishments roundup
+  (any initiative with update text), a Quarterly Risks & Blockers roundup
+  (any initiative with risk text), a Coming Up milestones table, and a
+  detail table per pillar. (There is no separate "Early wins" section; a
+  "Early wins (50%+)" KPI tile remains in Portfolio at a Glance as a
+  standalone stat.)
 - **Import CSV / XLSX** — accepts files using the column headers above (a
   handful of common alternate spellings are also recognized). Additive: new
   rows are appended to what's already loaded. The most common non-empty
@@ -79,7 +87,8 @@ disables just the affected buttons with an explanatory message.
   layout of the report; choose "Save as PDF" (or print) for a paginated,
   vector-quality PDF matching the on-screen report.
 - **Export Word (.docx)** — generates a real, editable Word document
-  covering the same content (cover/summary, KPI tiles, average-completion
-  chart as a shaded table, portfolio status, pillar overview, early wins,
+  covering the same content and sections as the PDF (cover/overview, KPI
+  tiles, average-completion chart as a shaded table, portfolio status,
+  pillar overview, Quarterly Accomplishments, Quarterly Risks & Blockers,
   milestones, and one table per pillar with a page break between each) so
   it can be opened and modified directly in Word.
