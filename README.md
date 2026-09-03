@@ -59,36 +59,39 @@ disables just the affected buttons with an explanatory message.
 - **Report Settings** — program label (eyebrow), quarter, cover title,
   subtitle, program name, an optional mission statement, contact info, and
   an optional "Coming Up" milestones list. Importing a file updates the
-  quarter automatically (see below). The cover's overview paragraph (the
+  quarter automatically (see below). The hero's overview paragraphs (the
   bold headline plus the sentence about how many initiatives have reached
-  25%/50%+ completion) is **not** typed by hand — it's generated live from
-  whatever data is currently loaded and recalculates on every edit or
-  import, the same way the reference report's narrative referenced live
-  counts.
-- **Report Preview** — the executive report itself: an overview/summary
-  cover (see above), KPI tiles, average completion by pillar, portfolio
-  status donut, pillar overview table, a Quarterly Accomplishments roundup
-  (any initiative with update text), a Quarterly Risks & Blockers roundup
-  (any initiative with risk text), a Coming Up milestones table, and a
-  detail table per pillar. (There is no separate "Early wins" section; a
-  "Early wins (50%+)" KPI tile remains in Portfolio at a Glance as a
-  standalone stat.)
+  25%/50%+ completion) are **not** typed by hand — they're generated live
+  from whatever data is currently loaded and recalculate on every edit or
+  import.
+- **Report Preview** — a landscape executive dashboard: a navy hero band
+  (title, quarter/subtitle, dynamic overview paragraphs, contact line, and
+  four KPI tiles — Total Initiatives, Active & Underway, Early Wins (50%+),
+  Strategic Pillars), a two-card row (Pillar Overview with an inline
+  progress bar per pillar plus a Portfolio Status breakdown, and a Coming
+  Up milestones timeline), a full-width Quarterly Accomplishments table
+  (any initiative with update text), a full-width Quarterly Risks &
+  Blockers table (any initiative with risk text), and a second page
+  ("Initiative Details by Pillar") with one card per pillar containing a
+  compact Initiative / PM / Prog. / Status / Initiative Description table.
+  (There is no separate "Early wins" section; the "Early wins (50%+)" KPI
+  tile is the only trace of it, in the hero band.)
 - **Import CSV / XLSX** — accepts files using the column headers above (a
   handful of common alternate spellings are also recognized). Additive: new
   rows are appended to what's already loaded. The most common non-empty
   "Quarter" value in the imported rows becomes the report's displayed
-  quarter (shown next to the eyebrow label), overriding whatever was there
-  before.
+  quarter (shown in the hero band), overriding whatever was there before.
 - **Export CSV / Export XLSX** — download the current initiative list.
 - **Download Template (.xlsx / .csv)** — a blank starter workbook with the
   correct headers, one example row, and an Instructions sheet, for others to
   fill in and import back.
 - **Export PDF** — opens the browser's print dialog against a print-only
-  layout of the report; choose "Save as PDF" (or print) for a paginated,
-  vector-quality PDF matching the on-screen report.
-- **Export Word (.docx)** — generates a real, editable Word document
-  covering the same content and sections as the PDF (cover/overview, KPI
-  tiles, average-completion chart as a shaded table, portfolio status,
-  pillar overview, Quarterly Accomplishments, Quarterly Risks & Blockers,
-  milestones, and one table per pillar with a page break between each) so
-  it can be opened and modified directly in Word.
+  landscape layout of the report; choose "Save as PDF" (or print) for a
+  paginated, vector-quality PDF matching the on-screen report.
+- **Export Word (.docx)** — generates a real, editable landscape Word
+  document covering the same content and sections as the PDF (hero band as
+  a shaded table with nested KPI cells, pillar overview with inline bar
+  cells, portfolio status, coming up, Quarterly Accomplishments, Quarterly
+  Risks & Blockers, and a page break into an Initiative Details by Pillar
+  section with one nested table per pillar) so it can be opened and
+  modified directly in Word.
