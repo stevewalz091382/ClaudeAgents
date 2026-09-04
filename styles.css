@@ -188,17 +188,9 @@ footer { padding: 1rem 1.5rem; color: var(--muted); font-size: 0.78rem; text-ali
 .r-bar-axis-spacer { width: 103pt; flex: none; }
 .r-bar-axis-ticks { flex: 1; display: flex; justify-content: space-between; }
 
-.r-donut-box { display: flex; flex-direction: column; }
-.r-donut-wrap { display: flex; align-items: center; gap: 10pt; }
-.r-donut { position: relative; width: 58pt; height: 58pt; border-radius: 50%; flex: none; }
-.r-donut-hole {
-  position: absolute; inset: 15%; background: #fff; border-radius: 50%;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-}
-.r-donut-num { font-size: 15pt; font-weight: 700; color: var(--r-ink); line-height: 1; }
-.r-donut-label { font-size: 6.8pt; color: var(--r-meta-4); }
-.r-legend { display: flex; flex-direction: column; gap: 5pt; font-size: 7.1pt; color: var(--r-meta-5); }
-.r-legend-item { display: flex; align-items: center; gap: 5pt; }
+.r-status-box { display: flex; flex-direction: column; }
+.r-legend { display: flex; flex-direction: column; gap: 7pt; font-size: 7.9pt; color: var(--r-meta-5); margin-top: 4pt; }
+.r-legend-item { display: flex; align-items: center; gap: 6pt; }
 .r-legend-swatch { width: 7.5pt; height: 7.5pt; border-radius: 2pt; flex: none; }
 
 .r-table { width: 100%; border-collapse: collapse; font-size: 7.9pt; }
@@ -208,39 +200,33 @@ footer { padding: 1rem 1.5rem; color: var(--muted); font-size: 0.78rem; text-ali
 .r-table td { padding: 6pt 7pt; border: 0.75pt solid var(--r-border); vertical-align: top; }
 .r-table { table-layout: fixed; }
 
-.r-overview-table th { background: var(--r-navy); color: #fff; white-space: nowrap; }
-.r-overview-table td { font-size: 8.2pt; }
-.r-overview-table col.r-col-pillar, .r-overview-table th:nth-child(1) { width: 20%; }
-.r-overview-table col.r-col-count, .r-overview-table th:nth-child(2) { width: 10%; }
-.r-overview-table col.r-col-avg, .r-overview-table th:nth-child(3) { width: 11%; }
-.r-overview-table col.r-col-top, .r-overview-table th:nth-child(4) { width: 59%; }
-.r-pillar-name { font-weight: 700; }
-.r-count-cell { color: var(--r-meta-5); }
-.r-avg-cell { font-weight: 700; }
-.r-top-cell { color: var(--r-ink); }
-
 .r-detail-table th:nth-child(1), .r-detail-table td:nth-child(1) { width: 26%; }
 .r-detail-table th:nth-child(2), .r-detail-table td:nth-child(2) { width: 13%; }
 .r-detail-table th:nth-child(3), .r-detail-table td:nth-child(3) { width: 7%; }
 .r-detail-table th:nth-child(4), .r-detail-table td:nth-child(4) { width: 18%; }
 .r-detail-table th:nth-child(5), .r-detail-table td:nth-child(5) { width: 36%; }
 
-/* Accomplishments (cross-pillar roundup) */
-.r-accomplishments-table th { background: var(--r-navy); color: #fff; }
-.r-accomplishments-table td { font-size: 7.9pt; }
-.r-accomplishments-table tbody tr:nth-child(even) td { background: #fafafa; }
-.r-accomplishments-table th:nth-child(1), .r-accomplishments-table td:nth-child(1) { width: 26%; }
-.r-accomplishments-table th:nth-child(2), .r-accomplishments-table td:nth-child(2) { width: 18%; }
-.r-accomplishments-table th:nth-child(3), .r-accomplishments-table td:nth-child(3) { width: 56%; }
+/* Accomplishments & Wins (cross-pillar card grid) */
+.r-section-title-win { color: #0f6e56 !important; }
+.r-win-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10pt; }
+.r-win-card { background: #fff; border: 1px solid var(--r-border); border-radius: 3pt; padding: 9pt 11pt; }
+.r-win-card-title { display: flex; align-items: baseline; gap: 4pt; font-weight: 700; font-size: 7.9pt; color: var(--r-ink); margin-bottom: 4pt; }
+.r-win-check { color: #0f6e56; font-weight: 700; }
+.r-win-card-pillar { font-weight: 700; font-size: 7.1pt; margin-bottom: 4pt; }
+.r-win-card-body { font-size: 7.5pt; color: var(--r-meta-1); line-height: 1.5; }
 
-/* Risks & Blockers (cross-pillar roundup) */
+/* Risks & Blockers (cross-pillar roundup, with severity level) */
+.r-section-title-risk { color: #993c1d !important; }
 .r-risks-table th { background: #993c1d; color: #fff; }
 .r-risks-table td { font-size: 7.9pt; }
 .r-risks-table tbody tr:nth-child(even) td { background: #fafafa; }
-.r-risks-table th:nth-child(1), .r-risks-table td:nth-child(1) { width: 22%; }
-.r-risks-table th:nth-child(2), .r-risks-table td:nth-child(2) { width: 14%; }
-.r-risks-table th:nth-child(3), .r-risks-table td:nth-child(3) { width: 14%; }
-.r-risks-table th:nth-child(4), .r-risks-table td:nth-child(4) { width: 50%; }
+.r-risks-table th:nth-child(1), .r-risks-table td:nth-child(1) { width: 24%; }
+.r-risks-table th:nth-child(2), .r-risks-table td:nth-child(2) { width: 16%; }
+.r-risks-table th:nth-child(3), .r-risks-table td:nth-child(3) { width: 12%; }
+.r-risks-table th:nth-child(4), .r-risks-table td:nth-child(4) { width: 48%; }
+.r-risk-level-badge {
+  display: inline-block; padding: 2pt 7pt; border-radius: 999px; font-size: 7.1pt; font-weight: 700; white-space: nowrap;
+}
 
 /* Generic non-cover section block (Coming Up, pillar tables) */
 .r-block-intro { font-size: 8.2pt; color: var(--r-meta-1); margin: -4pt 0 10pt; line-height: 1.5; }
@@ -266,9 +252,11 @@ footer { padding: 1rem 1.5rem; color: var(--muted); font-size: 0.78rem; text-ali
 .r-status-pill {
   display: inline-block; padding: 2pt 7pt; border-radius: 999px; font-size: 7.5pt; font-weight: 700; white-space: nowrap;
 }
-.status-momentum { background: #eaf7f1; color: #0f6e56; }
-.status-progress { background: #e8f1fb; color: #185fa5; }
-.status-none { background: #f5f5f5; color: #999999; }
+
+.r-callout { margin-top: 4pt; padding: 3pt 6pt; border-radius: 2pt; font-size: 7.1pt; line-height: 1.4; }
+.r-callout strong { font-weight: 700; }
+.r-callout-risk { background: #fff7f0; border-left: 2pt solid #ba7517; color: #7a4500; }
+.r-callout-win { background: #f0faf4; border-left: 2pt solid #0f6e56; color: #0a4a38; }
 
 /* =========================================================================
    PRINT
@@ -290,7 +278,7 @@ footer { padding: 1rem 1.5rem; color: var(--muted); font-size: 0.78rem; text-ali
   .r-cover { break-after: page; page-break-after: always; }
   .r-pillar-head { break-after: avoid; page-break-after: avoid; }
   .r-table tr { break-inside: avoid; page-break-inside: avoid; }
-  .r-overview-table { break-inside: avoid; page-break-inside: avoid; }
+  .r-win-card { break-inside: avoid; page-break-inside: avoid; }
 }
 
 /* ---------------- Responsive (screen only — must not affect print pagination) ---------------- */

@@ -1,7 +1,7 @@
 // Sample dataset ("Load Sample Data" button). Purely for demo/testing purposes —
 // mirrors the shape of a real Design Technology Program status update.
 // Fields match the required import/export format:
-// Quarter, Strategic Pillar, Project Name, Recent Risks and Blockers, Accomplishments/Updates,
+// Quarter, Strategic Pillar, Project Name, Recent Risks and Blockers, Risk Level, Accomplishments/Updates,
 // Approximate Completion Percentage, Project Manager, Initiative Description
 // (Quarter is applied uniformly to all rows when this dataset is loaded, not stored per-row here.)
 window.SAMPLE_DATA = [
@@ -9,8 +9,9 @@ window.SAMPLE_DATA = [
     pillar: `Data`,
     project: `Content Strategy (Avail Platform, Creation, Maintenance, Shared Parameters)`,
     risks: `IP watermarking is at different stages across business groups; each group needs a plan to close the gap before general release.`,
+    riskLevel: `Low`,
     updates: `ABG rollout on April 6th, 2026. On boarding training has been provided. Approx 1000 users on Avail at the moment; ENG rollout anticipated for beginning of July. Eng currently reviewing and consolidating content, applying consolidated shared parameters and IP prior to upload into Avail; Enclave solution has been provided by Avail and HDR is currently testing. Still needs to run through Summit7 for review/approval.`,
-    pct: 60,
+    pct: 78,
     pm: `Joe Campisi`,
     description: `Develop Avail platform content governance, create shared parameter libraries, and publish maintenance workflows for consistent content strategy.`
   },
@@ -18,6 +19,7 @@ window.SAMPLE_DATA = [
     pillar: `Data`,
     project: `Expand Premium Data Service`,
     risks: `Awaiting legal review before the datasets can be published externally; timeline depends on legal's queue.`,
+    riskLevel: `Medium`,
     updates: `Expand Premium Data Service concept and make available across platforms working with Morgan Renter, it has been approved for a SPM project, we have identified 5 datasets from Cross Sector and ABG. These are being defined/built into a process prototype in ServiceNow.`,
     pct: 12,
     pm: `Dwayne Hansen`,
@@ -75,6 +77,7 @@ window.SAMPLE_DATA = [
     pillar: `Execution & Delivery`,
     project: `CAD/BIM Production Reporting & KPIs`,
     risks: `Waiting on Autodesk to provide a supported process for exporting cloud usage data; no committed delivery date yet.`,
+    riskLevel: `Medium`,
     updates: `Bentley - actively developing a solution to monitor active vs idle activity in products; Autodesk - awaiting a dedicated supported process for Autodesk to provide exports of data points being collected in cloud and product.`,
     pct: 10,
     pm: `Dan Prokop`,
@@ -84,8 +87,9 @@ window.SAMPLE_DATA = [
     pillar: `Execution & Delivery`,
     project: `Project Planning & Execution Strategy`,
     risks: `Rollout to remaining business groups depends on PMIS integration work that is not yet scheduled.`,
+    riskLevel: `High`,
     updates: `DDP requirements collected, development of DDP app and integration of dashboard is underway; SharePoint sites and guidance for interim and permanent solutions have been developed and made available in Digital Design Community.`,
-    pct: 65,
+    pct: 80,
     pm: `Steve Walz`,
     description: `Develop standardized planning workflows, create execution strategy templates, and publish best practices for digital delivery.`
   },
@@ -181,6 +185,7 @@ window.SAMPLE_DATA = [
     pillar: `Quality`,
     project: `IP Protection & Content Watermarking`,
     risks: `ENG content watermarking is behind the ABG timeline; needs a dedicated resource to finish before the July target.`,
+    riskLevel: `Medium`,
     updates: `Revit ABG content fully marked. ENG watermarking in progress; July completion targeted.`,
     pct: 55,
     pm: `Dwayne Hansen`,
@@ -190,6 +195,7 @@ window.SAMPLE_DATA = [
     pillar: `Technology Innovation`,
     project: `Agentic AI Framework with MCP`,
     risks: `Needs an approved business case before scaling beyond the pilot; without it, funding for phase 2 is at risk.`,
+    riskLevel: `Low`,
     updates: `Internal MCP (RBG) connects Revit & Civil 3D. Autodesk IS Quality Copilot engagement starts June.`,
     pct: 25,
     pm: `Dwayne Hansen`,

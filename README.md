@@ -32,8 +32,8 @@ Keep `.claude/` out of `.gitignore`. The web session needs these files committed
 
 A strictly browser-based reporting tool (no server, no backend, no
 database) that turns a list of initiatives into an executive-style status
-report, and exports it to PDF. Files: `index.html`, `styles.css`, `app.js`,
-`sample-data.js`.
+report, and exports it as a real, editable Word document. Files:
+`index.html`, `styles.css`, `app.js`, `sample-data.js`.
 
 ### Use it
 
@@ -46,51 +46,51 @@ The XLSX import/export/template features load the
 [SheetJS](https://sheetjs.com) library, and the Word export loads the
 [docx](https://docx.js.org) library, each from a CDN (`cdn.jsdelivr.net`,
 with a Subresource Integrity hash pinned in `index.html`), so those specific
-buttons need one outbound request on first load. Everything else — the
-editor, the report, PDF export, and CSV import/export — works fully offline
-even without those requests succeeding; the app detects a failed load and
-disables just the affected buttons with an explanatory message.
+buttons need one outbound request on first load. The editor and CSV
+import/export work fully offline even without those requests succeeding;
+the app detects a failed load and disables just the affected buttons with
+an explanatory message.
 
 - **Data Editor** — an editable table of initiatives: Quarter, Strategic
-  Pillar, Project Name, Recent Risks and Blockers, Accomplishments/Updates,
+  Pillar, Project Name, Recent Risks and Blockers, Risk Level (High / Medium
+  / Low — defaults to Medium if left blank), Accomplishments/Updates,
   Approximate Completion Percentage, Project Manager, Initiative Description.
-  Completion status (Not started / In progress / Gaining momentum) is
-  derived automatically from the percentage (0% / 1–24% / 25%+).
-- **Report Settings** — program label (eyebrow), quarter, cover title,
+  Completion status (Not started / Early stage / In progress / On track) is
+  derived automatically from the percentage (0% / 1–24% / 25–74% / 75%+).
+- **Report Settings** — program label (eyebrow), quarter, report title,
   subtitle, program name, an optional mission statement, contact info, and
   an optional "Coming Up" milestones list. Importing a file updates the
-  quarter automatically (see below). The cover's overview paragraph (the
-  bold headline plus the sentence about how many initiatives have reached
-  25%/50%+ completion) is **not** typed by hand — it's generated live from
-  whatever data is currently loaded and recalculates on every edit or
-  import, the same way the reference report's narrative referenced live
-  counts.
-- **Report Preview** — the executive report itself: an overview/summary
-  cover (see above), KPI tiles, average completion by pillar, portfolio
-  status donut, pillar overview table, a Quarterly Accomplishments roundup
-  (any initiative with update text), a Quarterly Risks & Blockers roundup
-  (any initiative with risk text), a Coming Up milestones table, and a
-  detail table per pillar, with an Initiative Description column (rather
-  than a status/update column) so readers see what each initiative is,
-  not just its latest update. (There is no separate "Early wins" section;
-  a "Early wins (50%+)" KPI tile remains in Portfolio at a Glance as a
-  standalone stat.)
+  quarter automatically (see below). The header's overview paragraphs (the
+  bold headline plus the sentences about portfolio completion and risk
+  count) are **not** typed by hand — they're generated live from whatever
+  data is currently loaded and recalculate on every edit or import.
+- **Report Preview** — a preview of the Word export's content: a header
+  (title, quarter/subtitle with a live portfolio average, dynamic overview
+  paragraphs, contact line), four KPI tiles (Total Initiatives, Active &
+  Underway, On Track 75%+, Risks / Blockers), an average-completion-by-pillar
+  bar chart (fixed 0–100% axis) alongside a 4-tier portfolio status legend
+  (On track / In progress / Early stage / Not started), an "Accomplishments
+  & Wins" card grid (any initiative with update text), a "Risks & Blockers"
+  table with a colored severity badge per row, an optional "Coming Up"
+  milestones table, and a detail table per pillar — Initiative / Project
+  Manager / % / Status / Initiative Details — where the Initiative Details
+  column shows the description plus an inline orange "Risk:" callout and/or
+  green "Win:" callout when that initiative has risk or update text. An
+  initiative's name is bolded in its pillar table when it's on track (75%+)
+  or is one of the featured wins.
 - **Import CSV / XLSX** — accepts files using the column headers above (a
   handful of common alternate spellings are also recognized). Additive: new
   rows are appended to what's already loaded. The most common non-empty
   "Quarter" value in the imported rows becomes the report's displayed
-  quarter (shown next to the eyebrow label), overriding whatever was there
-  before.
+  quarter, overriding whatever was there before.
 - **Export CSV / Export XLSX** — download the current initiative list.
 - **Download Template (.xlsx / .csv)** — a blank starter workbook with the
   correct headers, one example row, and an Instructions sheet, for others to
   fill in and import back.
-- **Export PDF** — opens the browser's print dialog against a print-only
-  layout of the report; choose "Save as PDF" (or print) for a paginated,
-  vector-quality PDF matching the on-screen report.
-- **Export Word (.docx)** — generates a real, editable Word document
-  covering the same content and sections as the PDF (cover/overview, KPI
-  tiles, average-completion chart as a shaded table, portfolio status,
-  pillar overview, Quarterly Accomplishments, Quarterly Risks & Blockers,
-  milestones, and one table per pillar with a page break between each) so
-  it can be opened and modified directly in Word.
+- **Export Word (.docx)** — generates a real, editable Word document with
+  the same content and sections as the Report Preview (header, KPI tiles,
+  bar chart as a shaded table, 4-tier status legend, Accomplishments & Wins
+  cards, Risks & Blockers table with severity badges, milestones, and one
+  table per pillar — with inline Risk/Win callouts — starting on its own
+  page) so it can be opened and modified directly in Word. This is
+  currently the tool's only report export format.

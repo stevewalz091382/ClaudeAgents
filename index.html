@@ -39,8 +39,7 @@
     </div>
     <div class="toolbar-group">
       <span class="toolbar-label">Report</span>
-      <button id="btnExportPdf" class="btn btn-primary">Export PDF</button>
-      <button id="btnExportWord" class="btn">Export Word (.docx)</button>
+      <button id="btnExportWord" class="btn btn-primary">Export Word (.docx)</button>
     </div>
     <div class="toolbar-group toolbar-group-right">
       <button id="btnLoadSample" class="btn btn-ghost">Load Sample Data</button>
@@ -56,20 +55,21 @@
     <section id="view-editor" class="view active no-print">
       <div class="view-header">
         <h2>Initiatives</h2>
-        <p class="hint">Edit cells directly. Completion status (Not started / In progress / Gaining momentum) is derived automatically from the completion percentage. Use the exact column headers shown here when preparing CSV/XLSX files outside this tool.</p>
+        <p class="hint">Edit cells directly. Completion status (Not started / Early stage / In progress / On track) is derived automatically from the completion percentage. Use the exact column headers shown here when preparing CSV/XLSX files outside this tool.</p>
       </div>
       <div class="table-scroll">
         <table id="editorTable" class="editor-table">
           <thead>
             <tr>
-              <th style="width:7%">Quarter</th>
-              <th style="width:11%">Strategic Pillar</th>
-              <th style="width:13%">Project Name</th>
-              <th style="width:16%">Recent Risks and Blockers</th>
-              <th style="width:16%">Accomplishments/Updates</th>
-              <th style="width:7%">Approx. %</th>
-              <th style="width:10%">Project Manager</th>
-              <th style="width:16%">Initiative Description</th>
+              <th style="width:6%">Quarter</th>
+              <th style="width:10%">Strategic Pillar</th>
+              <th style="width:12%">Project Name</th>
+              <th style="width:14%">Recent Risks and Blockers</th>
+              <th style="width:7%">Risk Level</th>
+              <th style="width:14%">Accomplishments/Updates</th>
+              <th style="width:6%">Approx. %</th>
+              <th style="width:9%">Project Manager</th>
+              <th style="width:15%">Initiative Description</th>
               <th style="width:4%"></th>
             </tr>
           </thead>
@@ -83,7 +83,7 @@
     <section id="view-settings" class="view no-print">
       <div class="view-header">
         <h2>Report Settings</h2>
-        <p class="hint">These fields control the cover section of the exported report. Saved automatically in this browser. The overview paragraph below the title is generated automatically from your current data (initiative counts, completion tiers) every time you edit or import — it isn't typed by hand.</p>
+        <p class="hint">These fields control the header section of the exported report. Saved automatically in this browser. The overview paragraphs below the title are generated automatically from your current data (initiative counts, completion tiers, risk count) every time you edit or import — they aren't typed by hand.</p>
       </div>
       <div class="settings-grid">
         <label class="field">
