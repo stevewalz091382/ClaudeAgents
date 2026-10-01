@@ -15,6 +15,7 @@
 (vl-load-com)
 
 (setq *c3dt:version* "1.0.0")
+(setq *c3dt:publisher* "Stephen Walz")
 
 ;; ---------------------------------------------------------------------------
 ;; Configuration
@@ -403,7 +404,7 @@
 
 (defun c:C3DTOOLS-STATUS ( / app)
   (setq app (c3dt:civil-app))
-  (c3dt:msg "C3DTools" (strcat "Version " *c3dt:version*))
+  (c3dt:msg "C3DTools" (strcat "Version " *c3dt:version* " - published by " *c3dt:publisher*))
   (princ (strcat "\n  Install folder:  " (c3dt:home)))
   (princ (strcat "\n  Log folder:      " (c3dt:log-dir)))
   (princ (strcat "\n  Civil 3D COM:    "

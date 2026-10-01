@@ -6,11 +6,11 @@
     Name="C3DTools"
     AppVersion="1.0.0"
     Description="Civil 3D data-loss guard, drawing audit report and change-impact warnings."
-    Author="PUBLISHER NAME"
+    Author="Stephen Walz"
     ProductCode="{710F60CF-5957-424F-8879-F3B370EA8CF3}"
     UpgradeCode="{F70EFADA-E036-4C9F-98C6-96AD095DE0D6}">
 
-  <CompanyDetails Name="PUBLISHER NAME" Url="" Email="" />
+  <CompanyDetails Name="Stephen Walz" Url="" Email="" />
 
   <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R24.0" />
 
