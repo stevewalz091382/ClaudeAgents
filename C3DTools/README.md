@@ -8,18 +8,29 @@ C3DTools contains three AutoLISP tools that load into every drawing:
 |---|---|---|
 | **C3DGuard** | Warns when EXPLODE, BURST, XREF bind or moving an xref destroys data. Logs a health snapshot on every save and flags unusual growth. | Only when something risky happens |
 | **C3DAudit** | Keeps a per-drawing audit report (layers, blocks, styles, Civil 3D object counts, xrefs, settings) up to date after every save | Never |
-| **C3DImpact** | Before an alignment, surface or profile is edited, lists what depends on it (corridors, profiles, sample lines, sheets, pipes nearby) | Shows a dialog on grip edits and surface edits |
+| **C3DImpact** | Before an alignment, surface or profile is edited, lists what depends on it (corridors, profiles, sample lines, sheets, pipes nearby) | Shows a warning on grip edits and surface edits, every time or once per session (user's choice) |
+
+## Impact warnings
+
+The warning lists the dependent objects and has a single **OK** button. It is information only, because AutoLISP cannot cancel a command from a dialog. To stop the edit, click OK and then press **ESC** at the command's next prompt.
+
+Each user chooses in `C3D-IMPACT-SETTINGS` whether warnings appear:
+
+- **Every time** the command runs (default), or
+- **Once per command, per Civil 3D session.** After the first warning for a command, later uses run without the dialog until Civil 3D is restarted. All grip edits count as one command.
+
+Warnings can also be switched off entirely, in the same dialog or with `C3D-IMPACT-OFF`.
 
 ## Command interception (opt-in)
 
-C3DImpact can also intercept **MOVE, STRETCH, ROTATE and SCALE**. This is **off by default**, and no AutoCAD command is changed unless a user turns it on.
+C3DImpact can also intercept **MOVE, STRETCH, ROTATE and SCALE**, each one separately. All four are **off by default**, and no AutoCAD command is changed unless a user ticks it.
 
-When a user runs `C3D-IMPACT-INTERCEPT`, a dialog explains the change and asks for confirmation. If they enable it, C3DTools:
+`C3D-IMPACT-SETTINGS` has a tick box for each command, next to an explanation of what interception does. For each ticked command, C3DTools:
 
-- runs `UNDEFINE` on those four commands for the session, and replaces them with versions that show the impact dialog first. Cancel blocks the command. Accept Risk runs the original command unchanged.
-- remembers the choice for that user. Running `C3D-IMPACT-INTERCEPT` again turns it off and restores the commands immediately.
+- runs `UNDEFINE` on that command for the session, and replaces it with a version that shows the impact warning first and then runs the original command unchanged.
+- remembers the choice for that user. Unticking restores the original command immediately.
 
-Side effects while it is on:
+Side effects while a command is ticked:
 
 - Other LISP routines, scripts or macros that call these commands **without** the `_.` prefix get the C3DTools version.
 - Macros that use `_.MOVE` and similar bypass interception.
@@ -29,9 +40,10 @@ Nothing persists outside the session: `UNDEFINE` resets when Civil 3D closes, an
 CAD administrators control this in `C3DTools-Config.lsp`:
 
 - `("ImpactInterceptAllowed" . nil)` prevents anyone from enabling it.
-- `("ImpactInterceptDefault" . T)` turns it on for users who have not made their own choice.
+- `("ImpactInterceptDefault" . T)` turns on all four for users who have not made their own choice, and `("ImpactInterceptDefault" . ("MOVE" "ROTATE"))` turns on just those listed.
+- `("ImpactWarnFrequency" . "once")` makes once-per-session the default warning frequency.
 
-To give users a one-click button, add a ribbon or toolbar button with the macro `^C^CC3D-IMPACT-INTERCEPT`.
+One-click buttons: use `^C^CC3D-IMPACT-SETTINGS` to open the dialog. The command-line version `-C3D-IMPACT-SETTINGS` toggles one item per keyword, so a button with `^C^C-C3D-IMPACT-SETTINGS;Move;X;` toggles MOVE interception. The keywords are Move, Stretch, Rotate, Scale, Warnings and Frequency.
 
 ## Install
 
@@ -69,8 +81,9 @@ Settings live in `C3DTools-Config.lsp`, in the install folder's `Contents`. It i
 | `GuardGrowthWarnPct` | `20` | Growth between saves that triggers a warning |
 | `AuditOnSave` | on | Re-audit the saved drawing after each save |
 | `ImpactWarnings` | on | Impact dialog for grip edits and surface edits |
+| `ImpactWarnFrequency` | `"every"` | `"every"` or `"once"` per command per session, for users who have not chosen |
 | `ImpactInterceptAllowed` | on | Whether users may enable interception |
-| `ImpactInterceptDefault` | off | Interception for users who have not chosen |
+| `ImpactInterceptDefault` | off | Interception for users who have not chosen: `nil`, `T` (all four), or a list of commands |
 | `ImpactExtraCommands` | none | More Civil 3D command names to watch. Confirm a name with `C3DGUARD-LOGCOMMANDS` before adding it. |
 
 Folder lookup order. Install folder: `C3DTOOLS_HOME`, then the bundle location. Log folder: `C3DTOOLS_LOGDIR`, then `LogDir`, then the default.
@@ -87,7 +100,9 @@ Folder lookup order. Install folder: `C3DTOOLS_HOME`, then the bundle location. 
 | `C3DAUDIT` | Audits all open drawings and opens the report in Excel |
 | `C3DAUDIT-FOLDER` | Audits every .dwg in a folder |
 | `C3D-IMPACT-ON` / `-OFF` | Impact warnings on or off |
-| `C3D-IMPACT-INTERCEPT` | Turns MOVE/STRETCH/ROTATE/SCALE interception on or off (see above) |
+| `C3D-IMPACT-SETTINGS` | Dialog: warnings on/off, every time or once per session, interception of each command |
+| `-C3D-IMPACT-SETTINGS` | The same at the command line, for macros and scripts |
+| `C3D-IMPACT-INTERCEPT` | Older name for `C3D-IMPACT-SETTINGS` |
 | `C3D-IMPACT-STATUS` / `-DEBUG` | Status, and diagnostic tracing (off by default) |
 
 ## Files written
@@ -110,7 +125,8 @@ These files contain drawing paths and names. C3DTools makes no network connectio
 
 ## Known limitations
 
-- AutoLISP cannot cancel a Civil 3D command or grip drag that has already started. For those, Cancel asks the user to press ESC. MOVE, STRETCH, ROTATE and SCALE (when interception is on) are blocked properly.
+- AutoLISP cannot cancel a command from a dialog, so the warning only informs. The user stops the edit with ESC after clicking OK.
+- With STRETCH intercepted and nothing pre-selected, C3DTools asks for the selection itself and passes it to STRETCH. STRETCH then moves whole objects rather than stretching a crossing window. Pre-select with a crossing window, or leave STRETCH unticked.
 - Surface edits started from Toolspace's right-click menu do not raise a command event, so neither Guard nor Impact sees them.
 - Only these Civil 3D commands are watched, because they are the names observed in a live session: `AECCRAISELOWERSURFACE`, `AECCADDSURFACELINE`, `AECCDELETESURFACELINE`, `AECCADDSURFACEPOINT`, `AECCDELETESURFACEPOINT`, `AECCEDITSURFACEPOINT`, `AECCMOVESURFACEPOINT` and `AECCEDITSURFACESWAPEDGE`. Alignment and profile editor commands are not watched until their names are confirmed. Grip edits of alignments and profiles are watched.
 - Pipe proximity uses bounding boxes, so treat it as "worth checking".

@@ -19,7 +19,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 FILES = sorted((ROOT / "src").glob("*.lsp")) + sorted((ROOT / "C3DTools.bundle" / "Contents").glob("*.lsp"))
 
 PREFIXES = ("c3dt:", "c3dguard:", "c3daudit:", "c3dimpact:")
-COMMAND_PREFIXES = ("c:c3dtools-", "c:c3dguard-", "c:c3daudit", "c:c3d-impact-")
+COMMAND_PREFIXES = ("c:c3dtools-", "c:c3dguard-", "c:c3daudit", "c:c3d-impact-", "c:-c3d-impact-")
 GLOBAL_PREFIXES = tuple("*" + p for p in PREFIXES)
 
 BANNED = [

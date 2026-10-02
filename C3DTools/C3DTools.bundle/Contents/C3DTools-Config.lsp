@@ -32,16 +32,25 @@
 
     ;; ---- C3DImpact ---------------------------------------------------------
 
-    ;; Impact warnings for grip edits and Civil 3D surface-edit commands.
+    ;; Impact warnings for grip edits, Civil 3D surface-edit commands and any
+    ;; intercepted command. Users can change this in C3D-IMPACT-SETTINGS.
     ("ImpactWarnings" . T)
 
-    ;; Whether users may turn on MOVE/STRETCH/ROTATE/SCALE interception with
-    ;; C3D-IMPACT-INTERCEPT. Interception UNDEFINES those four commands for
+    ;; How often a warning appears, for users who have not chosen:
+    ;;   "every"  every time the command runs
+    ;;   "once"   the first time each command runs in a Civil 3D session
+    ("ImpactWarnFrequency" . "every")
+
+    ;; Whether users may turn on interception of MOVE, STRETCH, ROTATE and
+    ;; SCALE in C3D-IMPACT-SETTINGS. Each intercepted command is UNDEFINED for
     ;; the session. Set to nil to prohibit it.
     ("ImpactInterceptAllowed" . T)
 
-    ;; Start with interception ON for users who have not made their own
-    ;; choice. Leave nil unless your firm has agreed to it.
+    ;; Interception for users who have not made their own choice:
+    ;;   nil                     none (recommended)
+    ;;   T                       all four commands
+    ;;   ("MOVE" "ROTATE")       just the commands listed
+    ;; Leave nil unless your firm has agreed to it.
     ("ImpactInterceptDefault" . nil)
 
     ;; Extra Civil 3D command names that should show the impact warning.

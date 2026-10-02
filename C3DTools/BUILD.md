@@ -47,8 +47,11 @@ The publisher is set to Stephen Walz in `C3DTools.bundle\PackageContents.xml`. B
 |---|---|
 | `C3DTOOLS-STATUS` | Install and log folders shown. Civil 3D COM connected. |
 | Type `MOVE` on an alignment | The normal MOVE runs and no Impact dialog appears (interception is off by default). |
-| `C3D-IMPACT-INTERCEPT`, click Enable, then `MOVE` on an alignment | The impact dialog appears. Cancel blocks the move. |
-| Close and reopen Civil 3D, then `C3D-IMPACT-STATUS` | Interception is still ON. Run `C3D-IMPACT-INTERCEPT` to turn it off. |
+| `C3D-IMPACT-SETTINGS`, tick MOVE only, OK, then `MOVE` on an alignment | The warning appears with a single OK button, then MOVE continues and ESC cancels it. `ROTATE` is not intercepted. |
+| Untick MOVE in `C3D-IMPACT-SETTINGS`, then `MOVE` | The normal MOVE runs. |
+| Set the frequency to Once, then grip-drag an alignment twice | The warning appears the first time only. It appears again after restarting Civil 3D. |
+| `-C3D-IMPACT-SETTINGS`, then Rotate, then X | ROTATE interception toggles. |
+| Close and reopen Civil 3D, then `C3D-IMPACT-STATUS` | Every setting is as you left it. |
 | Grip-drag an alignment | The impact dialog appears. |
 | Run each surface edit command from the ribbon (Add Point, Delete Line, Swap Edge, and so on) | The impact dialog appears. |
 | `EXPLODE` an alignment, then `U` | Guard alert appears and a row is added to `Events.csv`. |
