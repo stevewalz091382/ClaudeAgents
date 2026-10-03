@@ -27,3 +27,12 @@ Copy `.claude/agents/` and `.claude/commands/` into `~/.claude/` (all projects) 
 ## Note
 
 Keep `.claude/` out of `.gitignore`. The web session needs these files committed to load them.
+
+## AutoCAD tools
+
+`autocad/ipstamp/` holds AutoLISP for AutoCAD and Civil 3D 2027:
+
+* **IPStamp** uses reactors to write "last touched" stamps and IP marks onto drawing objects automatically.
+* **IPScan** scans received drawings and reports where their content came from.
+
+See `autocad/ipstamp/README.md`.
