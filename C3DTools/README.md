@@ -8,7 +8,7 @@ C3DTools contains three AutoLISP tools that load into every drawing:
 |---|---|---|
 | **C3DGuard** | Warns when EXPLODE, BURST, XREF bind or moving an xref destroys data. Logs a health snapshot on every save and flags unusual growth. | Only when something risky happens |
 | **C3DAudit** | Keeps a per-drawing audit report (layers, blocks, styles, Civil 3D object counts, xrefs, settings) up to date after every save | Never |
-| **C3DImpact** | Before an alignment, surface or profile is edited, lists what depends on it (corridors, profiles, sample lines, sheets, pipes nearby) | Shows a warning on grip edits and surface edits, every time or once per session (user's choice) |
+| **C3DImpact** | Before an alignment, surface or profile is edited, lists what depends on it (corridors, profiles, sample lines, sheets, pipes nearby) | Shows a warning on grip edits, surface edits and MOVE/STRETCH/ROTATE/SCALE of those objects, every time or once per session (user's choice) |
 
 ## Impact warnings
 
@@ -36,6 +36,15 @@ Each user chooses in `C3D-IMPACT-SETTINGS` whether warnings appear:
 - **Once per command, per Civil 3D session.** After the first warning for a command, later uses run without the dialog until Civil 3D is restarted. All grip edits count as one command.
 
 Warnings can also be switched off entirely, in the same dialog or with `C3D-IMPACT-OFF`.
+
+## MOVE, STRETCH, ROTATE and SCALE
+
+Using any of these commands on an alignment, profile or surface shows the impact warning. Nothing is undefined for this:
+
+- **Objects selected first, then the command:** the warning appears as the command starts. Click OK, then press ESC to stop.
+- **Command first, then select:** the warning appears when the command finishes, listing what was affected, and says to type **U** to undo.
+
+To get the warning before the edit in the second case as well, turn on interception (below).
 
 ## Command interception (opt-in)
 
@@ -121,7 +130,7 @@ Folder lookup order. Install folder: `C3DTOOLS_HOME`, then the bundle location. 
 | `C3D-IMPACT-SETTINGS` | Dialog: warnings on/off, every time or once per session, interception of each command |
 | `-C3D-IMPACT-SETTINGS` | The same at the command line, for macros and scripts |
 | `C3D-IMPACT-INTERCEPT` | Older name for `C3D-IMPACT-SETTINGS` |
-| `C3D-IMPACT-RESTORE` | Turns all interception off and restores MOVE, STRETCH, ROTATE and SCALE |
+| `C3D-IMPACT-RESTORE` | Turns all interception off and restores MOVE, STRETCH, ROTATE and SCALE (their warnings keep working) |
 | `C3D-IMPACT-STATUS` / `-DEBUG` | Status, and diagnostic tracing (off by default) |
 
 ## Files written

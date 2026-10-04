@@ -46,7 +46,9 @@ The publisher is set to Stephen Walz in `C3DTools.bundle\PackageContents.xml`. B
 | Check | Expected |
 |---|---|
 | `C3DTOOLS-STATUS` | Install and log folders shown. Civil 3D COM connected. |
-| Type `MOVE` on an alignment | The normal MOVE runs and no Impact dialog appears (interception is off by default). |
+| Interception off: select an alignment, then `MOVE` | The warning appears before MOVE asks for a base point. |
+| Interception off: `MOVE`, pick an alignment, finish the move | The warning appears after the move and says "Type U to undo it." |
+| Interception off: `MOVE` a plain line | No warning. |
 | `C3D-IMPACT-SETTINGS`, tick MOVE only, OK, then `MOVE` on an alignment | The warning appears with a single OK button, then MOVE continues and ESC cancels it. `ROTATE` is not intercepted. |
 | On any warning, click Learn More..., then OK | The browser opens at that command's section of the knowledge-base page (check MOVE, STRETCH, ROTATE, SCALE, grip edits on an alignment and on a profile, and a surface edit). The warning stays open until OK. |
 | Untick MOVE in `C3D-IMPACT-SETTINGS`, then `MOVE` | The normal MOVE runs. |

@@ -14,9 +14,15 @@
 ;;;   Each user chooses whether a warning appears every time, or only the first
 ;;;   time each command runs in a Civil 3D session.
 ;;;
+;;; MOVE / STRETCH / ROTATE / SCALE
+;;;   Warned about through the command reactor, with nothing undefined: before
+;;;   the command when the objects were pre-selected, otherwise when it ends
+;;;   (with "type U to undo").
+;;;
 ;;; COMMAND INTERCEPTION (OFF by default, opt-in per user, per command)
-;;;   MOVE, STRETCH, ROTATE and SCALE can each be intercepted separately. An
-;;;   intercepted command is UNDEFINED for the session and replaced by a
+;;;   Optional, for a warning BEFORE the edit even without a pre-selection.
+;;;   Each of MOVE, STRETCH, ROTATE and SCALE can be intercepted separately.
+;;;   An intercepted command is UNDEFINED for the session and replaced by a
 ;;;   version that shows the warning before the real command runs.
 ;;;   CAD managers can disable or pre-enable it in C3DTools-Config.lsp.
 ;;;
@@ -475,12 +481,14 @@
 ;; ---------------------------------------------------------------------------
 
 (setq *c3dimpact:intercept-text*
-  '("Command interception is optional and OFF by default."
+  '("Moving, stretching, rotating or scaling Civil 3D objects is always"
+    "warned about (when warnings are on): before the command if the objects"
+    "were selected first, otherwise right after it, with U to undo."
     ""
-    "Each command you tick is UNDEFINED for the session and replaced by a"
-    "version that first checks the selection for alignments, surfaces and"
-    "profiles and shows the impact warning. After you click OK, the original"
-    "command runs unchanged (press ESC at its first prompt to stop it)."
+    "Interception is optional and OFF by default. It moves the warning BEFORE"
+    "the edit in every case: each command you tick is UNDEFINED for the"
+    "session and replaced by a version that asks for the selection, shows the"
+    "warning, then runs the original command (press ESC to stop it)."
     ""
     "Side effects while a command is ticked:"
     " - Other LISP routines, scripts or macros that call it WITHOUT the"
@@ -500,7 +508,7 @@
               "  label = \"Change-Impact Analysis - Civil 3D\";"
               "  : text { label = \"These objects depend on what you are about to edit:\"; }"
               "  : list_box { key = \"impact_list\"; height = 16; width = 72; }"
-              "  : text { label = \"Click OK, then press ESC if you want to stop this command.\"; }"
+              "  : text { key = \"hint\"; width = 72; }"
               "  : text { key = \"freq_note\"; width = 72; }"
               "  : row {"
               "    alignment = centered; fixed_width = true;"
@@ -580,7 +588,9 @@
 ;; Information only: AutoLISP cannot cancel a command from here, so the
 ;; dialog has OK (close) and Learn More (open the explanation for this
 ;; command; the dialog stays open).
-(defun c3dimpact:show-impact (cmdname topic lines / path dcl_id)
+;; after = T when the edit has already been applied (warning raised when the
+;; command ended), so the hint says to undo rather than to press ESC.
+(defun c3dimpact:show-impact (cmdname topic lines after / path dcl_id)
   (setq path (c3dimpact:ensure-dcl))
   (if (and path (> (setq dcl_id (load_dialog path)) 0))
     (progn
@@ -589,6 +599,10 @@
           (c3dimpact:fill-list "impact_list"
             (append (list (strcat "Command: " cmdname) "")
                     (if lines lines (list "No dependent objects were found by the automated scan."))))
+          (set_tile "hint"
+            (if after
+              (strcat cmdname " has already been applied. Type U to undo it.")
+              "Click OK, then press ESC if you want to stop this command."))
           (set_tile "freq_note"
             (if (= (c3dimpact:warn-mode) "once")
               "Shown once per command each session. Change this with C3D-IMPACT-SETTINGS."
@@ -636,7 +650,9 @@
       (setq scanresult (c3dimpact:scan-pickfirst))
       ;; nothing pre-selected: ask for the selection now, as the command would
       (if (not (cdr scanresult)) (setq scanresult (c3dimpact:analyze-ss (ssget))))
-      (if (car scanresult) (c3dimpact:show-impact cmdname cmdname (car scanresult)))
+      (if (car scanresult) (c3dimpact:show-impact cmdname cmdname (car scanresult) nil))
+      ;; tell the command reactor this run is already handled
+      (setq *c3dimpact:handled* cmdname)
       (c3dimpact:run-native cmdname (cdr scanresult))
     )
     ;; no warning due: hand straight over to the real command
@@ -670,7 +686,10 @@
 (defun c3dimpact:dispatch (cmdname)
   (if (c3dimpact:intercept-wanted-p cmdname)
     (c3dimpact:native-override cmdname)
-    (c3dimpact:run-native cmdname (c3dimpact:pickfirst-ents))
+    (progn
+      (setq *c3dimpact:handled* nil)
+      (c3dimpact:run-native cmdname (c3dimpact:pickfirst-ents))
+    )
   )
   (princ)
 )
@@ -897,35 +916,93 @@
     "")
 )
 
+;; ---------------------------------------------------------------------------
+;; MOVE / STRETCH / ROTATE / SCALE without interception
+;;
+;; The command reactor warns about these too, so moving Civil 3D objects is
+;; covered without undefining anything:
+;;   - objects pre-selected: the warning appears as the command starts
+;;     (press ESC after OK to stop it);
+;;   - picked after the command started: the warning appears when the command
+;;     ends, from the command's own selection, and says to type U to undo.
+;; A run started by the interception wrapper has already been warned about
+;; and is skipped (*c3dimpact:handled*).
+;; ---------------------------------------------------------------------------
+
+(if (not (boundp '*c3dimpact:handled*)) (setq *c3dimpact:handled* nil))
+(if (not (boundp '*c3dimpact:pending*)) (setq *c3dimpact:pending* nil))
+
+(defun c3dimpact:transform-will-start (cmdname / scanresult)
+  (cond
+    ((= *c3dimpact:handled* cmdname) (setq *c3dimpact:handled* nil))
+    ((c3dimpact:should-warn-p cmdname)
+     (c3dimpact:begin-analysis)
+     (setq scanresult (c3dimpact:scan-pickfirst))
+     (cond
+       ((car scanresult) (c3dimpact:show-impact cmdname cmdname (car scanresult) nil))
+       ((not (cdr scanresult)) (setq *c3dimpact:pending* cmdname))
+     ))
+  )
+)
+
+(defun c3dimpact:transform-ended (cmdname / scanresult)
+  (if (= *c3dimpact:pending* cmdname)
+    (progn
+      (setq *c3dimpact:pending* nil)
+      (if (c3dimpact:should-warn-p cmdname)
+        (progn
+          (c3dimpact:begin-analysis)
+          (setq scanresult (c3dimpact:analyze-ss (ssget "_P")))
+          (if (car scanresult) (c3dimpact:show-impact cmdname cmdname (car scanresult) T))
+        )
+      )
+    )
+  )
+)
+
+(defun c3dimpact:cmd-ended (reactor args / r)
+  (setq r (vl-catch-all-apply 'c3dimpact:transform-ended
+            (list (strcase (vl-princ-to-string (car args))))))
+  (if (vl-catch-all-error-p r) (c3dimpact:dbg (strcat "error: " (vl-catch-all-error-message r))))
+  (princ)
+)
+
+(defun c3dimpact:cmd-abandoned (reactor args)
+  (setq *c3dimpact:pending* nil *c3dimpact:handled* nil)
+  (princ)
+)
+
 (defun c3dimpact:cmd-will-start-body (args / cmdname scanresult lines kind)
   (setq cmdname (strcase (vl-princ-to-string (car args))))
   (if *c3dimpact:debug* (c3dimpact:dbg (strcat "command: " cmdname)))
-  ;; skip before any analysis when no warning is due (off, or already shown)
-  (if (and (c3dimpact:watched-p cmdname) (c3dimpact:should-warn-p cmdname))
-    (progn
-      (c3dimpact:begin-analysis)
-      (setq scanresult (c3dimpact:scan-pickfirst) lines (car scanresult))
-      (if (and (wcmatch cmdname "*PROFILE*") (cdr scanresult))
-        (setq lines (c3dimpact:analyze-for-profile-command (cdr scanresult)))
-      )
-      ;; Nothing pre-selected: infer the object type from the command name
-      ;; and report on every object of that type.
-      (if (and (not lines)
-               (setq kind (cond ((wcmatch cmdname "*SURFACE*") "surface")
-                                ((wcmatch cmdname "*PROFILE*") "profile")
-                                ((wcmatch cmdname "*ALIGNMENT*") "alignment"))))
-        (if (setq lines (c3dimpact:analyze-all kind))
-          (setq lines (append
-            (if (= kind "surface")
-              (c3dimpact:surface-edit-warning)
-              (list (strcat "Could not tell which " kind " this command targets.")
-                    (strcat "Showing potential impacts for ALL " kind "s in the drawing:")
-                    ""))
-            lines))
-        )
-      )
-      (if lines
-        (c3dimpact:show-impact cmdname (c3dimpact:topic cmdname (cdr scanresult)) lines))
+  (cond
+    ((member cmdname *c3dimpact:native-commands*)
+     (c3dimpact:transform-will-start cmdname))
+    ;; skip before any analysis when no warning is due (off, or already shown)
+    ((and (c3dimpact:watched-p cmdname) (c3dimpact:should-warn-p cmdname))
+     (c3dimpact:begin-analysis)
+     (setq scanresult (c3dimpact:scan-pickfirst) lines (car scanresult))
+     (if (and (wcmatch cmdname "*PROFILE*") (cdr scanresult))
+       (setq lines (c3dimpact:analyze-for-profile-command (cdr scanresult)))
+     )
+     ;; Nothing pre-selected: infer the object type from the command name
+     ;; and report on every object of that type.
+     (if (and (not lines)
+              (setq kind (cond ((wcmatch cmdname "*SURFACE*") "surface")
+                               ((wcmatch cmdname "*PROFILE*") "profile")
+                               ((wcmatch cmdname "*ALIGNMENT*") "alignment"))))
+       (if (setq lines (c3dimpact:analyze-all kind))
+         (setq lines (append
+           (if (= kind "surface")
+             (c3dimpact:surface-edit-warning)
+             (list (strcat "Could not tell which " kind " this command targets.")
+                   (strcat "Showing potential impacts for ALL " kind "s in the drawing:")
+                   ""))
+           lines))
+       )
+     )
+     (if lines
+       (c3dimpact:show-impact cmdname (c3dimpact:topic cmdname (cdr scanresult)) lines nil))
     )
   )
 )
@@ -934,7 +1011,10 @@
   (if (not *c3dimpact:cmd-reactor*)
     (progn
       (setq r (vl-catch-all-apply 'vlr-editor-reactor
-                (list nil (list (cons :vlr-commandWillStart 'c3dimpact:cmd-will-start)))))
+                (list nil (list (cons :vlr-commandWillStart 'c3dimpact:cmd-will-start)
+                                (cons :vlr-commandEnded     'c3dimpact:cmd-ended)
+                                (cons :vlr-commandCancelled 'c3dimpact:cmd-abandoned)
+                                (cons :vlr-commandFailed    'c3dimpact:cmd-abandoned)))))
       (if (vl-catch-all-error-p r)
         (c3dimpact:log (strcat "Could not create the command reactor: " (vl-catch-all-error-message r)))
         (setq *c3dimpact:cmd-reactor* r)
