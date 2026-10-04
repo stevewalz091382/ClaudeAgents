@@ -53,6 +53,21 @@
     ;; Leave nil unless your firm has agreed to it.
     ("ImpactInterceptDefault" . nil)
 
+    ;; Page opened by the Learn More button on the impact warning.
+    ("ImpactLearnMoreUrl"
+      . "https://designtovisualization.com/kb-tools-for-civil-3d-%c2%b7-c3d-guard-change-impact/")
+
+    ;; Section of that page for each command (the part after "#" in the
+    ;; section's link). GRIP covers every grip edit and SURFACE every Civil 3D
+    ;; surface-edit command. Remove an entry to open the top of the page.
+    ("ImpactLearnMoreAnchors"
+      . (("MOVE"    . "move")
+         ("STRETCH" . "stretch")
+         ("ROTATE"  . "rotate")
+         ("SCALE"   . "scale")
+         ("GRIP"    . "grip-edits")
+         ("SURFACE" . "surface-edits")))
+
     ;; Extra Civil 3D command names that should show the impact warning.
     ;; Only add names you have confirmed: run C3DGUARD-LOGCOMMANDS, start the
     ;; command from the ribbon, and copy the name printed on the command line.

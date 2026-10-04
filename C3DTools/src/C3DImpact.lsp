@@ -4,8 +4,9 @@
 ;;; Change-impact warnings for Civil 3D. Before an alignment, surface or
 ;;; profile is edited, it lists the objects that depend on it (profiles,
 ;;; sample line groups, corridors, view frames, profile views, pipe network
-;;; parts nearby, grading groups). The warning is information only: it has a
-;;; single OK button, and the user presses ESC afterwards to stop the edit.
+;;; parts nearby, grading groups). The warning is information only: OK closes
+;;; it (the user presses ESC afterwards to stop the edit) and Learn More opens
+;;; the knowledge-base section for that command in the default browser.
 ;;;
 ;;; WARNINGS (on by default)
 ;;;   Shown when a grip edit (GRIP_*) or one of the Civil 3D surface-edit
@@ -498,7 +499,11 @@
               "  : list_box { key = \"impact_list\"; height = 16; width = 72; }"
               "  : text { label = \"Click OK, then press ESC if you want to stop this command.\"; }"
               "  : text { key = \"freq_note\"; width = 72; }"
-              "  ok_only;"
+              "  : row {"
+              "    alignment = centered; fixed_width = true;"
+              "    : button { key = \"accept\"; label = \"OK\"; is_default = true; is_cancel = true; width = 14; }"
+              "    : button { key = \"learn_more\"; label = \"Learn More...\"; width = 16; }"
+              "  }"
               "}"
               "c3dimpact_settings : dialog {"
               "  label = \"C3DTools - Change-Impact settings\";"
@@ -540,8 +545,73 @@
   (end_list)
 )
 
+;; ---------------------------------------------------------------------------
+;; Learn More: opens the knowledge-base page at the section for the command
+;; that raised the warning. The page and the section anchors are set in
+;; C3DTools-Config.lsp; the values below are used when the config omits them.
+;; ---------------------------------------------------------------------------
+
+(setq *c3dimpact:learn-more-default-url*
+  "https://designtovisualization.com/kb-tools-for-civil-3d-%c2%b7-c3d-guard-change-impact/")
+
+(setq *c3dimpact:learn-more-default-anchors*
+  '(("MOVE"    . "move")
+    ("STRETCH" . "stretch")
+    ("ROTATE"  . "rotate")
+    ("SCALE"   . "scale")
+    ("GRIP"    . "grip-edits")
+    ("SURFACE" . "surface-edits")))
+
+;; Topic for a command: the four intercepted commands by name, every grip
+;; edit as GRIP, every surface-edit command as SURFACE.
+(defun c3dimpact:topic (cmdname)
+  (cond
+    ((wcmatch cmdname "GRIP_*") "GRIP")
+    ((member cmdname *c3dimpact:native-commands*) cmdname)
+    ((wcmatch cmdname "*SURFACE*") "SURFACE")
+    (T cmdname)
+  )
+)
+
+;; Page URL plus "#anchor" for the command's topic. A topic with no anchor
+;; opens the top of the page.
+(defun c3dimpact:learn-more-url (cmdname / base i anchors anchor)
+  (setq base (cond ((c3dt:nonblank (c3dt:cfg "ImpactLearnMoreUrl" nil)))
+                   (*c3dimpact:learn-more-default-url*)))
+  (if (setq i (vl-string-search "#" base)) (setq base (substr base 1 i)))
+  (setq anchors (c3dt:cfg "ImpactLearnMoreAnchors" *c3dimpact:learn-more-default-anchors*))
+  (setq anchor (if (listp anchors) (cdr (assoc (c3dimpact:topic cmdname) anchors))))
+  (if (c3dt:nonblank anchor)
+    (strcat base "#" (vl-string-left-trim "#" anchor))
+    base
+  )
+)
+
+;; Opens a URL in the default browser. Tries the Windows shell first, then
+;; the URL protocol handler; the URL is always printed as well, so it can be
+;; copied if neither works.
+(defun c3dimpact:open-url (url / sh r)
+  (princ (strcat "\nLearn more: " url))
+  (setq sh (vl-catch-all-apply 'vlax-get-or-create-object (list "Shell.Application")))
+  (if (and sh (not (vl-catch-all-error-p sh)))
+    (progn
+      (setq r (vl-catch-all-apply 'vlax-invoke-method (list sh 'ShellExecute url)))
+      (vl-catch-all-apply 'vlax-release-object (list sh))
+    )
+  )
+  (if (or (null sh) (vl-catch-all-error-p sh) (vl-catch-all-error-p r))
+    (vl-catch-all-apply 'startapp (list "rundll32.exe" (strcat "url.dll,FileProtocolHandler " url)))
+  )
+  (princ)
+)
+
+(defun c3dimpact:open-learn-more (cmdname)
+  (c3dimpact:open-url (c3dimpact:learn-more-url cmdname))
+)
+
 ;; Information only: AutoLISP cannot cancel a command from here, so the
-;; dialog has a single OK button.
+;; dialog has OK (close) and Learn More (open the explanation for this
+;; command; the dialog stays open).
 (defun c3dimpact:show-impact (cmdname lines / path dcl_id)
   (setq path (c3dimpact:ensure-dcl))
   (if (and path (> (setq dcl_id (load_dialog path)) 0))
@@ -555,6 +625,9 @@
             (if (= (c3dimpact:warn-mode) "once")
               "Shown once per command each session. Change this with C3D-IMPACT-SETTINGS."
               "Shown every time. Change this with C3D-IMPACT-SETTINGS."))
+          (action_tile "accept" "(done_dialog 1)")
+          (action_tile "learn_more"
+            (strcat "(c3dimpact:open-learn-more " (vl-prin1-to-string cmdname) ")"))
           (start_dialog)
         )
       )

@@ -12,7 +12,12 @@ C3DTools contains three AutoLISP tools that load into every drawing:
 
 ## Impact warnings
 
-The warning lists the dependent objects and has a single **OK** button. It is information only, because AutoLISP cannot cancel a command from a dialog. To stop the edit, click OK and then press **ESC** at the command's next prompt.
+The warning lists the dependent objects and has two buttons:
+
+- **OK** closes the warning. It is information only, because AutoLISP cannot cancel a command from a dialog. To stop the edit, click OK and then press **ESC** at the command's next prompt.
+- **Learn More...** opens the [C3D Guard Change-Impact knowledge-base page](https://designtovisualization.com/kb-tools-for-civil-3d-%c2%b7-c3d-guard-change-impact/) in the default browser, at the section for the command that raised the warning. The warning stays open. The link is also printed on the command line.
+
+Each warning links to its own section: MOVE, STRETCH, ROTATE and SCALE each have one, all grip edits share one, and all surface-edit commands share one. The page address and section anchors are set by `ImpactLearnMoreUrl` and `ImpactLearnMoreAnchors` in `C3DTools-Config.lsp`.
 
 Each user chooses in `C3D-IMPACT-SETTINGS` whether warnings appear:
 
