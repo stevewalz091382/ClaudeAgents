@@ -53,25 +53,29 @@
     ;; Leave nil unless your firm has agreed to it.
     ("ImpactInterceptDefault" . nil)
 
-    ;; Page opened by the Learn More button on the impact warning.
-    ("ImpactLearnMoreUrl"
+    ;; Page opened by the Learn More button on warnings.
+    ("LearnMoreUrl"
       . "https://designtovisualization.com/kb-tools-for-civil-3d-%c2%b7-c3d-guard-change-impact/")
 
     ;; Section of that page for each kind of warning (the part after "#" in
     ;; the section's link), as listed in the page's "Linking warnings to
-    ;; articles" table. Remove an entry to open the top of the page.
+    ;; articles" table. Set an entry to "" to open the top of the page.
     ;;   GRIP_ALIGNMENT / GRIP_PROFILE  grip edit with that object selected
     ;;   SURFACE                        any Civil 3D surface-edit command
-    ;;   GENERAL                        any other warning (no single object)
-    ("ImpactLearnMoreAnchors"
-      . (("MOVE"           . "move-civil-objects")
-         ("STRETCH"        . "stretch-civil-objects")
-         ("ROTATE"         . "rotate-civil-objects")
-         ("SCALE"          . "scale-civil-objects")
-         ("GRIP_ALIGNMENT" . "grip-edit-alignment")
-         ("GRIP_PROFILE"   . "grip-edit-profile")
-         ("SURFACE"        . "surface-edits")
-         ("GENERAL"        . "dynamic-model")))
+    ;;   GENERAL                        other impact warnings (no single object)
+    ;;   GUARD_TEXT                     Guard's TEXT / DTEXT / MTEXT tip
+    ;;   GUARD_XREF_MOVED               Guard's moved/copied xref warning
+    ("LearnMoreAnchors"
+      . (("MOVE"             . "move-civil-objects")
+         ("STRETCH"          . "stretch-civil-objects")
+         ("ROTATE"           . "rotate-civil-objects")
+         ("SCALE"            . "scale-civil-objects")
+         ("GRIP_ALIGNMENT"   . "grip-edit-alignment")
+         ("GRIP_PROFILE"     . "grip-edit-profile")
+         ("SURFACE"          . "surface-edits")
+         ("GENERAL"          . "dynamic-model")
+         ("GUARD_TEXT"       . "text-instead-of-labels")
+         ("GUARD_XREF_MOVED" . "xref-moved")))
 
     ;; Extra Civil 3D command names that should show the impact warning.
     ;; Only add names you have confirmed: run C3DGUARD-LOGCOMMANDS, start the

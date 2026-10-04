@@ -348,13 +348,14 @@
   (if (or changed (/= (length before) (length after)))
     (progn
       (c3dguard:log-event "XREF-MOVED" "an xref insertion point changed position")
-      (alert
+      (c3dt:notice
         (strcat
           "C3D-GUARD: an xref's position just changed (moved or copied).\n\n"
           "Moving or copying an xref shifts everything in it out of alignment\n"
           "with shared coordinates and data shortcuts.\n\n"
           "If this wasn't intentional, type U now to undo."
         )
+        "GUARD_XREF_MOVED"
       )
     )
     (c3dguard:trace "MOVE/COPY ended - no xref moved.")
@@ -409,7 +410,7 @@
   (if (not *c3dguard:text-tip-shown*)
     (progn
       (setq *c3dguard:text-tip-shown* T)
-      (alert
+      (c3dt:notice
         (strcat
           "C3D-GUARD tip (shown once per session):\n\n"
           "Plain TEXT/MTEXT for stations, elevations or offsets won't update if\n"
@@ -417,6 +418,7 @@
           "If a Civil 3D label style covers what you're about to type, it stays\n"
           "live and matches your drawing standard."
         )
+        "GUARD_TEXT"
       )
     )
   )

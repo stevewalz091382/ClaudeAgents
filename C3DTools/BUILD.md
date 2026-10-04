@@ -50,6 +50,10 @@ The publisher is set to Stephen Walz in `C3DTools.bundle\PackageContents.xml`. B
 | `C3D-IMPACT-SETTINGS`, tick MOVE only, OK, then `MOVE` on an alignment | The warning appears with a single OK button, then MOVE continues and ESC cancels it. `ROTATE` is not intercepted. |
 | On any warning, click Learn More..., then OK | The browser opens at that command's section of the knowledge-base page (check MOVE, STRETCH, ROTATE, SCALE, grip edits on an alignment and on a profile, and a surface edit). The warning stays open until OK. |
 | Untick MOVE in `C3D-IMPACT-SETTINGS`, then `MOVE` | The normal MOVE runs. |
+| Tick MOVE, select objects first, then `MOVE` | MOVE goes straight to "Specify base point" with the pre-selection. |
+| Tick MOVE in drawing A, switch to drawing B (opened earlier), `MOVE` | MOVE works in B, with the warning. Untick in B: MOVE works normally in both. |
+| `C3D-IMPACT-RESTORE` | All four commands work normally; all ticks cleared. |
+| `TEXT` once in a session; `MOVE` an xref | Each notice has OK and Learn More; Learn More opens `#text-instead-of-labels` and `#xref-moved`. |
 | Set the frequency to Once, then grip-drag an alignment twice | The warning appears the first time only. It appears again after restarting Civil 3D. |
 | `-C3D-IMPACT-SETTINGS`, then Rotate, then X | ROTATE interception toggles. |
 | Close and reopen Civil 3D, then `C3D-IMPACT-STATUS` | Every setting is as you left it. |

@@ -26,7 +26,9 @@ Each warning links to its own section, following the page's "Linking warnings to
 | Grip edit with a profile selected | `#grip-edit-profile` |
 | Any surface-edit command | `#surface-edits` |
 | Anything else (no single object) | `#dynamic-model` |
- The page address and section anchors are set by `ImpactLearnMoreUrl` and `ImpactLearnMoreAnchors` in `C3DTools-Config.lsp`.
+| Guard tip on TEXT / DTEXT / MTEXT | `#text-instead-of-labels` |
+| Guard warning when an xref is moved or copied | `#xref-moved` |
+ The page address and section anchors are set by `LearnMoreUrl` and `LearnMoreAnchors` in `C3DTools-Config.lsp`.
 
 Each user chooses in `C3D-IMPACT-SETTINGS` whether warnings appear:
 
@@ -48,6 +50,8 @@ Side effects while a command is ticked:
 
 - Other LISP routines, scripts or macros that call these commands **without** the `_.` prefix get the C3DTools version.
 - Macros that use `_.MOVE` and similar bypass interception.
+
+UNDEFINE affects every open drawing, so C3DTools defines its own MOVE, STRETCH, ROTATE and SCALE in every drawing it loads into. While AutoCAD's command is defined, AutoCAD always uses its own and these do nothing. After a command is undefined, they keep it working in every drawing: intercepted if the user ticked it, otherwise passed straight to the AutoCAD command. Each drawing also restores any command the user has not ticked when it opens. If MOVE or any of the others ever stops responding, type `C3D-IMPACT-RESTORE`.
 
 Nothing persists outside the session: `UNDEFINE` resets when Civil 3D closes, and uninstalling removes the stored preference.
 
@@ -117,6 +121,7 @@ Folder lookup order. Install folder: `C3DTOOLS_HOME`, then the bundle location. 
 | `C3D-IMPACT-SETTINGS` | Dialog: warnings on/off, every time or once per session, interception of each command |
 | `-C3D-IMPACT-SETTINGS` | The same at the command line, for macros and scripts |
 | `C3D-IMPACT-INTERCEPT` | Older name for `C3D-IMPACT-SETTINGS` |
+| `C3D-IMPACT-RESTORE` | Turns all interception off and restores MOVE, STRETCH, ROTATE and SCALE |
 | `C3D-IMPACT-STATUS` / `-DEBUG` | Status, and diagnostic tracing (off by default) |
 
 ## Files written

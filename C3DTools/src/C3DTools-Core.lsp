@@ -402,6 +402,132 @@
   (princ)
 )
 
+;; ---------------------------------------------------------------------------
+;; Knowledge-base links ("Learn More")
+;;
+;; Every warning has a topic; the topic maps to a section anchor on the
+;; knowledge-base page, following the page's "Linking warnings to articles"
+;; table. LearnMoreUrl / LearnMoreAnchors in C3DTools-Config.lsp override the
+;; defaults below (the older ImpactLearnMore* keys are still read). A topic
+;; missing from the config falls back to its default; set it to "" to open
+;; the top of the page.
+;; ---------------------------------------------------------------------------
+
+(setq *c3dt:kb-default-url*
+  "https://designtovisualization.com/kb-tools-for-civil-3d-%c2%b7-c3d-guard-change-impact/")
+
+(setq *c3dt:kb-default-anchors*
+  '(("MOVE"             . "move-civil-objects")
+    ("STRETCH"          . "stretch-civil-objects")
+    ("ROTATE"           . "rotate-civil-objects")
+    ("SCALE"            . "scale-civil-objects")
+    ("GRIP_ALIGNMENT"   . "grip-edit-alignment")
+    ("GRIP_PROFILE"     . "grip-edit-profile")
+    ("SURFACE"          . "surface-edits")
+    ("GENERAL"          . "dynamic-model")
+    ("GUARD_TEXT"       . "text-instead-of-labels")
+    ("GUARD_XREF_MOVED" . "xref-moved")))
+
+(defun c3dt:kb-url (topic / base i anchors pair anchor)
+  (setq base (cond ((c3dt:nonblank (c3dt:cfg "LearnMoreUrl" nil)))
+                   ((c3dt:nonblank (c3dt:cfg "ImpactLearnMoreUrl" nil)))
+                   (*c3dt:kb-default-url*)))
+  (if (setq i (vl-string-search "#" base)) (setq base (substr base 1 i)))
+  (setq anchors (cond ((c3dt:cfg "LearnMoreAnchors" nil)) ((c3dt:cfg "ImpactLearnMoreAnchors" nil))))
+  (setq pair (if (listp anchors) (assoc topic anchors)))
+  (setq anchor (if pair (cdr pair) (cdr (assoc topic *c3dt:kb-default-anchors*))))
+  (if (c3dt:nonblank anchor)
+    (strcat base "#" (vl-string-left-trim "#" anchor))
+    base
+  )
+)
+
+;; Opens a URL in the default browser: Windows shell first, then the URL
+;; protocol handler. The URL is always printed so it can be copied.
+(defun c3dt:open-url (url / sh r)
+  (princ (strcat "\nLearn more: " url))
+  (setq sh (vl-catch-all-apply 'vlax-get-or-create-object (list "Shell.Application")))
+  (if (and sh (not (vl-catch-all-error-p sh)))
+    (progn
+      (setq r (vl-catch-all-apply 'vlax-invoke-method (list sh 'ShellExecute url)))
+      (vl-catch-all-apply 'vlax-release-object (list sh))
+    )
+  )
+  (if (or (null sh) (vl-catch-all-error-p sh) (vl-catch-all-error-p r))
+    (vl-catch-all-apply 'startapp (list "rundll32.exe" (strcat "url.dll,FileProtocolHandler " url)))
+  )
+  (princ)
+)
+
+(defun c3dt:open-kb (topic) (c3dt:open-url (c3dt:kb-url topic)))
+
+;; ---------------------------------------------------------------------------
+;; Notice dialog: a message with OK and Learn More buttons, used in place of
+;; (alert ...) where the warning has a knowledge-base section. Falls back to
+;; a plain alert if the dialog cannot be shown.
+;; ---------------------------------------------------------------------------
+
+(setq *c3dt:dcl-path* nil)
+
+(defun c3dt:ensure-dcl ( / path f)
+  (if (not (and *c3dt:dcl-path* (findfile *c3dt:dcl-path*)))
+    (progn
+      (setq path (vl-filename-mktemp "c3dtools" nil ".dcl"))
+      (if (setq f (open path "w"))
+        (progn
+          (foreach ln
+            '("c3dt_notice : dialog {"
+              "  label = \"C3DTools\";"
+              "  : list_box { key = \"notice_text\"; height = 14; width = 76; }"
+              "  : row {"
+              "    alignment = centered; fixed_width = true;"
+              "    : button { key = \"accept\"; label = \"OK\"; is_default = true; is_cancel = true; width = 14; }"
+              "    : button { key = \"learn_more\"; label = \"Learn More...\"; width = 16; }"
+              "  }"
+              "}")
+            (write-line ln f)
+          )
+          (close f)
+          (setq *c3dt:dcl-path* path)
+        )
+      )
+    )
+  )
+  *c3dt:dcl-path*
+)
+
+(defun c3dt:split-lines (s / i out)
+  (setq out nil)
+  (while (setq i (vl-string-search "\n" s))
+    (setq out (cons (substr s 1 i) out) s (substr s (+ i 2)))
+  )
+  (reverse (cons s out))
+)
+
+(defun c3dt:notice (text topic / path dcl_id shown)
+  (setq path (c3dt:ensure-dcl) shown nil)
+  (if (and path (> (setq dcl_id (load_dialog path)) 0))
+    (progn
+      (if (new_dialog "c3dt_notice" dcl_id)
+        (progn
+          (start_list "notice_text")
+          (foreach ln (c3dt:split-lines text) (add_list ln))
+          (end_list)
+          (action_tile "accept" "(done_dialog 1)")
+          (action_tile "learn_more" (strcat "(c3dt:open-kb " (vl-prin1-to-string topic) ")"))
+          (start_dialog)
+          (setq shown T)
+        )
+      )
+      (unload_dialog dcl_id)
+    )
+  )
+  (if (not shown)
+    (alert (strcat text "\n\nLearn more: " (c3dt:kb-url topic)))
+  )
+  (princ)
+)
+
 (defun c:C3DTOOLS-STATUS ( / app)
   (setq app (c3dt:civil-app))
   (c3dt:msg "C3DTools" (strcat "Version " *c3dt:version* " - published by " *c3dt:publisher*))

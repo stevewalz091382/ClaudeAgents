@@ -40,6 +40,8 @@
 ;;;   -C3D-IMPACT-SETTINGS   the same at the command line (for macros)
 ;;;   C3D-IMPACT-ON / -OFF   turn the warnings on or off
 ;;;   C3D-IMPACT-INTERCEPT   same as C3D-IMPACT-SETTINGS (older name)
+;;;   C3D-IMPACT-RESTORE     turn all interception off and restore MOVE,
+;;;                          STRETCH, ROTATE and SCALE
 ;;;   C3D-IMPACT-STATUS      current state
 ;;;   C3D-IMPACT-DEBUG       toggle diagnostic tracing (off by default)
 ;;;
@@ -59,7 +61,8 @@
 (if (not (boundp '*c3dimpact:intercepting*))      (setq *c3dimpact:intercepting* nil))
 ;; list of intercepted command names (older builds stored T here)
 (if (not (listp *c3dimpact:intercepting*))        (setq *c3dimpact:intercepting* nil))
-(if (not (boundp '*c3dimpact:saved-defs*))        (setq *c3dimpact:saved-defs* nil))
+(if (not (boundp '*c3dimpact:wrapped*))           (setq *c3dimpact:wrapped* nil))
+(if (not (boundp '*c3dimpact:foreign*))           (setq *c3dimpact:foreign* nil))
 (if (not (boundp '*c3dimpact:dcl-path*))          (setq *c3dimpact:dcl-path* nil))
 
 (setq *c3dimpact:native-commands* '("MOVE" "STRETCH" "ROTATE" "SCALE"))
@@ -546,24 +549,8 @@
 )
 
 ;; ---------------------------------------------------------------------------
-;; Learn More: opens the knowledge-base page at the section for the warning
-;; (anchors follow the page's "Linking warnings to articles" table). The page
-;; and anchors are set in C3DTools-Config.lsp; the values below are used when
-;; the config omits them.
+;; Learn More topic (see c3dt:kb-url in C3DTools-Core.lsp)
 ;; ---------------------------------------------------------------------------
-
-(setq *c3dimpact:learn-more-default-url*
-  "https://designtovisualization.com/kb-tools-for-civil-3d-%c2%b7-c3d-guard-change-impact/")
-
-(setq *c3dimpact:learn-more-default-anchors*
-  '(("MOVE"           . "move-civil-objects")
-    ("STRETCH"        . "stretch-civil-objects")
-    ("ROTATE"         . "rotate-civil-objects")
-    ("SCALE"          . "scale-civil-objects")
-    ("GRIP_ALIGNMENT" . "grip-edit-alignment")
-    ("GRIP_PROFILE"   . "grip-edit-profile")
-    ("SURFACE"        . "surface-edits")
-    ("GENERAL"        . "dynamic-model")))
 
 ;; Topic of a warning:
 ;;   MOVE / STRETCH / ROTATE / SCALE   the intercepted command itself
@@ -590,42 +577,6 @@
   )
 )
 
-;; Page URL plus "#anchor" for the command's topic. A topic with no anchor
-;; opens the top of the page.
-(defun c3dimpact:learn-more-url (topic / base i anchors anchor)
-  (setq base (cond ((c3dt:nonblank (c3dt:cfg "ImpactLearnMoreUrl" nil)))
-                   (*c3dimpact:learn-more-default-url*)))
-  (if (setq i (vl-string-search "#" base)) (setq base (substr base 1 i)))
-  (setq anchors (c3dt:cfg "ImpactLearnMoreAnchors" *c3dimpact:learn-more-default-anchors*))
-  (setq anchor (if (listp anchors) (cdr (assoc topic anchors))))
-  (if (c3dt:nonblank anchor)
-    (strcat base "#" (vl-string-left-trim "#" anchor))
-    base
-  )
-)
-
-;; Opens a URL in the default browser. Tries the Windows shell first, then
-;; the URL protocol handler; the URL is always printed as well, so it can be
-;; copied if neither works.
-(defun c3dimpact:open-url (url / sh r)
-  (princ (strcat "\nLearn more: " url))
-  (setq sh (vl-catch-all-apply 'vlax-get-or-create-object (list "Shell.Application")))
-  (if (and sh (not (vl-catch-all-error-p sh)))
-    (progn
-      (setq r (vl-catch-all-apply 'vlax-invoke-method (list sh 'ShellExecute url)))
-      (vl-catch-all-apply 'vlax-release-object (list sh))
-    )
-  )
-  (if (or (null sh) (vl-catch-all-error-p sh) (vl-catch-all-error-p r))
-    (vl-catch-all-apply 'startapp (list "rundll32.exe" (strcat "url.dll,FileProtocolHandler " url)))
-  )
-  (princ)
-)
-
-(defun c3dimpact:open-learn-more (topic)
-  (c3dimpact:open-url (c3dimpact:learn-more-url topic))
-)
-
 ;; Information only: AutoLISP cannot cancel a command from here, so the
 ;; dialog has OK (close) and Learn More (open the explanation for this
 ;; command; the dialog stays open).
@@ -644,7 +595,7 @@
               "Shown every time. Change this with C3D-IMPACT-SETTINGS."))
           (action_tile "accept" "(done_dialog 1)")
           (action_tile "learn_more"
-            (strcat "(c3dimpact:open-learn-more " (vl-prin1-to-string topic) ")"))
+            (strcat "(c3dt:open-kb " (vl-prin1-to-string topic) ")"))
           (start_dialog)
         )
       )
@@ -658,18 +609,26 @@
 ;; Command interception (opt-in, per command): MOVE / STRETCH / ROTATE / SCALE
 ;; ---------------------------------------------------------------------------
 
+;; Runs the real command. A pre-selection is cleared first: the real command
+;; would otherwise take the implied selection on its own and the selection
+;; passed here would land on its next prompt ("Specify base point").
 (defun c3dimpact:run-native (cmdname ents / ss)
   (if ents
     (progn
       (setq ss (ssadd))
       (foreach e ents (ssadd e ss))
+      (sssetfirst nil nil)
       (command (strcat "_." cmdname) ss "")
     )
     (command (strcat "_." cmdname))
   )
 )
 
-(defun c3dimpact:native-override (cmdname / scanresult pick)
+(defun c3dimpact:pickfirst-ents ( / ss)
+  (if (setq ss (ssget "_I")) (cdr (c3dimpact:analyze-ss-ents ss)))
+)
+
+(defun c3dimpact:native-override (cmdname / scanresult)
   (c3dimpact:dbg (strcat "intercepted " cmdname))
   (if (c3dimpact:should-warn-p cmdname)
     (progn
@@ -681,10 +640,7 @@
       (c3dimpact:run-native cmdname (cdr scanresult))
     )
     ;; no warning due: hand straight over to the real command
-    (progn
-      (if (setq pick (ssget "_I")) (setq pick (cdr (c3dimpact:analyze-ss-ents pick))))
-      (c3dimpact:run-native cmdname pick)
-    )
+    (c3dimpact:run-native cmdname (c3dimpact:pickfirst-ents))
   )
   (princ)
 )
@@ -696,54 +652,111 @@
   (cons nil (reverse out))
 )
 
-;; command-s: these run from inside another command (or at load time), where
-;; plain (command ...) is not allowed. Returns T if cn is intercepted after.
-(defun c3dimpact:intercept-on (cn / sym saved r)
-  (cond
-    ((member cn *c3dimpact:intercepting*) T)
-    (T
-     (setq sym (read (strcat "C:" cn)))
-     ;; keep any existing C:<cmd> (another add-on's) to restore later
-     (setq saved (cons sym (if (boundp sym) (eval sym))))
-     (eval (list 'defun sym nil (list 'c3dimpact:native-override cn)))
-     (setq r (vl-catch-all-apply 'command-s (list "_.UNDEFINE" cn)))
-     (if (vl-catch-all-error-p r)
-       (progn
-         (set sym (cdr saved))
-         (c3dimpact:log (strcat "Could not intercept " cn " in this drawing. Open C3D-IMPACT-SETTINGS to retry."))
-         nil
-       )
-       (progn
-         (setq *c3dimpact:saved-defs* (cons (cons cn saved) *c3dimpact:saved-defs*)
-               *c3dimpact:intercepting* (cons cn *c3dimpact:intercepting*))
-         T
-       )
-     )
-    )
+;; ---------------------------------------------------------------------------
+;; Command wrappers
+;;
+;; UNDEFINE applies to every open drawing, but LISP functions belong to one
+;; drawing. So C:MOVE, C:STRETCH, C:ROTATE and C:SCALE are defined in EVERY
+;; drawing when this file loads, whether or not interception is on. They are
+;; inert while the AutoCAD command is defined (AutoCAD always prefers its own
+;; command), and once a command is undefined - from any drawing - they make
+;; sure it still works everywhere: intercepted if the user wants it, plain
+;; pass-through otherwise.
+;;
+;; A C:<cmd> that another add-on already defined is left alone, and that
+;; command cannot be intercepted in that drawing.
+;; ---------------------------------------------------------------------------
+
+(defun c3dimpact:dispatch (cmdname)
+  (if (c3dimpact:intercept-wanted-p cmdname)
+    (c3dimpact:native-override cmdname)
+    (c3dimpact:run-native cmdname (c3dimpact:pickfirst-ents))
   )
+  (princ)
 )
 
-(defun c3dimpact:intercept-off (cn / saved)
-  (if (member cn *c3dimpact:intercepting*)
-    (progn
-      (vl-catch-all-apply 'command-s (list "_.REDEFINE" cn))
-      (if (setq saved (cdr (assoc cn *c3dimpact:saved-defs*)))
-        (set (car saved) (cdr saved))
+(defun c3dimpact:install-wrappers ( / sym)
+  (foreach cn *c3dimpact:native-commands*
+    (setq sym (read (strcat "C:" cn)))
+    (cond
+      ;; already ours (file reloaded into this drawing) or free: define it
+      ((or (member cn *c3dimpact:wrapped*) (not (boundp sym)) (null (eval sym)))
+       (eval (list 'defun sym nil (list 'c3dimpact:dispatch cn)))
+       (if (not (member cn *c3dimpact:wrapped*))
+         (setq *c3dimpact:wrapped* (cons cn *c3dimpact:wrapped*)))
       )
-      (setq *c3dimpact:saved-defs* (vl-remove-if (function (lambda (x) (= (car x) cn))) *c3dimpact:saved-defs*)
-            *c3dimpact:intercepting* (vl-remove cn *c3dimpact:intercepting*))
+      (T
+       (if (not (member cn *c3dimpact:foreign*))
+         (setq *c3dimpact:foreign* (cons cn *c3dimpact:foreign*)))
+      )
     )
   )
 )
 
-;; Brings every command in line with the stored preferences.
+;; command-s with command echo and messages off, so restoring a command that
+;; is already defined at drawing open prints nothing.
+(defun c3dimpact:quiet-command (verb cn / echo mutt r)
+  (setq echo (getvar "CMDECHO") mutt (getvar "NOMUTT"))
+  (setvar "CMDECHO" 0)
+  (setvar "NOMUTT" 1)
+  (setq r (vl-catch-all-apply 'command-s (list verb cn)))
+  (setvar "NOMUTT" mutt)
+  (setvar "CMDECHO" echo)
+  (not (vl-catch-all-error-p r))
+)
+
+;; Returns T if cn is intercepted afterwards.
+(defun c3dimpact:intercept-on (cn)
+  (cond
+    ((member cn *c3dimpact:foreign*)
+     (c3dimpact:log (strcat "Another add-on already defines C:" cn " - " cn " is not intercepted."))
+     nil)
+    ((not (member cn *c3dimpact:wrapped*))
+     (c3dimpact:log (strcat "Could not set up " cn " in this drawing - " cn " is not intercepted."))
+     nil)
+    ((c3dimpact:quiet-command "_.UNDEFINE" cn)
+     (if (not (member cn *c3dimpact:intercepting*))
+       (setq *c3dimpact:intercepting* (cons cn *c3dimpact:intercepting*)))
+     T)
+    (T
+     (c3dimpact:log (strcat "Could not intercept " cn " in this drawing. Open C3D-IMPACT-SETTINGS to retry."))
+     nil)
+  )
+)
+
+;; Always REDEFINEs, even if this drawing did not undefine it: another
+;; drawing (or an earlier session state) may have.
+(defun c3dimpact:intercept-off (cn)
+  (c3dimpact:quiet-command "_.REDEFINE" cn)
+  (setq *c3dimpact:intercepting* (vl-remove cn *c3dimpact:intercepting*))
+)
+
+;; Brings every command in line with the stored preferences. Commands that
+;; another add-on overrides are left exactly as that add-on set them.
 (defun c3dimpact:apply-intercept-prefs ( )
   (foreach cn *c3dimpact:native-commands*
-    (if (c3dimpact:intercept-wanted-p cn)
-      (c3dimpact:intercept-on cn)
-      (c3dimpact:intercept-off cn)
+    (cond
+      ((member cn *c3dimpact:foreign*) nil)
+      ((c3dimpact:intercept-wanted-p cn) (c3dimpact:intercept-on cn))
+      (T (c3dimpact:intercept-off cn))
     )
   )
+)
+
+;; Shown state: the user's choice, which applies across every drawing.
+(defun c3dimpact:intercept-active-p (cn)
+  (and (c3dimpact:intercept-wanted-p cn) (not (member cn *c3dimpact:foreign*)))
+)
+
+;; Emergency reset: turns interception off for all four commands, saves that
+;; choice, and restores the AutoCAD commands.
+(defun c:C3D-IMPACT-RESTORE ( )
+  (foreach cn *c3dimpact:native-commands*
+    (c3dt:pref-set (strcat "ImpactIntercept." cn) "0")
+    (c3dimpact:intercept-off cn)
+  )
+  (c3dimpact:log "MOVE, STRETCH, ROTATE and SCALE restored to the standard AutoCAD commands; interception is off.")
+  (princ)
 )
 
 ;; ---------------------------------------------------------------------------
@@ -775,7 +788,7 @@
   (if (not (c3dimpact:intercept-allowed-p))
     (princ "disabled by your CAD administrator")
     (foreach cn *c3dimpact:native-commands*
-      (princ (strcat cn " " (c3dimpact:on-off (member cn *c3dimpact:intercepting*)) "  ")))
+      (princ (strcat cn " " (c3dimpact:on-off (c3dimpact:intercept-active-p cn)) "  ")))
   )
   (princ)
 )
@@ -793,8 +806,8 @@
           (set_tile "warnings" (if *c3dimpact:enabled* "1" "0"))
           (set_tile "freq" (c3dimpact:warn-mode))
           (foreach cn *c3dimpact:native-commands*
-            (set_tile cn (if (member cn *c3dimpact:intercepting*) "1" "0"))
-            (if (not allowed) (mode_tile cn 1))
+            (set_tile cn (if (c3dimpact:intercept-active-p cn) "1" "0"))
+            (if (or (not allowed) (member cn *c3dimpact:foreign*)) (mode_tile cn 1))
           )
           (c3dimpact:fill-list "about"
             (if allowed
@@ -817,7 +830,7 @@
       (if (member freq '("every" "once")) (c3dimpact:set-warn-mode freq))
       (if allowed
         (mapcar (function (lambda (cn tick)
-                  (if (not (eq (= tick "1") (if (member cn *c3dimpact:intercepting*) T nil)))
+                  (if (not (eq (= tick "1") (if (c3dimpact:intercept-active-p cn) T nil)))
                     (c3dimpact:set-intercept cn (= tick "1")))))
                 *c3dimpact:native-commands* ticks)
       )
@@ -850,7 +863,7 @@
       ((not (c3dimpact:intercept-allowed-p))
        (c3dimpact:log "Command interception has been disabled by your CAD administrator."))
       (T
-       (setq cn (strcase kw) on (not (member cn *c3dimpact:intercepting*)))
+       (setq cn (strcase kw) on (not (c3dimpact:intercept-active-p cn)))
        (if on
          (princ (strcat "\nNote: " cn " is now UNDEFINED for this session and replaced by the C3DTools"
                         " version; LISP or macros calling " cn " without \"_.\" get it too."))
@@ -967,6 +980,7 @@
 (defun c3dimpact:init ( )
   (setq *c3dimpact:enabled* (c3dimpact:warnings-wanted-p))
   (if *c3dimpact:enabled* (c3dimpact:init-reactor))
+  (c3dimpact:install-wrappers)
   (vl-catch-all-apply 'c3dimpact:apply-intercept-prefs nil)
 )
 
