@@ -4,6 +4,10 @@
 ;;; Target : AutoCAD 2027 / Civil 3D 2027. Pure AutoLISP / Visual LISP.
 ;;; Needs  : IPStamp-Core.lsp in the same support folder.
 ;;;
+;;; Checks five layers of marks, so content stays traceable after the
+;;; visible stamp is stripped: xdata stamp, hidden encrypted copy, coordinate
+;;; watermark, hidden sentinels, and office geometry manifests.
+;;;
 ;;; Opens each drawing read-only through ObjectDBX (no editor, no reactors,
 ;;; nothing saved) and reports where its content came from:
 ;;;   * IPStamp marks: objects that originated with us (signature verified),
@@ -176,6 +180,8 @@
   (setq *S:Total* 0 *S:Layout* 0 *S:InBlocks* 0 *S:Stamped* 0 *S:Unstamped* 0
         *S:OursValid* 0 *S:OursBad* 0 *S:OursOtherKey* 0 *S:GeoChanged* 0
         *S:SigBad* 0 *S:Proxy* 0
+        *S:Stripped* 0 *S:Mismatch* 0 *S:ShadowOther* 0 *S:Sentinels* 0
+        *S:WMHits* 0 *S:WMN* 0 *S:WMObjs* 0 *S:MMatch* nil *S:MTotal* 0
         *S:Foreign* nil *S:Origins* nil *S:Creators* nil *S:Editors* nil
         *S:CTypes* nil *S:Types* nil *S:Images* nil *S:Attrs* nil *S:Xrefs* nil))
 
@@ -190,7 +196,7 @@
                                                 (ips:str (ips:prop a 'TextString)))
                                         *S:Attrs*))))))))
 
-(defun ips:scan-ent (ent where layout / on rec v g org)
+(defun ips:scan-ent (ent where layout / on rec v g org sh wm src m)
   (setq on (ips:str (ips:prop ent 'ObjectName))
         *S:Total* (1+ *S:Total*)
         *S:Types* (ips:inc on *S:Types*))
@@ -200,7 +206,27 @@
     (setq *S:Images* (ips:adjoin (ips:str (ips:prop ent 'ImageFile)) *S:Images*)))
   (if (and layout (/= where "Model") (= on "AcDbBlockReference") (< (length *S:Attrs*) 80))
     (ips:scan-attrs ent))
-  (if (setq rec (ips:xd-read ent))
+  ;; Layer 2: hidden encrypted copy
+  (setq sh (ips:shadow-read ent) rec (ips:xd-read ent) src "xdata")
+  (cond
+    ((and (null rec) (= (car sh) "VALID"))
+     (setq rec (cdr sh) src "hidden copy only (visible stamp STRIPPED)" *S:Stripped* (1+ *S:Stripped*)))
+    ((and rec (= (car sh) "VALID") (/= (ips:kv "C_SIG" rec) (ips:kv "C_SIG" (cdr sh))))
+     (setq src "visible stamp DIFFERS from hidden copy" *S:Mismatch* (1+ *S:Mismatch*)))
+    ((= (car sh) "UNREADABLE") (setq *S:ShadowOther* (1+ *S:ShadowOther*))))
+  ;; Layer 3: coordinate watermark
+  (if (ips:wm-rows ent)
+    (progn
+      (setq wm (ips:wm-count ent)
+            *S:WMHits* (+ *S:WMHits* (car wm))
+            *S:WMN*    (+ *S:WMN* (cdr wm)))
+      (if (and (>= (cdr wm) 4) (= (car wm) (cdr wm))) (setq *S:WMObjs* (1+ *S:WMObjs*)))))
+  ;; Layer 4: sentinels
+  (if (ips:sentinel-p ent) (setq *S:Sentinels* (1+ *S:Sentinels*)))
+  ;; Layer 5: geometry we transmitted (office manifests)
+  (if (and *S:MSyms* layout (setq m (vl-symbol-value (read (strcat "IPM_" (ips:geo ent))))))
+    (setq *S:MMatch* (ips:inc m *S:MMatch*) *S:MTotal* (1+ *S:MTotal*)))
+  (if rec
     (progn
       (setq v   (ips:verify rec)
             g   (ips:geo-status ent rec)
@@ -228,7 +254,8 @@
                   (ips:kv "C_TYPE" rec) (ips:kv "C_USER" rec) (ips:kv "C_TIME" rec)
                   (ips:kv "C_DWG" rec) (ips:kv "C_DWGID" rec)
                   (ips:kv "M_USER" rec) (ips:kv "M_TIME" rec) (ips:kv "M_CMD" rec) (ips:kv "M_DWG" rec)
-                  (ips:kv "N" rec) (car v) (cadr v) g))
+                  (ips:kv "N" rec) (car v) (cadr v) g src
+                  (if wm (strcat (itoa (car wm)) "/" (itoa (cdr wm))) "")))
           *S:Csv*)))
     (setq *S:Unstamped* (1+ *S:Unstamped*))))
 
@@ -244,7 +271,8 @@
 ;; Scans one database and appends its report section.
 ;; -> list of values for the files CSV
 (defun ips:scan-db (db path current / fi nm lay lo where apps odd dicts layers prefixes fonts
-                                      layouts si props cust i n k v info xmit hints names ost)
+                                      layouts si props cust i n k v info xmit hints names ost
+                                      dsh dstrip z)
   (ips:scan-reset)
   (setq *S:Path* path
         fi (ips:file-info path))
@@ -270,6 +298,7 @@
         layers  (ips:collect-names (ips:prop db 'Layers))
         layouts (ips:collect-names (ips:prop db 'Layouts))
         info    (ips:xrec-read db "DWGINFO")
+        dsh     (ips:dshadow-read db)
         xmit    (mapcar 'cdr (vl-remove-if-not (function (lambda (p) (= (car p) "XMIT")))
                                                (ips:xrec-read db "XMIT"))))
   (foreach l layers
@@ -294,7 +323,10 @@
   (foreach sig *IPS:Signatures*
     (if (vl-some (function (lambda (n) (wcmatch (strcase n) (car sig)))) names)
       (setq hints (cons (cdr sig) hints))))
-  (setq ost (if (ips:kv "OWNER" info) (ips:owner-status info)))
+  (if (and (null info) (= (car dsh) "VALID"))
+    (setq info (cdr dsh) dstrip T))
+  (setq ost (if (ips:kv "OWNER" info) (ips:owner-status info))
+        z   (ips:wm-z *S:WMHits* *S:WMN*))
 
   ;; --- write the section
   (ips:o "")
@@ -318,6 +350,24 @@
                    " of our object(s) were modified after their last tracked edit (changed outside our office).")))
   (if (> *S:SigBad* 0)
     (ips:o (strcat "  [ALERT]    " (itoa *S:SigBad*) " stamp record(s) were hand-edited (record signature fails).")))
+  (if (> *S:Stripped* 0)
+    (ips:o (strcat "  [STRIPPED] " (itoa *S:Stripped*) " object(s) had the visible stamp REMOVED. The hidden"
+                   " encrypted copy survives and proves origin. Removal was deliberate.")))
+  (if dstrip
+    (ips:o "  [STRIPPED] The drawing ownership record was REMOVED; recovered from its hidden copy."))
+  (if (> *S:Mismatch* 0)
+    (ips:o (strcat "  [ALERT]    " (itoa *S:Mismatch*) " object(s) whose visible stamp differs from the hidden copy (stamp rewritten).")))
+  (if (and (>= *S:WMN* 20) (>= z 4.0))
+    (ips:o (strcat "  [WATERMARK] " (if (>= z 8.0) "VERIFIED" "PROBABLE") ": " (itoa *S:WMHits*) " of "
+                   (itoa *S:WMN*) " coordinates carry our watermark (chance would give about "
+                   (itoa (fix (/ *S:WMN* (float *IPS:WMBins*)))) "; z = " (rtos z 2 1) "). "
+                   (itoa *S:WMObjs*) " object(s) fully sealed.")))
+  (if (> *S:Sentinels* 0)
+    (ips:o (strcat "  [SENTINEL] " (itoa *S:Sentinels*) " hidden sentinel point(s) found.")))
+  (foreach p (ips:top *S:MMatch* 5)
+    (ips:o (strcat "  [MANIFEST] " (itoa (cdr p)) " object(s) are geometrically identical to what we sent: " (car p))))
+  (if (> *S:ShadowOther* 0)
+    (ips:o (strcat "  [HIDDEN]   " (itoa *S:ShadowOther*) " hidden copies not readable with our key (another firm, or a retired key).")))
   (if *S:Foreign*
     (ips:o (strcat "  [OTHERS]   Stamps from other parties / unclaimed: "
                    (ips:join (mapcar (function (lambda (p) (strcat (car p) " (" (itoa (cdr p)) ")")))
@@ -331,8 +381,8 @@
   (if xmit
     (ips:o (strcat "  [TRACE]    We transmitted this drawing " (itoa (length xmit))
                    " time(s). Latest: " (car xmit))))
-  (if (= *S:Stamped* 0)
-    (ips:o "  [UNKNOWN]  No IPStamp marks. Judge origin from the file evidence below.")
+  (if (and (= *S:Stamped* 0) (< z 4.0) (null *S:MMatch*) (= *S:Sentinels* 0))
+    (ips:o "  [UNKNOWN]  No IPStamp marks, watermark or manifest match. Judge origin from the file evidence below.")
     (if (> *S:Unstamped* 0)
       (ips:o (strcat "  [UNKNOWN]  " (itoa *S:Unstamped*) " of " (itoa *S:Total*)
                      " objects carry no stamp (origin not recorded)."))))
@@ -394,7 +444,34 @@
         *S:Total* *S:Stamped* *S:OursValid* *S:OursBad* *S:OursOtherKey* *S:GeoChanged*
         *S:Unstamped* (ips:join (mapcar 'car *S:Foreign*) "; ")
         (ips:kv "OWNER" info) (ips:str ost) (ips:kv "DWGID" info) (length xmit)
-        (ips:prop si 'LastSavedBy) (ips:prop si 'Author) (ips:join (reverse hints) "; ")))
+        (ips:prop si 'LastSavedBy) (ips:prop si 'Author) (ips:join (reverse hints) "; ")
+        *S:Stripped* (if dstrip "YES" "") *S:WMHits* *S:WMN* (rtos z 2 1) *S:Sentinels* *S:MTotal*))
+
+;;; ----------------------------------------------------------- manifests ---
+;; Loads every .ipm file into interned symbols IPM_<geo> -> "label", which
+;; gives hashed lookup without a hash table.
+(defun ips:manifest-load ( / dir f ln hdr label n)
+  (setq *S:MSyms* nil n 0)
+  (if (and (/= *IPS:ManifestDir* "") (vl-file-directory-p *IPS:ManifestDir*))
+    (progn
+      (setq dir (vl-string-right-trim "\\/" *IPS:ManifestDir*))
+      (foreach fn (vl-directory-files dir "*.ipm" 1)
+        (if (setq f (open (strcat dir "\\" fn) "r"))
+          (progn
+            (setq hdr (ips:split (cond ((read-line f)) ("")) "|")
+                  label (strcat (ips:str (nth 5 hdr)) " sent " (ips:str (nth 1 hdr))
+                                " to " (ips:str (nth 3 hdr)) " (" (ips:str (nth 4 hdr)) ")"))
+            (while (setq ln (read-line f))
+              (if (= (strlen ln) 16)
+                (progn
+                  (set (read (strcat "IPM_" ln)) label)
+                  (setq *S:MSyms* (cons ln *S:MSyms*) n (1+ n)))))
+            (close f))))))
+  n)
+
+(defun ips:manifest-unload ()
+  (foreach g *S:MSyms* (set (read (strcat "IPM_" g)) nil))
+  (setq *S:MSyms* nil))
 
 ;;; ---------------------------------------------------------------- run ---
 (defun ips:scan-run (paths current / dir st rpt csvp idxp rows res row n)
@@ -409,13 +486,14 @@
   (ips:o (strcat "Run " (ips:now) " (" (ips:tz) ") by " (ips:user) " on " (ips:host)))
   (ips:o (strcat "Our organisation: \"" *IPS:Org* "\"   signing key id " (ips:keyid)
                  (if (ips:default-key-p) "  (DEFAULT KEY - verification proves little)" "")))
-  (ips:o (strcat "Files: " (itoa (length paths))))
+  (ips:o (strcat "Files: " (itoa (length paths))
+                 "   office manifests loaded: " (itoa (ips:manifest-load)) " object fingerprints"))
   (setq *S:Csv* (open csvp "w"))
   (if *S:Csv*
     (write-line (ips:csv-line '("file" "location" "handle" "object" "owner" "origin_type"
                                 "created_by" "created_time" "created_in" "created_dwgid"
                                 "last_edit_by" "last_edit_time" "last_edit_cmd" "last_edit_dwg"
-                                "edits" "origin_sig" "record_sig" "geometry"))
+                                "edits" "origin_sig" "record_sig" "geometry" "evidence" "watermark"))
                 *S:Csv*))
   (foreach p paths
     (setq n (1+ n))
@@ -438,12 +516,14 @@
                        " (password protected, damaged, or locked by another user)")))))
   (if *S:Csv* (close *S:Csv*))
   (setq *S:Csv* nil)
+  (ips:manifest-unload)
   (ips:write-lines rpt (reverse *S:Rep*))
   (ips:write-lines idxp
     (cons (ips:csv-line '("file" "bytes" "modified" "dwg_header" "objects" "stamped" "ours_verified"
                           "ours_failed" "ours_other_key" "ours_changed" "unstamped" "other_owners"
                           "drawing_owner" "owner_claim" "dwgid" "transmittals" "last_saved_by"
-                          "author" "software_hints"))
+                          "author" "software_hints" "stripped_objects" "drawing_record_stripped"
+                          "watermark_hits" "watermark_coords" "watermark_z" "sentinels" "manifest_matches"))
           (mapcar 'ips:csv-line (reverse rows))))
   (princ (strcat "\nIPScan: " (itoa (length rows)) " of " (itoa (length paths)) " file(s) scanned."))
   (foreach r (reverse rows)
@@ -451,7 +531,8 @@
                    (itoa (nth 6 r)) " ours verified, "
                    (itoa (+ (nth 7 r) (nth 8 r))) " suspect, "
                    (itoa (nth 9 r)) " changed, "
-                   (itoa (nth 10 r)) " unstamped")))
+                   (itoa (nth 10 r)) " unstamped, "
+                   (itoa (nth 19 r)) " stripped, watermark z " (nth 23 r))))
   (princ (strcat "\nReport:  " rpt "\nFiles:   " idxp "\nObjects: " csvp))
   (startapp "notepad.exe" (strcat "\"" rpt "\""))
   (princ))

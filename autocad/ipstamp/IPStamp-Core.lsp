@@ -56,6 +56,27 @@
 (if (null *IPS:DeriveCmds*)  (setq *IPS:DeriveCmds* "EXPLODE,XPLODE,BURST,FLATTEN,TXTEXP"))
 (if (null *IPS:InsertCmds*)  (setq *IPS:InsertCmds* "INSERT,-INSERT,CLASSICINSERT,*BLOCKSPALETTE,DDINSERT"))
 
+;;; ------------------------------------------------- anti-strip config ---
+;; Hidden encrypted copy of every stamp, kept in the object's extension
+;; dictionary (and of the drawing record, in the named object dictionary).
+;; Pick your own neutral name per firm: an unusual name is harder to find.
+(if (null *IPS:Shadow*)    (setq *IPS:Shadow* "YES"))
+(if (null *IPS:ShadowKey*) (setq *IPS:ShadowKey* "QC_REF"))
+
+;; Coordinate watermark (IPSEAL): moves coordinates by at most
+;; WMStep x WMBins drawing units (default 0.000032) so that a keyed residue
+;; is hidden in them. It survives xdata stripping, copy/paste, WBLOCK, DXF,
+;; EXPORTTOAUTOCAD for plain objects, and explode of blocks.
+(if (null *IPS:WMStep*)  (setq *IPS:WMStep* 1e-6))
+(if (null *IPS:WMBins*)  (setq *IPS:WMBins* 32))
+;; DXF types that IPSEAL watermarks. Add AECC_COGO_POINT only if your survey
+;; standards accept a 0.00003 unit change to point coordinates.
+(if (null *IPS:WMTypes*) (setq *IPS:WMTypes* "LWPOLYLINE,POLYLINE,LINE,POINT,CIRCLE,INSERT"))
+
+;; Folder of geometry manifests written by IPXMIT (kept in-house, never sent).
+;; IPScan matches received geometry against them even with every mark removed.
+(if (null *IPS:ManifestDir*) (setq *IPS:ManifestDir* ""))
+
 ;;; ----------------------------------------------------- record layout ---
 ;; Order in which keys are written to xdata. The SIG covers all of them.
 (setq *IPS:Order*
@@ -350,5 +371,243 @@
     (progn (foreach l lines (write-line l f)) (close f) T)))
 
 (defun ips:doc () (vla-get-activedocument (vlax-get-acad-object)))
+
+;;; ===================================================== ANTI-STRIP ===
+;;; Layer 1: visible xdata stamp            (deters; easy to see)
+;;; Layer 2: hidden encrypted shadow copy   (extension dictionary / NOD)
+;;; Layer 3: coordinate watermark            (inside the geometry itself)
+;;; Layer 4: hidden sentinel points          (invisible, watermarked)
+;;; Layer 5: geometry manifests at the office (cannot be touched by recipient)
+
+;;; ------------------------------------------------------------ helpers ---
+(defun ips:split (s ch / out p)
+  (while (setq p (vl-string-search ch s))
+    (setq out (cons (substr s 1 p) out) s (substr s (+ p 2))))
+  (reverse (cons s out)))
+
+(defun ips:hexval (h / n)
+  (setq n 0)
+  (foreach c (vl-string->list (strcase h))
+    (setq n (+ (* n 16) (cond ((<= 48 c 57) (- c 48)) ((<= 65 c 70) (- c 55)) (T 0)))))
+  n)
+
+(defun ips:chunks (s n / out)
+  (while (> (strlen s) n)
+    (setq out (cons (substr s 1 n) out) s (substr s (1+ n))))
+  (reverse (cons s out)))
+
+;;; ----------------------------------------------- keyed stream cipher ---
+;; Wichmann-Hill generator seeded from the key and a per-record nonce,
+;; XORed onto 16-bit character codes. Obfuscation strength, not AES: it hides
+;; what the record is and makes it unforgeable without the key.
+(defun ips:ks-init (nonce / h)
+  (setq h (ips:hash (strcat (ips:key) "|KS|" nonce))
+        *IPS:S1* (1+ (rem (ips:hexval (substr h 1 4)) 30268))
+        *IPS:S2* (1+ (rem (ips:hexval (substr h 5 4)) 30306))
+        *IPS:S3* (1+ (rem (ips:hexval (substr h 9 4)) 30322))))
+
+(defun ips:ks-next ()
+  (setq *IPS:S1* (rem (* 171 *IPS:S1*) 30269)
+        *IPS:S2* (rem (* 172 *IPS:S2*) 30307)
+        *IPS:S3* (rem (* 170 *IPS:S3*) 30323))
+  (logand (boole 6 *IPS:S1* (lsh *IPS:S2* 3) (lsh *IPS:S3* 7)) 65535))
+
+(defun ips:encrypt (plain nonce / out)
+  (ips:ks-init nonce)
+  (setq out "")
+  (foreach c (vl-string->list plain)
+    (setq out (strcat out (ips:hex4 (boole 6 c (ips:ks-next))))))
+  out)
+
+(defun ips:decrypt (hex nonce / out i c)
+  (ips:ks-init nonce)
+  (setq out "" i 1)
+  (while (<= (+ i 3) (strlen hex))
+    (setq c (boole 6 (ips:hexval (substr hex i 4)) (ips:ks-next)))
+    (setq out (strcat out (if (and (> c 0) (< c 65534)) (chr c) "?"))
+          i (+ i 4)))
+  out)
+
+(defun ips:nonce (seed)
+  (setq *IPS:NonceN* (1+ (cond (*IPS:NonceN*) (0))))
+  (substr (ips:hash (strcat seed "|" (ips:now) "|" (rtos (getvar "DATE") 2 8)
+                            "|" (itoa *IPS:NonceN*) "|" (rtos (getvar "MILLISECS") 2 0)))
+          1 12))
+
+;;; ------------------------------------------------------ shadow records ---
+;; Fields kept in the hidden copy: enough to rebuild and verify the origin.
+(setq *IPS:ShadowFields*
+  '("ORG" "IP" "C_USER" "C_HOST" "C_TIME" "C_DWG" "C_DWGID" "C_TYPE" "C_KEYID" "C_SIG"
+    "M_USER" "M_TIME" "M_CMD" "M_DWG" "N" "GEO"))
+
+;; rec -> list of strings for xrecord group 1: nonce, then cipher chunks.
+(defun ips:shadow-pack (rec fields / body n)
+  (setq body (ips:join (vl-remove nil
+                         (mapcar (function (lambda (k) (if (assoc k rec) (strcat k "=" (cdr (assoc k rec))))))
+                                 fields))
+                       (chr 10))
+        body (strcat body (chr 10) "S=" (ips:mac body))
+        n    (ips:nonce body))
+  (cons n (ips:chunks (ips:encrypt body n) 240)))
+
+;; strings -> ("VALID" . rec) | ("UNREADABLE" . nil) | nil
+(defun ips:shadow-unpack (strs / body lines sig rest)
+  (if (and strs (cdr strs))
+    (progn
+      (setq body  (ips:decrypt (apply 'strcat (cdr strs)) (car strs))
+            lines (ips:split body (chr 10))
+            sig   (last lines)
+            rest  (ips:join (reverse (cdr (reverse lines))) (chr 10)))
+      (if (and (wcmatch sig "S=*") (= (substr sig 3) (ips:mac rest)))
+        (cons "VALID" (ips:kv-parse (mapcar (function (lambda (l) (cons 1 l))) (reverse (cdr (reverse lines))))))
+        (cons "UNREADABLE" nil)))))
+
+(defun ips:xrec-strings (xr / typ val r)
+  (setq r (vl-catch-all-apply 'vla-getxrecorddata (list xr 'typ 'val)))
+  (if (not (vl-catch-all-error-p r))
+    (mapcar 'cdr (vl-remove-if-not (function (lambda (p) (= (car p) 1))) (ips:pairs typ val)))))
+
+(defun ips:xrec-set-strings (xr strs)
+  (vla-setxrecorddata xr
+    (ips:sa vlax-vbInteger (mapcar (function (lambda (s) 1)) strs))
+    (ips:sa vlax-vbVariant strs)))
+
+;; Hidden copy on an object (extension dictionary). Read works in ObjectDBX.
+(defun ips:shadow-read (obj / ed xr)
+  (if (and (= (ips:prop obj 'HasExtensionDictionary) :vlax-true)
+           (not (vl-catch-all-error-p
+                  (setq ed (vl-catch-all-apply 'vla-getextensiondictionary (list obj)))))
+           (setq xr (ips:item ed *IPS:ShadowKey*)))
+    (ips:shadow-unpack (ips:xrec-strings xr))))
+
+(defun ips:shadow-write (obj rec / ed xr)
+  (if (= (strcase *IPS:Shadow*) "YES")
+    (progn
+      (setq ed (vla-getextensiondictionary obj)
+            xr (cond ((ips:item ed *IPS:ShadowKey*)) ((vla-addxrecord ed *IPS:ShadowKey*))))
+      (ips:xrec-set-strings xr (ips:shadow-pack rec *IPS:ShadowFields*)))))
+
+;; Hidden copy of the drawing record, in the named object dictionary.
+(defun ips:dshadow-read (db / d xr)
+  (if (and (setq d (ips:item (ips:prop db 'Dictionaries) *IPS:ShadowKey*))
+           (setq xr (ips:item d "D")))
+    (ips:shadow-unpack (ips:xrec-strings xr))))
+
+(defun ips:dshadow-write (db info / dicts d xr)
+  (if (= (strcase *IPS:Shadow*) "YES")
+    (progn
+      (setq dicts (vla-get-dictionaries db)
+            d  (cond ((ips:item dicts *IPS:ShadowKey*)) ((vla-add dicts *IPS:ShadowKey*)))
+            xr (cond ((ips:item d "D")) ((vla-addxrecord d "D"))))
+      (ips:xrec-set-strings xr (ips:shadow-pack info (mapcar 'car info))))))
+
+;;; -------------------------------------------------- coordinate watermark ---
+;; Each x (and y) coordinate is nudged so that floor((x mod cell) / step)
+;; equals a residue derived from the secret key. Unmarked coordinates hit
+;; that residue 1 time in WMBins; marked ones always do.
+(setq *IPS:WMMap*
+  '(("LWPOLYLINE"      "AcDbPolyline"       Coordinates 2)
+    ("POLYLINE"        "AcDb2dPolyline"     Coordinates 3)
+    ("POLYLINE"        "AcDb3dPolyline"     Coordinates 3)
+    ("LINE"            "AcDbLine"           StartPoint  0)
+    ("LINE"            "AcDbLine"           EndPoint    0)
+    ("POINT"           "AcDbPoint"          Coordinates 3)
+    ("CIRCLE"          "AcDbCircle"         Center      0)
+    ("ARC"             "AcDbArc"            Center      0)
+    ("INSERT"          "AcDbBlockReference" InsertionPoint 0)
+    ("AECC_COGO_POINT" "AeccDbCogoPoint"    EastNorth   0)))
+
+(defun ips:wm-targets ( / h)
+  (setq h (ips:hash (strcat (ips:key) "|WATERMARK")))
+  (list (rem (ips:hexval (substr h 1 4)) *IPS:WMBins*)
+        (rem (ips:hexval (substr h 5 4)) *IPS:WMBins*)))
+
+(defun ips:wm-bin (v / cell r)
+  (setq cell (* *IPS:WMBins* *IPS:WMStep*)
+        r    (rem v cell))
+  (if (< r 0.0) (setq r (+ r cell)))
+  (min (1- *IPS:WMBins*) (fix (/ r *IPS:WMStep*))))
+
+(defun ips:wm-fix (v tgt / cell r)
+  (if (= (ips:wm-bin v) tgt)
+    v
+    (progn
+      (setq cell (* *IPS:WMBins* *IPS:WMStep*)
+            r    (rem v cell))
+      (if (< r 0.0) (setq r (+ r cell)))
+      (+ (- v r) (* (+ tgt 0.5) *IPS:WMStep*)))))
+
+;; Watermark rows that apply to this object under the current *IPS:WMTypes*.
+(defun ips:wm-rows (obj / on)
+  (setq on (ips:str (ips:prop obj 'ObjectName)))
+  (vl-remove-if-not
+    (function (lambda (r) (and (= (cadr r) on) (wcmatch (car r) *IPS:WMTypes*))))
+    *IPS:WMMap*))
+
+;; -> list of (x . y) for every watermarkable vertex of the object.
+(defun ips:wm-xy (obj / out lst i)
+  (foreach r (ips:wm-rows obj)
+    (cond
+      ((= (caddr r) 'EastNorth)
+       (setq out (cons (cons (vlax-get obj 'Easting) (vlax-get obj 'Northing)) out)))
+      ((> (cadddr r) 0)
+       (setq lst (vl-catch-all-apply 'vlax-get (list obj (caddr r))) i 0)
+       (if (and (listp lst) (not (vl-catch-all-error-p lst)))
+         (while (< (1+ i) (length lst))
+           (setq out (cons (cons (nth i lst) (nth (1+ i) lst)) out)
+                 i (+ i (cadddr r))))))
+      (T
+       (setq lst (vl-catch-all-apply 'vlax-get (list obj (caddr r))))
+       (if (and (listp lst) (not (vl-catch-all-error-p lst)) (cadr lst))
+         (setq out (cons (cons (car lst) (cadr lst)) out))))))
+  out)
+
+;; -> (hits . coordinates) for one object
+(defun ips:wm-count (obj / tg h n)
+  (setq tg (ips:wm-targets) h 0 n 0)
+  (foreach p (ips:wm-xy obj)
+    (setq n (+ n 2))
+    (if (= (ips:wm-bin (car p)) (car tg)) (setq h (1+ h)))
+    (if (= (ips:wm-bin (cdr p)) (cadr tg)) (setq h (1+ h))))
+  (cons h n))
+
+;; Applies the watermark. Returns T if any coordinate moved.
+(defun ips:wm-apply (obj / tg moved lst new i old)
+  (setq tg (ips:wm-targets))
+  (foreach r (ips:wm-rows obj)
+    (cond
+      ((= (caddr r) 'EastNorth)
+       (setq old (list (vlax-get obj 'Easting) (vlax-get obj 'Northing))
+             new (list (ips:wm-fix (car old) (car tg)) (ips:wm-fix (cadr old) (cadr tg))))
+       (if (not (equal old new 0.0))
+         (progn (vlax-put obj 'Easting (car new)) (vlax-put obj 'Northing (cadr new)) (setq moved T))))
+      (T
+       (setq lst (vlax-get obj (caddr r)) i 0 new nil)
+       (foreach v lst
+         (setq new (cons (cond ((= (rem i (max 2 (cadddr r))) 0) (ips:wm-fix v (car tg)))
+                               ((= (rem i (max 2 (cadddr r))) 1) (ips:wm-fix v (cadr tg)))
+                               (T v))
+                         new)
+               i (1+ i)))
+       (setq new (reverse new))
+       (if (not (equal lst new 0.0))
+         (progn (vlax-put obj (caddr r) new) (setq moved T))))))
+  moved)
+
+;; Binomial z-score of watermark hits against the 1-in-WMBins chance rate.
+(defun ips:wm-z (hits n / p)
+  (setq p (/ 1.0 *IPS:WMBins*))
+  (if (> n 0) (/ (- hits (* n p)) (sqrt (* n p (- 1.0 p)))) 0.0))
+
+;; Stamp from the visible xdata, else from the hidden copy.
+(defun ips:rec-any (obj / sh)
+  (cond ((ips:xd-read obj))
+        ((= (car (setq sh (ips:shadow-read obj))) "VALID") (cdr sh))))
+
+;;; ------------------------------------------------------------ sentinels ---
+;; Invisible POINT entities carrying a stamp, a shadow and the watermark.
+(defun ips:sentinel-p (obj)
+  (and (= (ips:prop obj 'ObjectName) "AcDbPoint")
+       (= (ips:prop obj 'Visible) :vlax-false)))
 
 (princ)

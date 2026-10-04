@@ -23,6 +23,7 @@
 ;;;   IPWHO        look up the stamp on an object (also on the right-click menu)
 ;;;   IPWHON       same, for an object nested in a block or xref
 ;;;   IPMARK       baseline-claim every unstamped object in this drawing
+;;;   IPSEAL       IPMARK + coordinate watermark + hidden sentinels (anti-strip)
 ;;;   IPXMIT       record an outgoing transmittal (recipient, purpose) in the DWG
 ;;;   IPSTATUS     show tracking state, key id and log path
 ;;;   IPSTAMPON / IPSTAMPOFF    resume / suspend tracking in this drawing
@@ -116,13 +117,23 @@
     (entmakex
       (append '((0 . "XRECORD") (100 . "AcDbXrecord"))
               (mapcar (function (lambda (p) (cons 1 (ips:clip (strcat (car p) "=" (ips:str (cdr p))) 1000))))
-                      pairs)))))
+                      pairs))))
+  ;; Keep an encrypted hidden copy of the drawing record as well.
+  (if (= name "DWGINFO")
+    (vl-catch-all-apply 'ips:dshadow-write (list (ips:doc) pairs))))
 
 ;; Drawing identity record. Created the first time anything is stamped.
 ;; Records who first tracked the file; it does NOT claim ownership (IPMARK does).
-(defun ips:ensure-dwginfo ( / info id)
+(defun ips:ensure-dwginfo ( / info id sh)
   (setq info (ips:xrec-read (ips:doc) "DWGINFO")
         id   (getvar "FINGERPRINTGUID"))
+  ;; Visible record stripped but the hidden copy survives: put it back.
+  (if (and (null info)
+           (= (car (setq sh (ips:dshadow-read (ips:doc)))) "VALID"))
+    (progn
+      (setq info (ips:put* (cdr sh) (list (cons "RESTORED" (ips:now)))))
+      (ips:xrec-put "DWGINFO" info)
+      (princ "\nIPStamp: the drawing record had been removed - restored from the hidden copy.")))
   (cond
     ((null info)
      (ips:xrec-put "DWGINFO"
@@ -184,19 +195,25 @@
   (setq out (reverse out))
   (append out (list (cons "SIG" (ips:mac (ips:canon-all out))))))
 
-;; Write xdata; if the object sits on a locked layer (Civil 3D rebuilds do
-;; that), unlock the layer for the write and lock it again.
-(defun ips:write-safe (obj rec / r lay lyr)
-  (setq r (vl-catch-all-apply 'ips:xd-write (list obj rec)))
+;; Run (fn args) on obj; if it fails because the object sits on a locked
+;; layer (Civil 3D rebuilds do that), unlock the layer, retry, relock.
+;; -> (T . result) or (nil . error)
+(defun ips:unlocked (obj fn args / r lay lyr)
+  (setq r (vl-catch-all-apply fn args))
   (if (and (vl-catch-all-error-p r)
            (setq lay (ips:prop obj 'Layer))
            (setq lyr (ips:item (vla-get-layers (ips:doc)) lay))
            (= (vla-get-lock lyr) :vlax-true))
     (progn
       (vla-put-lock lyr :vlax-false)
-      (setq r (vl-catch-all-apply 'ips:xd-write (list obj rec)))
+      (setq r (vl-catch-all-apply fn args))
       (vla-put-lock lyr :vlax-true)))
-  (not (vl-catch-all-error-p r)))
+  (if (vl-catch-all-error-p r) (cons nil r) (cons T r)))
+
+;; Visible stamp, then the hidden encrypted copy.
+(defun ips:write-safe (obj rec)
+  (if (car (ips:unlocked obj 'ips:xd-write (list obj rec)))
+    (progn (ips:unlocked obj 'ips:shadow-write (list obj rec)) T)))
 
 (defun ips:logrow (when user cmd action obj ctx)
   (setq *IPS:Rows*
@@ -205,10 +222,15 @@
                   (ips:prop obj 'Handle) (ips:prop obj 'ObjectName) (ips:prop obj 'Name)))
           *IPS:Rows*)))
 
-;; mode: "NEW" appended object, "MOD" modified object, "BASE" IPMARK baseline.
-(defun ips:stamp (obj when cmd mode ctx src / old rec hist ctype org me n)
+;; mode: "NEW" appended object, "MOD" modified object, "BASE" IPMARK baseline,
+;;       "SEAL" IPSEAL (watermark applied; also creates sentinels).
+(defun ips:stamp (obj when cmd mode ctx src / old rec hist ctype org me n sh)
   (setq old (ips:xd-read obj)
         me  (ips:kv "USER" ctx))
+  ;; Visible stamp stripped but the hidden copy survives: rebuild from it.
+  (if (and (null old) (= (car (setq sh (ips:shadow-read obj))) "VALID"))
+    (setq old (append (cdr sh)
+                      (list (cons "H" (strcat when " " me " RESTORED from hidden copy @" (ips:kv "DWG" ctx)))))))
   (cond
     ;; Already stamped (ours, a copy of ours, or someone else's): keep origin.
     (old
@@ -223,9 +245,10 @@
     ;; First time we see this object.
     (T
      (setq ctype (cond ((= mode "BASE") "BASELINE")
+                       ((= mode "SEAL") "SENTINEL")
                        ((= mode "MOD") "PRE-EXISTING")
                        (T (ips:classify cmd)))
-           org   (if (wcmatch ctype "NATIVE,AUTO,BASELINE,INSERTED:*") *IPS:Org* "(unclaimed)"))
+           org   (if (wcmatch ctype "NATIVE,AUTO,BASELINE,SENTINEL,INSERTED:*") *IPS:Org* "(unclaimed)"))
      (setq rec
        (if (= mode "MOD")
          ;; Existed before tracking: we know where it is, not who made it.
@@ -234,8 +257,8 @@
          (ips:origin nil org me (ips:kv "HOST" ctx) when
                      (ips:kv "DWG" ctx) (ips:kv "DWGID" ctx) ctype)))))
   ;; Touch fields.
-  (if (= mode "BASE")
-    (setq hist (cons (strcat when " " me " IPMARK @" (ips:kv "DWG" ctx)) hist))
+  (if (member mode '("BASE" "SEAL"))
+    (setq hist (cons (strcat when " " me (if (= mode "SEAL") " IPSEAL @" " IPMARK @") (ips:kv "DWG" ctx)) hist))
     (progn
       (if cmd
         (setq rec (ips:put* rec (list (cons "M_USER" me)
@@ -252,8 +275,11 @@
             hist (cons (strcat when " " me " " (if cmd cmd "(no command)") " @" (ips:kv "DWG" ctx)) hist))))
   (setq hist (ips:take (mapcar (function (lambda (h) (ips:clip h 200))) hist) *IPS:HistoryDepth*))
   ;; The geometry fingerprint is refreshed only when we observe an edit.
-  ;; IPMARK never overwrites one, so edits made outside tracking stay visible.
-  (if (or (/= mode "BASE") (null (ips:kv "GEO" rec)))
+  ;; IPMARK never overwrites one, so edits made outside tracking stay visible;
+  ;; IPSEAL refreshes it only if the geometry matched before the watermark.
+  (if (or (null (ips:kv "GEO" rec))
+          (member mode '("NEW" "MOD"))
+          (and (= mode "SEAL") *IPS:SealGeoOK*))
     (setq rec (ips:put rec "GEO" (ips:geo obj))))
   (setq rec (ips:put* rec (list (cons "V" "1")
                                 (cons "TZ" (ips:kv "TZ" ctx))
@@ -261,7 +287,8 @@
   (if (ips:write-safe obj (ips:finalize rec hist))
     (progn
       (ips:logrow when me cmd
-                  (cond ((= mode "NEW") "CREATE") ((= mode "BASE") "MARK") (cmd "MODIFY") (T "AUTO-MODIFY"))
+                  (cond ((= mode "NEW") "CREATE") ((= mode "BASE") "MARK") ((= mode "SEAL") "SEAL")
+                        (cmd "MODIFY") (T "AUTO-MODIFY"))
                   obj ctx)
       T)))
 
@@ -435,14 +462,23 @@
 ;;; -------------------------------------------------------------- IPWHO ---
 (defun ips:+ (s) (setq *IPS:L* (cons s *IPS:L*)))
 
-(defun ips:describe (obj / rec v g nm)
+(defun ips:describe (obj / rec v g nm sh wm stripped)
   (setq *IPS:L* nil
-        rec (ips:xd-read obj))
+        rec (ips:xd-read obj)
+        sh  (ips:shadow-read obj)
+        wm  (ips:wm-count obj))
+  (if (and (null rec) (= (car sh) "VALID"))
+    (setq rec (cdr sh) stripped T))
   (ips:+ (strcat (ips:str (ips:prop obj 'ObjectName))
                  "   handle " (ips:str (ips:prop obj 'Handle))
                  "   layer " (ips:str (ips:prop obj 'Layer))))
   (if (setq nm (ips:prop obj 'Name)) (ips:+ (strcat "Name: " (ips:str nm))))
   (ips:+ "")
+  (if stripped
+    (progn
+      (ips:+ "*** THE VISIBLE STAMP WAS REMOVED FROM THIS OBJECT. ***")
+      (ips:+ "*** Origin below is recovered from the hidden encrypted copy. ***")
+      (ips:+ "")))
   (if (null rec)
     (progn
       (ips:+ "NO IP STAMP ON THIS OBJECT.")
@@ -487,6 +523,17 @@
                            (T "no fingerprint"))))
       (if (/= (ips:str (ips:kv "IP" rec)) "")
         (progn (ips:+ "") (ips:+ (strcat "IP: " (ips:kv "IP" rec)))))))
+  (ips:+ "")
+  (ips:+ "HIDDEN LAYERS")
+  (ips:+ (strcat "  Hidden copy: "
+                 (cond ((= (car sh) "VALID") "present, readable with our key")
+                       ((= (car sh) "UNREADABLE") "present, NOT readable with our key (another firm or old key)")
+                       (T "none"))))
+  (ips:+ (strcat "  Watermark:   "
+                 (if (> (cdr wm) 0)
+                   (strcat (itoa (car wm)) " of " (itoa (cdr wm)) " coordinates carry our mark"
+                           (if (= (car wm) (cdr wm)) " (sealed)" ""))
+                   "not applicable to this object type")))
   (reverse *IPS:L*))
 
 (defun ips:show (obj / lines)
@@ -540,7 +587,7 @@
   (ips:ensure-dwginfo)
   (setq ctx (ips:context) when (ips:now))
   (foreach obj (ips:collect)
-    (setq rec (ips:xd-read obj))
+    (setq rec (ips:rec-any obj))
     (cond
       ((null rec)
        (if (ips:stamp* obj when nil "BASE" ctx nil) (setq new (1+ new))))
@@ -578,6 +625,102 @@
   (if (/= ans "No") (ips:mark-report (ips:mark)))
   (princ))
 
+;;; ------------------------------------------------------------- IPSEAL ---
+;; Watermarks the coordinates of every object we own, refreshes its visible
+;; stamp and hidden copy, and plants invisible sentinel points.
+(defun ips:sentinels (ctx when / have mn mx h k pt e obj made)
+  (setq have 0 made 0)
+  (foreach obj (ips:collect)
+    (if (and (ips:sentinel-p obj) (= (car (ips:shadow-read obj)) "VALID")) (setq have (1+ have))))
+  (setq mn (getvar "EXTMIN") mx (getvar "EXTMAX") k 0)
+  (if (and (< (car mn) (car mx)) (< (cadr mn) (cadr mx)))
+    (while (< (+ have made) 3)
+      (setq h  (ips:hash (strcat (ips:key) "|SENTINEL|" (itoa k) "|" (ips:now)))
+            pt (list (+ (car mn) (* (- (car mx) (car mn)) (/ (ips:hexval (substr h 1 4)) 65535.0)))
+                     (+ (cadr mn) (* (- (cadr mx) (cadr mn)) (/ (ips:hexval (substr h 5 4)) 65535.0)))
+                     0.0)
+            k  (1+ k))
+      (if (setq e (entmakex (list '(0 . "POINT") '(8 . "0") '(60 . 1) (cons 10 pt))))
+        (progn
+          (setq obj (vlax-ename->vla-object e))
+          (ips:wm-apply obj)
+          (setq *IPS:SealGeoOK* T)
+          (ips:stamp* obj when "IPSEAL" "SEAL" ctx nil)
+          (setq made (1+ made)))
+        (setq made 99))))
+  (+ have (if (= made 99) 0 made)))
+
+(defun ips:seal-core ( / ctx when rec r)
+  (ips:ensure-app)
+  (ips:ensure-dwginfo)
+  (setq ctx (ips:context) when (ips:now))
+  (foreach obj (ips:collect)
+    (setq rec (ips:rec-any obj))
+    (cond
+      ((ips:sentinel-p obj) nil)                ; counted by ips:sentinels
+      ((and rec (= (ips:kv "ORG" rec) *IPS:Org*))
+        ;; Keep evidence of outside edits: only refresh the fingerprint if
+        ;; the geometry matched it before we watermark.
+        (setq *IPS:SealGeoOK* (/= (ips:geo-status obj rec) "CHANGED"))
+        (if (ips:wm-rows obj)
+          (progn
+            (setq r (ips:unlocked obj 'ips:wm-apply (list obj)))
+            (if (and (car r) (cdr r)) (setq moved (1+ moved)))))
+        (if (ips:stamp* obj when "IPSEAL" "SEAL" ctx nil) (setq sealed (1+ sealed))))
+      (T (setq skipped (1+ skipped)))))
+  (setq *IPS:SealGeoOK* nil
+        sents (ips:sentinels ctx when))
+  (ips:log-flush))
+
+;; -> (sealed watermarked-objects skipped sentinels)
+(defun ips:seal ( / doc sealed moved skipped sents r)
+  (setq sealed 0 moved 0 skipped 0 sents 0 doc (ips:doc)
+        *IPS:Busy* T *IPS:Rows* nil)
+  (vla-startundomark doc)
+  (setq r (vl-catch-all-apply 'ips:seal-core nil))
+  (vla-endundomark doc)
+  (setq *IPS:Busy* nil)
+  (if (vl-catch-all-error-p r) (princ (strcat "\nIPSEAL: " (vl-catch-all-error-message r))))
+  (list sealed moved skipped sents))
+
+(defun ips:seal-report (res)
+  (princ (strcat "\nIPSEAL: " (itoa (car res)) " of our objects sealed (visible stamp + hidden copy), "
+                 (itoa (cadr res)) " coordinate-watermarked, "
+                 (itoa (caddr res)) " not ours and left untouched, "
+                 (itoa (cadddr res)) " hidden sentinels in place.")))
+
+(defun c:IPSEAL ( / ans)
+  (princ (strcat "\nIPSEAL moves coordinates of our objects by at most "
+                 (rtos (* *IPS:WMStep* *IPS:WMBins*) 2 6) " drawing units to embed the watermark."))
+  (initget "Yes No")
+  (setq ans (getkword "\nMark (IPMARK) and seal this drawing now? [Yes/No] <Yes>: "))
+  (if (/= ans "No")
+    (progn
+      (ips:mark-report (ips:mark))
+      (ips:seal-report (ips:seal))
+      (princ "\nSAVE the drawing to keep the seal.")))
+  (princ))
+
+;; Geometry manifest of everything we own, kept at the office (never sent).
+(defun ips:manifest-write (to why / path f rec n)
+  (if (/= *IPS:ManifestDir* "")
+    (progn
+      (vl-mkdir *IPS:ManifestDir*)
+      (setq path (strcat (vl-string-right-trim "\\/" *IPS:ManifestDir*) "\\"
+                         (ips:fname-stamp) "_" (vl-filename-base (getvar "DWGNAME")) ".ipm")
+            n 0)
+      (if (setq f (open path "w"))
+        (progn
+          (write-line (ips:join (list "#IPM" (ips:now) (ips:user) to why (getvar "DWGNAME")
+                                      (getvar "FINGERPRINTGUID"))
+                                "|")
+                      f)
+          (foreach obj (ips:collect)
+            (if (and (setq rec (ips:rec-any obj)) (= (ips:kv "ORG" rec) *IPS:Org*))
+              (progn (write-line (ips:geo obj) f) (setq n (1+ n)))))
+          (close f)
+          (princ (strcat "\nIPXMIT: manifest of " (itoa n) " objects written to " path)))))))
+
 ;;; ------------------------------------------------------------- IPXMIT ---
 (defun c:IPXMIT ( / to why entry lst)
   (cond
@@ -586,8 +729,9 @@
      (setq to  (getstring T "\nRecipient (company / person): ")
            why (getstring T "\nPurpose / package reference: "))
      (initget "Yes No")
-     (if (/= (getkword "\nBaseline-mark unstamped objects first (IPMARK)? [Yes/No] <Yes>: ") "No")
-       (ips:mark-report (ips:mark)))
+     (if (/= (getkword "\nMark and seal before sending (IPMARK + IPSEAL)? [Yes/No] <Yes>: ") "No")
+       (progn (ips:mark-report (ips:mark)) (ips:seal-report (ips:seal))))
+     (ips:manifest-write to why)
      (setq entry (ips:join (list (ips:now) (ips:user) to why (getvar "DWGNAME")) " | ")
            lst   (mapcar 'cdr (vl-remove-if-not (function (lambda (p) (= (car p) "XMIT")))
                                                 (ips:xrec-read (ips:doc) "XMIT")))
@@ -671,5 +815,5 @@
 (if (= (strcase *IPS:AutoMenu*) "YES") (vl-catch-all-apply 'ips:menu-add nil))
 (if (ips:default-key-p)
   (princ "\nIPStamp: using the DEFAULT signing key. Set *IPS:KeyFile* (see README)."))
-(princ "\nCommands: IPWHO  IPWHON  IPMARK  IPXMIT  IPSTATUS  IPSTAMPON  IPSTAMPOFF  IPMENU")
+(princ "\nCommands: IPWHO  IPWHON  IPMARK  IPSEAL  IPXMIT  IPSTATUS  IPSTAMPON  IPSTAMPOFF  IPMENU")
 (princ)
