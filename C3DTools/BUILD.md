@@ -48,7 +48,7 @@ The publisher is set to Stephen Walz in `C3DTools.bundle\PackageContents.xml`. B
 | `C3DTOOLS-STATUS` | Install and log folders shown. Civil 3D COM connected. |
 | Type `MOVE` on an alignment | The normal MOVE runs and no Impact dialog appears (interception is off by default). |
 | `C3D-IMPACT-SETTINGS`, tick MOVE only, OK, then `MOVE` on an alignment | The warning appears with a single OK button, then MOVE continues and ESC cancels it. `ROTATE` is not intercepted. |
-| On any warning, click Learn More..., then OK | The browser opens at that command's section of the knowledge-base page (check MOVE, STRETCH, ROTATE, SCALE, a grip edit and a surface edit). The warning stays open until OK. |
+| On any warning, click Learn More..., then OK | The browser opens at that command's section of the knowledge-base page (check MOVE, STRETCH, ROTATE, SCALE, grip edits on an alignment and on a profile, and a surface edit). The warning stays open until OK. |
 | Untick MOVE in `C3D-IMPACT-SETTINGS`, then `MOVE` | The normal MOVE runs. |
 | Set the frequency to Once, then grip-drag an alignment twice | The warning appears the first time only. It appears again after restarting Civil 3D. |
 | `-C3D-IMPACT-SETTINGS`, then Rotate, then X | ROTATE interception toggles. |

@@ -546,41 +546,58 @@
 )
 
 ;; ---------------------------------------------------------------------------
-;; Learn More: opens the knowledge-base page at the section for the command
-;; that raised the warning. The page and the section anchors are set in
-;; C3DTools-Config.lsp; the values below are used when the config omits them.
+;; Learn More: opens the knowledge-base page at the section for the warning
+;; (anchors follow the page's "Linking warnings to articles" table). The page
+;; and anchors are set in C3DTools-Config.lsp; the values below are used when
+;; the config omits them.
 ;; ---------------------------------------------------------------------------
 
 (setq *c3dimpact:learn-more-default-url*
   "https://designtovisualization.com/kb-tools-for-civil-3d-%c2%b7-c3d-guard-change-impact/")
 
 (setq *c3dimpact:learn-more-default-anchors*
-  '(("MOVE"    . "move")
-    ("STRETCH" . "stretch")
-    ("ROTATE"  . "rotate")
-    ("SCALE"   . "scale")
-    ("GRIP"    . "grip-edits")
-    ("SURFACE" . "surface-edits")))
+  '(("MOVE"           . "move-civil-objects")
+    ("STRETCH"        . "stretch-civil-objects")
+    ("ROTATE"         . "rotate-civil-objects")
+    ("SCALE"          . "scale-civil-objects")
+    ("GRIP_ALIGNMENT" . "grip-edit-alignment")
+    ("GRIP_PROFILE"   . "grip-edit-profile")
+    ("SURFACE"        . "surface-edits")
+    ("GENERAL"        . "dynamic-model")))
 
-;; Topic for a command: the four intercepted commands by name, every grip
-;; edit as GRIP, every surface-edit command as SURFACE.
-(defun c3dimpact:topic (cmdname)
+;; Topic of a warning:
+;;   MOVE / STRETCH / ROTATE / SCALE   the intercepted command itself
+;;   SURFACE                           any surface-edit command
+;;   GRIP_ALIGNMENT / GRIP_PROFILE     a grip edit, by what is selected
+;;   GENERAL                           anything else (no single object)
+(defun c3dimpact:topic (cmdname ents / kinds obj)
   (cond
-    ((wcmatch cmdname "GRIP_*") "GRIP")
     ((member cmdname *c3dimpact:native-commands*) cmdname)
     ((wcmatch cmdname "*SURFACE*") "SURFACE")
-    (T cmdname)
+    ((wcmatch cmdname "GRIP_*")
+     (setq kinds nil)
+     (foreach e ents
+       (setq obj (vl-catch-all-apply 'vlax-ename->vla-object (list e)))
+       (if (not (vl-catch-all-error-p obj))
+         (setq kinds (cons (c3dimpact:kind (c3dt:object-name obj)) kinds))
+       )
+     )
+     (cond ((member "alignment" kinds) "GRIP_ALIGNMENT")
+           ((member "profile" kinds) "GRIP_PROFILE")
+           ((member "surface" kinds) "SURFACE")
+           (T "GENERAL")))
+    (T "GENERAL")
   )
 )
 
 ;; Page URL plus "#anchor" for the command's topic. A topic with no anchor
 ;; opens the top of the page.
-(defun c3dimpact:learn-more-url (cmdname / base i anchors anchor)
+(defun c3dimpact:learn-more-url (topic / base i anchors anchor)
   (setq base (cond ((c3dt:nonblank (c3dt:cfg "ImpactLearnMoreUrl" nil)))
                    (*c3dimpact:learn-more-default-url*)))
   (if (setq i (vl-string-search "#" base)) (setq base (substr base 1 i)))
   (setq anchors (c3dt:cfg "ImpactLearnMoreAnchors" *c3dimpact:learn-more-default-anchors*))
-  (setq anchor (if (listp anchors) (cdr (assoc (c3dimpact:topic cmdname) anchors))))
+  (setq anchor (if (listp anchors) (cdr (assoc topic anchors))))
   (if (c3dt:nonblank anchor)
     (strcat base "#" (vl-string-left-trim "#" anchor))
     base
@@ -605,14 +622,14 @@
   (princ)
 )
 
-(defun c3dimpact:open-learn-more (cmdname)
-  (c3dimpact:open-url (c3dimpact:learn-more-url cmdname))
+(defun c3dimpact:open-learn-more (topic)
+  (c3dimpact:open-url (c3dimpact:learn-more-url topic))
 )
 
 ;; Information only: AutoLISP cannot cancel a command from here, so the
 ;; dialog has OK (close) and Learn More (open the explanation for this
 ;; command; the dialog stays open).
-(defun c3dimpact:show-impact (cmdname lines / path dcl_id)
+(defun c3dimpact:show-impact (cmdname topic lines / path dcl_id)
   (setq path (c3dimpact:ensure-dcl))
   (if (and path (> (setq dcl_id (load_dialog path)) 0))
     (progn
@@ -627,7 +644,7 @@
               "Shown every time. Change this with C3D-IMPACT-SETTINGS."))
           (action_tile "accept" "(done_dialog 1)")
           (action_tile "learn_more"
-            (strcat "(c3dimpact:open-learn-more " (vl-prin1-to-string cmdname) ")"))
+            (strcat "(c3dimpact:open-learn-more " (vl-prin1-to-string topic) ")"))
           (start_dialog)
         )
       )
@@ -660,7 +677,7 @@
       (setq scanresult (c3dimpact:scan-pickfirst))
       ;; nothing pre-selected: ask for the selection now, as the command would
       (if (not (cdr scanresult)) (setq scanresult (c3dimpact:analyze-ss (ssget))))
-      (if (car scanresult) (c3dimpact:show-impact cmdname (car scanresult)))
+      (if (car scanresult) (c3dimpact:show-impact cmdname cmdname (car scanresult)))
       (c3dimpact:run-native cmdname (cdr scanresult))
     )
     ;; no warning due: hand straight over to the real command
@@ -894,7 +911,8 @@
             lines))
         )
       )
-      (if lines (c3dimpact:show-impact cmdname lines))
+      (if lines
+        (c3dimpact:show-impact cmdname (c3dimpact:topic cmdname (cdr scanresult)) lines))
     )
   )
 )

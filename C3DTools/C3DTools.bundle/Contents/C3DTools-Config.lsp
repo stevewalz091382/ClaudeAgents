@@ -57,16 +57,21 @@
     ("ImpactLearnMoreUrl"
       . "https://designtovisualization.com/kb-tools-for-civil-3d-%c2%b7-c3d-guard-change-impact/")
 
-    ;; Section of that page for each command (the part after "#" in the
-    ;; section's link). GRIP covers every grip edit and SURFACE every Civil 3D
-    ;; surface-edit command. Remove an entry to open the top of the page.
+    ;; Section of that page for each kind of warning (the part after "#" in
+    ;; the section's link), as listed in the page's "Linking warnings to
+    ;; articles" table. Remove an entry to open the top of the page.
+    ;;   GRIP_ALIGNMENT / GRIP_PROFILE  grip edit with that object selected
+    ;;   SURFACE                        any Civil 3D surface-edit command
+    ;;   GENERAL                        any other warning (no single object)
     ("ImpactLearnMoreAnchors"
-      . (("MOVE"    . "move")
-         ("STRETCH" . "stretch")
-         ("ROTATE"  . "rotate")
-         ("SCALE"   . "scale")
-         ("GRIP"    . "grip-edits")
-         ("SURFACE" . "surface-edits")))
+      . (("MOVE"           . "move-civil-objects")
+         ("STRETCH"        . "stretch-civil-objects")
+         ("ROTATE"         . "rotate-civil-objects")
+         ("SCALE"          . "scale-civil-objects")
+         ("GRIP_ALIGNMENT" . "grip-edit-alignment")
+         ("GRIP_PROFILE"   . "grip-edit-profile")
+         ("SURFACE"        . "surface-edits")
+         ("GENERAL"        . "dynamic-model")))
 
     ;; Extra Civil 3D command names that should show the impact warning.
     ;; Only add names you have confirmed: run C3DGUARD-LOGCOMMANDS, start the
