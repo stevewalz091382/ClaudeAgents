@@ -22,9 +22,6 @@
 
     ;; Also check objects inside named block definitions.
     ("ScanBlocks" . T)
-
-    ;; Count Civil 3D data shortcut references (DREFs).
-    ("ScanDrefs" . T)
   )
 )
 

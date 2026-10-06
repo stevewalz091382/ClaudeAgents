@@ -9,7 +9,6 @@ ByLayerCheck checks each drawing as it opens and warns you about:
 | **Objects not ByLayer** | Objects in model space and every layout whose color, linetype, or either is not ByLayer. ByBlock counts as not ByLayer. |
 | **Inside block definitions** | The same color and linetype checks inside named blocks. Anonymous blocks (dynamic, dimension, hatch) are skipped because they are ByBlock by design. |
 | **XREFs** | Total xrefs, broken ones (file not found), and unloaded ones |
-| **DREFs** | Civil 3D data shortcut references, and how many are broken or out of date |
 
 The dialog appears only when something is wrong, unless `AlwaysShow` is on. The results are also printed on the command line every time.
 
@@ -45,7 +44,6 @@ Settings live in `ByLayerCheck-Config.lsp`, in the install folder's `Contents`. 
 | `CheckOnOpen` | on | Run the check when a saved drawing opens |
 | `AlwaysShow` | off | Show the dialog even when nothing is wrong |
 | `ScanBlocks` | on | Also check inside named block definitions |
-| `ScanDrefs` | on | Count Civil 3D data shortcut references |
 
 ## Commands
 
@@ -62,8 +60,7 @@ Settings live in `ByLayerCheck-Config.lsp`, in the install folder's `Contents`. 
 
 ## Known limitations
 
-- DREF detection reads reference properties (`IsReferenceObject`, `IsReferenceStale`) from Civil 3D objects through COM. If your Civil 3D release does not expose them, the DREF section says "None found (or not exposed by the Civil 3D API)" instead of reporting a wrong count.
-- A data-referenced pipe network is counted per pipe and structure, not as one reference.
+- Civil 3D data shortcut references (DREFs) are not checked. AutoLISP cannot reliably tell whether a Civil 3D object is a data reference or whether its source is broken. Use Prospector > Data Shortcuts, or the out-of-date notifications in Civil 3D, for those.
 - New, unsaved drawings (Drawing1.dwg) are not checked on open. Run `BLCHECK` in them by hand.
 - ByLayerCheck writes no files and makes no network connections.
 

@@ -5,7 +5,6 @@
 ;;;   - Objects whose COLOR is not ByLayer      (ByBlock, ACI, or True Color)
 ;;;   - Objects whose LINETYPE is not ByLayer   (ByBlock or a named linetype)
 ;;;   - XREFs: total, broken (file not found), and unloaded
-;;;   - DREFs (Civil 3D data shortcut references): total and out of date
 ;;; and shows the counts in a warning dialog.
 ;;;
 ;;; Settings come from ByLayerCheck-Config.lsp (*blc:config*), loaded first
@@ -129,64 +128,18 @@
   (list total broken unloaded)
 )
 
-;;; ---- DREFs (Civil 3D data shortcut references) -----------------------------
-
-;; T when OBJ exposes any property in PROPS and its value is true, nil when
-;; it exposes one and none are true, 'NONE when it exposes none of them.
-(defun blc:prop (obj props / found result v)
-  (foreach p props
-    (if (and (not result) (vlax-property-available-p obj p))
-      (progn
-        (setq found T
-              v     (vl-catch-all-apply 'vlax-get-property (list obj p))
-        )
-        (if (= (type v) 'VARIANT) (setq v (vlax-variant-value v)))
-        (if (member v (list :vlax-true -1 T)) (setq result T))
-      )
-    )
-  )
-  (cond (result T) (found nil) ('NONE))
-)
-
-;; Returns (apiFound total stale).
-;; apiFound is nil when no Civil 3D object in the drawing exposes a
-;; reference property through COM, so the count could not be taken.
-(defun blc:scan-drefs (/ ss i obj isRef apiFound total stale)
-  (setq total 0 stale 0)
-  (if (setq ss (ssget "_X" '((0 . "AECC_*"))))
-    (repeat (setq i (sslength ss))
-      (setq obj   (vlax-ename->vla-object (ssname ss (setq i (1- i))))
-            isRef (blc:prop obj '("IsReferenceObject" "IsDataReference"))
-      )
-      (if (/= isRef 'NONE) (setq apiFound T))
-      (if (= isRef T)
-        (progn
-          (setq total (1+ total))
-          (if (= T (blc:prop obj '("IsReferenceStale" "IsReferenceOutOfDate")))
-            (setq stale (1+ stale))
-          )
-        )
-      )
-    )
-  )
-  (list apiFound total stale)
-)
-
 ;;; ---- Report ---------------------------------------------------------------
 
-(defun blc:check (manual / blocks drefs sp bl xr dr issues msg)
+(defun blc:check (manual / blocks sp bl xr issues msg)
   (setq blocks (blc:cfg "ScanBlocks" T)
-        drefs  (blc:cfg "ScanDrefs" T)
         sp     (blc:scan-spaces)
         bl     (if blocks (blc:scan-blocks) '(0 0 0))
         xr     (blc:scan-xrefs)
-        dr     (if drefs (blc:scan-drefs) '(nil 0 0))
   )
   (setq issues (or (> (caddr sp) 0)
                    (> (caddr bl) 0)
                    (> (cadr xr) 0)
                    (> (caddr xr) 0)
-                   (> (caddr dr) 0)
                )
   )
   (setq msg
@@ -209,17 +162,6 @@
       "\n   Total xrefs:            " (itoa (car xr))
       "\n   Broken (not found):     " (itoa (cadr xr))
       "\n   Unloaded:               " (itoa (caddr xr))
-      (cond
-        ((not drefs) "")
-        ((car dr)
-         (strcat
-           "\n\nDATA REFERENCES (DREFS)"
-           "\n   Total drefs:            " (itoa (cadr dr))
-           "\n   Broken / out of date:   " (itoa (caddr dr))
-         )
-        )
-        ("\n\nDATA REFERENCES (DREFS)\n   None found (or not exposed by the Civil 3D API)")
-      )
     )
   )
   (princ (strcat "\n" msg "\n"))
@@ -249,7 +191,6 @@
   (princ (strcat "\n  CheckOnOpen:     " (if (blc:cfg "CheckOnOpen" T) "on" "off")))
   (princ (strcat "\n  AlwaysShow:      " (if (blc:cfg "AlwaysShow" nil) "on" "off")))
   (princ (strcat "\n  ScanBlocks:      " (if (blc:cfg "ScanBlocks" T) "on" "off")))
-  (princ (strcat "\n  ScanDrefs:       " (if (blc:cfg "ScanDrefs" T) "on" "off")))
   (princ)
 )
 

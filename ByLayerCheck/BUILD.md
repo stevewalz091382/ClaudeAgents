@@ -45,8 +45,6 @@ Bump `AppVersion` and `Version` in `ByLayerCheck.bundle\PackageContents.xml`, an
 | Set one line's color to red, one to ByBlock, and one linetype to Dashed; save and reopen | Dialog shows color 2, linetype 1, either 3 |
 | Put a red line inside a named block | Shown under Inside block definitions |
 | Attach two xrefs, unload one, rename the other's file; reopen | Total 2, broken 1, unloaded 1 |
-| Create a data shortcut reference to an alignment; reopen | DREF total 1 (or the "not exposed" note) |
-| Change the source alignment so the reference is out of date; reopen | Broken / out of date 1 |
 | Set `AlwaysShow` to `T`; open a clean drawing | Dialog appears |
 | Set `CheckOnOpen` to `nil`; open a drawing | No check; `BLCHECK` still works |
 | New drawing (Drawing1.dwg) | No check on open |
