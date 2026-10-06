@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ApplicationPackage
+    SchemaVersion="1.0"
+    AutodeskProduct="AutoCAD"
+    ProductType="Application"
+    Name="ByLayerCheck"
+    AppVersion="1.0.0"
+    Description="Warns on open about objects not ByLayer for color or linetype, and about broken xrefs and data references."
+    Author="Stephen Walz"
+    ProductCode="{434CC084-6AA7-4478-A940-9370D0E3A496}"
+    UpgradeCode="{13E858D5-8773-4517-A32C-3E5B98D0EE48}">
+
+  <CompanyDetails Name="Stephen Walz" Url="" Email="" />
+
+  <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R24.0" />
+
+  <Components Description="ByLayerCheck AutoLISP application">
+    <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R24.0" />
+    <ComponentEntry
+        AppName="ByLayerCheck"
+        Version="1.0.0"
+        ModuleName="./Contents/ByLayerCheck-Loader.lsp"
+        AppDescription="Loads ByLayerCheck-Config.lsp and ByLayerCheck.vlx into every drawing."
+        LoadOnAutoCADStartup="True"
+        PerDocument="True" />
+  </Components>
+</ApplicationPackage>

@@ -1,0 +1,5 @@
+# build outputs
+*.vlx
+*.fas
+dist/
+__pycache__/
