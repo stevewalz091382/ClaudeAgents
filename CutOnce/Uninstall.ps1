@@ -1,11 +1,11 @@
 <#
 .SYNOPSIS
-    Removes C3DTools.
+    Removes CutOnce.
 
 .DESCRIPTION
-    Deletes the C3DTools.bundle from the user and (when elevated) all-users
+    Deletes the CutOnce.bundle from the user and (when elevated) all-users
     ApplicationPlugins folders, removes the custom install folder named by
-    C3DTOOLS_HOME, and clears the C3DTOOLS_HOME / C3DTOOLS_LOGDIR variables.
+    CUTONCE_HOME, and clears the CUTONCE_HOME / CUTONCE_LOGDIR variables.
     Logs and reports are kept unless -RemoveLogs is given.
 
     MOVE/STRETCH/ROTATE/SCALE need no clean-up: UNDEFINE only lasts for the
@@ -22,6 +22,9 @@ if (Get-Process -Name acad -ErrorAction SilentlyContinue) {
 }
 
 $bundles = @(
+    (Join-Path $env:APPDATA      'Autodesk\ApplicationPlugins\CutOnce.bundle'),
+    (Join-Path $env:ProgramData  'Autodesk\ApplicationPlugins\CutOnce.bundle'),
+    # pre-rename installs
     (Join-Path $env:APPDATA      'Autodesk\ApplicationPlugins\C3DTools.bundle'),
     (Join-Path $env:ProgramData  'Autodesk\ApplicationPlugins\C3DTools.bundle')
 )
@@ -33,26 +36,26 @@ foreach ($b in $bundles) {
 }
 
 foreach ($target in 'User', 'Machine') {
-    $instDir = [Environment]::GetEnvironmentVariable('C3DTOOLS_HOME', $target)
-    if ($instDir -and (Test-Path (Join-Path $instDir 'C3DTools-Loader.lsp'))) {
-        foreach ($f in 'C3DTools-Loader.lsp', 'C3DTools-Config.lsp', 'C3DTools.vlx') {
+    $instDir = [Environment]::GetEnvironmentVariable('CUTONCE_HOME', $target)
+    if ($instDir -and (Test-Path (Join-Path $instDir 'CutOnce-Loader.lsp'))) {
+        foreach ($f in 'CutOnce-Loader.lsp', 'CutOnce-Config.lsp', 'CutOnce.vlx') {
             Remove-Item (Join-Path $instDir $f) -Force -ErrorAction SilentlyContinue
         }
         Remove-Item (Join-Path $instDir 'src') -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "Removed C3DTools files from $instDir"
+        Write-Host "Removed CutOnce files from $instDir"
         Write-Host '  Remember to delete its (load ...) line from acaddoc.lsp.'
     }
-    $logs = [Environment]::GetEnvironmentVariable('C3DTOOLS_LOGDIR', $target)
+    $logs = [Environment]::GetEnvironmentVariable('CUTONCE_LOGDIR', $target)
     if ($RemoveLogs -and $logs -and (Test-Path $logs)) {
         Remove-Item $logs -Recurse -Force -ErrorAction SilentlyContinue
         Write-Host "Removed $logs"
     }
-    foreach ($name in 'C3DTOOLS_HOME', 'C3DTOOLS_LOGDIR') {
+    foreach ($name in 'CUTONCE_HOME', 'CUTONCE_LOGDIR', 'C3DTOOLS_HOME', 'C3DTOOLS_LOGDIR') {
         try { [Environment]::SetEnvironmentVariable($name, $null, $target) } catch { }
     }
 }
 
-# Per-user preferences written by (setenv "C3DTools.*") live in each AutoCAD
+# Per-user preferences written by (setenv "CutOnce.*") live in each AutoCAD
 # profile's FixedProfile\General key.
 $acadKey = 'HKCU:\Software\Autodesk\AutoCAD'
 if (Test-Path $acadKey) {
@@ -60,15 +63,17 @@ if (Test-Path $acadKey) {
         Where-Object { $_.PSPath -like '*\FixedProfile\General' } |
         ForEach-Object {
             $key = $_
-            $key.GetValueNames() | Where-Object { $_ -like 'C3DTools.*' } | ForEach-Object {
+            $key.GetValueNames() | Where-Object { $_ -like 'CutOnce.*' -or $_ -like 'C3DTools.*' } | ForEach-Object {
                 Remove-ItemProperty -Path $key.PSPath -Name $_ -ErrorAction SilentlyContinue
             }
         }
 }
 
 if ($RemoveLogs) {
-    $default = Join-Path $env:LOCALAPPDATA 'C3DTools'
-    if (Test-Path $default) { Remove-Item $default -Recurse -Force; Write-Host "Removed $default" }
+    foreach ($folder in 'CutOnce', 'C3DTools') {
+        $default = Join-Path $env:LOCALAPPDATA $folder
+        if (Test-Path $default) { Remove-Item $default -Recurse -Force; Write-Host "Removed $default" }
+    }
 }
 
-Write-Host 'C3DTools removed.'
+Write-Host 'CutOnce removed.'

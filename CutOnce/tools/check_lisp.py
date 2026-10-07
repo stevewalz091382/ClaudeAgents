@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static checks for the C3DTools AutoLISP sources.
+"""Static checks for the CutOnce AutoLISP sources.
 
 Runs anywhere Python 3 runs (no AutoCAD needed). It cannot prove the code
 works in Civil 3D; it catches the mistakes that are easy to make by hand:
@@ -16,10 +16,10 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-FILES = sorted((ROOT / "src").glob("*.lsp")) + sorted((ROOT / "C3DTools.bundle" / "Contents").glob("*.lsp"))
+FILES = sorted((ROOT / "src").glob("*.lsp")) + sorted((ROOT / "CutOnce.bundle" / "Contents").glob("*.lsp"))
 
 PREFIXES = ("c3dt:", "c3dguard:", "c3daudit:", "c3dimpact:")
-COMMAND_PREFIXES = ("c:c3dtools-", "c:c3dguard-", "c:c3daudit", "c:c3d-impact-", "c:-c3d-impact-")
+COMMAND_PREFIXES = ("c:cutonce-", "c:c3dtools-", "c:c3dguard-", "c:c3daudit", "c:c3d-impact-", "c:-c3d-impact-")
 GLOBAL_PREFIXES = tuple("*" + p for p in PREFIXES)
 
 BANNED = [

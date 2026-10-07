@@ -8,13 +8,13 @@
 ;;;   - drawing settings (angular units, coordinate system, INSUNITS, DIMSCALE)
 ;;;   - per-xref detail (name, path, overlay flag)
 ;;;
-;;; Output, in the C3DTools log folder (see C3DTOOLS-STATUS):
+;;; Output, in the CutOnce log folder (see CUTONCE-STATUS):
 ;;;   Civil3D_Audit_Report.csv      one row per drawing (latest audit wins)
 ;;;   Civil3D_Audit_XrefDetail.csv  one row per xref per drawing
 ;;;
 ;;; On save: after a drawing is saved, only THAT drawing is re-audited and its
 ;;; rows in both CSVs are replaced. Other open drawings are not touched. Turn
-;;; this off with ("AuditOnSave" . nil) in C3DTools-Config.lsp.
+;;; this off with ("AuditOnSave" . nil) in CutOnce-Config.lsp.
 ;;;
 ;;; Commands:
 ;;;   C3DAUDIT         audit every open drawing and open the report in Excel
@@ -25,7 +25,7 @@
 ;;; Toolspace the first time you run this on a new release.
 ;;;
 ;;; Naming: every function and global here starts with c3daudit: / *c3daudit:.
-;;; Requires C3DTools-Core.lsp.
+;;; Requires CutOnce-Core.lsp.
 ;;; ============================================================================
 
 (vl-load-com)
@@ -280,7 +280,7 @@
 (defun c:C3DAUDIT ( / acadApp original rows)
   (setq acadApp (vlax-get-acad-object) original (c3dt:active-doc) rows nil)
   (if (not (c3dt:civil-app))
-    (princ "\nCivil 3D COM is not connected - Civil 3D counts will read n/a. Run C3DTOOLS-FINDCIVIL to fix.")
+    (princ "\nCivil 3D COM is not connected - Civil 3D counts will read n/a. Run CUTONCE-FINDCIVIL to fix.")
   )
   (vlax-for d (vla-get-Documents acadApp)
     (vl-catch-all-apply 'vla-put-ActiveDocument (list acadApp d))

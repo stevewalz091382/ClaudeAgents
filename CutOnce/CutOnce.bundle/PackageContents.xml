@@ -3,7 +3,7 @@
     SchemaVersion="1.0"
     AutodeskProduct="AutoCAD"
     ProductType="Application"
-    Name="C3DTools"
+    Name="CutOnce"
     AppVersion="1.0.0"
     Description="Civil 3D data-loss guard, drawing audit report and change-impact warnings."
     Author="Stephen Walz"
@@ -14,13 +14,13 @@
 
   <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R24.0" />
 
-  <Components Description="C3DTools AutoLISP application">
+  <Components Description="CutOnce AutoLISP application">
     <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R24.0" />
     <ComponentEntry
-        AppName="C3DTools"
+        AppName="CutOnce"
         Version="1.0.0"
-        ModuleName="./Contents/C3DTools-Loader.lsp"
-        AppDescription="Loads C3DTools-Config.lsp and C3DTools.vlx into every drawing."
+        ModuleName="./Contents/CutOnce-Loader.lsp"
+        AppDescription="Loads CutOnce-Config.lsp and CutOnce.vlx into every drawing."
         LoadOnAutoCADStartup="True"
         PerDocument="True" />
   </Components>

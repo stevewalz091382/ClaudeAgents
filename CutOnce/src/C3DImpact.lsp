@@ -24,11 +24,11 @@
 ;;;   Each of MOVE, STRETCH, ROTATE and SCALE can be intercepted separately.
 ;;;   An intercepted command is UNDEFINED for the session and replaced by a
 ;;;   version that shows the warning before the real command runs.
-;;;   CAD managers can disable or pre-enable it in C3DTools-Config.lsp.
+;;;   CAD managers can disable or pre-enable it in CutOnce-Config.lsp.
 ;;;
 ;;; WATCHED CIVIL 3D COMMANDS
 ;;;   Only command names observed in a live Civil 3D session are watched.
-;;;   Add others to "ImpactExtraCommands" in C3DTools-Config.lsp after
+;;;   Add others to "ImpactExtraCommands" in CutOnce-Config.lsp after
 ;;;   confirming their names with C3DGUARD-LOGCOMMANDS.
 ;;;
 ;;; LIMITATIONS
@@ -52,7 +52,7 @@
 ;;;   C3D-IMPACT-DEBUG       toggle diagnostic tracing (off by default)
 ;;;
 ;;; Naming: every function and global here starts with c3dimpact: /
-;;; *c3dimpact:. Requires C3DTools-Core.lsp.
+;;; *c3dimpact:. Requires CutOnce-Core.lsp.
 ;;; ============================================================================
 
 (vl-load-com)
@@ -412,7 +412,7 @@
 ;;
 ;; Every setting the user changes is stored in their AutoCAD profile (see
 ;; c3dt:pref-set) and survives restarts. Where the user has not chosen, the
-;; administrator's default from C3DTools-Config.lsp applies.
+;; administrator's default from CutOnce-Config.lsp applies.
 ;; ---------------------------------------------------------------------------
 
 (defun c3dimpact:warnings-wanted-p ( / p)
@@ -492,7 +492,7 @@
     ""
     "Side effects while a command is ticked:"
     " - Other LISP routines, scripts or macros that call it WITHOUT the"
-    "   \"_.\" prefix will run the C3DTools version instead."
+    "   \"_.\" prefix will run the CutOnce version instead."
     " - Menu macros that use \"_.MOVE\" etc. bypass interception."
     " - Unticking restores the original command immediately. UNDEFINE never"
     "   lasts beyond the Civil 3D session."))
@@ -517,7 +517,7 @@
               "  }"
               "}"
               "c3dimpact_settings : dialog {"
-              "  label = \"C3DTools - Change-Impact settings\";"
+              "  label = \"CutOnce - Change-Impact settings\";"
               "  : boxed_column {"
               "    label = \"Impact warnings\";"
               "    : toggle { key = \"warnings\"; label = \"Show impact warnings\"; }"
@@ -557,7 +557,7 @@
 )
 
 ;; ---------------------------------------------------------------------------
-;; Learn More topic (see c3dt:kb-url in C3DTools-Core.lsp)
+;; Learn More topic (see c3dt:kb-url in CutOnce-Core.lsp)
 ;; ---------------------------------------------------------------------------
 
 ;; Topic of a warning:
@@ -884,7 +884,7 @@
       (T
        (setq cn (strcase kw) on (not (c3dimpact:intercept-active-p cn)))
        (if on
-         (princ (strcat "\nNote: " cn " is now UNDEFINED for this session and replaced by the C3DTools"
+         (princ (strcat "\nNote: " cn " is now UNDEFINED for this session and replaced by the CutOnce"
                         " version; LISP or macros calling " cn " without \"_.\" get it too."))
        )
        (c3dimpact:set-intercept cn on)
@@ -1041,7 +1041,7 @@
 
 (defun c:C3D-IMPACT-STATUS ( )
   (c3dimpact:print-settings)
-  (princ (strcat "\n  Civil 3D COM: " (if (c3dt:civil-app) "connected" "not connected (run C3DTOOLS-FINDCIVIL)")))
+  (princ (strcat "\n  Civil 3D COM: " (if (c3dt:civil-app) "connected" "not connected (run CUTONCE-FINDCIVIL)")))
   (princ (strcat "\n  Debug tracing: " (if *c3dimpact:debug* "ON" "off")))
   (princ "\n  Change any of these with C3D-IMPACT-SETTINGS.")
   (princ)

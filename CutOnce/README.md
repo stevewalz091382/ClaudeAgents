@@ -1,8 +1,8 @@
-# C3DTools for Civil 3D
+# CutOnce for Civil 3D
 
 Publisher: Stephen Walz
 
-C3DTools contains three AutoLISP tools that load into every drawing:
+CutOnce contains three AutoLISP tools that load into every drawing:
 
 | Tool | What it does | Interrupts the user? |
 |---|---|---|
@@ -28,7 +28,7 @@ Each warning links to its own section, following the page's "Linking warnings to
 | Anything else (no single object) | `#dynamic-model` |
 | Guard tip on TEXT / DTEXT / MTEXT | `#text-instead-of-labels` |
 | Guard warning when an xref is moved or copied | `#xref-moved` |
- The page address and section anchors are set by `LearnMoreUrl` and `LearnMoreAnchors` in `C3DTools-Config.lsp`.
+ The page address and section anchors are set by `LearnMoreUrl` and `LearnMoreAnchors` in `CutOnce-Config.lsp`.
 
 Each user chooses in `C3D-IMPACT-SETTINGS` whether warnings appear:
 
@@ -50,21 +50,21 @@ To get the warning before the edit in the second case as well, turn on intercept
 
 C3DImpact can also intercept **MOVE, STRETCH, ROTATE and SCALE**, each one separately. All four are **off by default**, and no AutoCAD command is changed unless a user ticks it.
 
-`C3D-IMPACT-SETTINGS` has a tick box for each command, next to an explanation of what interception does. For each ticked command, C3DTools:
+`C3D-IMPACT-SETTINGS` has a tick box for each command, next to an explanation of what interception does. For each ticked command, CutOnce:
 
 - runs `UNDEFINE` on that command for the session, and replaces it with a version that shows the impact warning first and then runs the original command unchanged.
 - remembers the choice for that user. Unticking restores the original command immediately.
 
 Side effects while a command is ticked:
 
-- Other LISP routines, scripts or macros that call these commands **without** the `_.` prefix get the C3DTools version.
+- Other LISP routines, scripts or macros that call these commands **without** the `_.` prefix get the CutOnce version.
 - Macros that use `_.MOVE` and similar bypass interception.
 
-UNDEFINE affects every open drawing, so C3DTools defines its own MOVE, STRETCH, ROTATE and SCALE in every drawing it loads into. While AutoCAD's command is defined, AutoCAD always uses its own and these do nothing. After a command is undefined, they keep it working in every drawing: intercepted if the user ticked it, otherwise passed straight to the AutoCAD command. Each drawing also restores any command the user has not ticked when it opens. If MOVE or any of the others ever stops responding, type `C3D-IMPACT-RESTORE`.
+UNDEFINE affects every open drawing, so CutOnce defines its own MOVE, STRETCH, ROTATE and SCALE in every drawing it loads into. While AutoCAD's command is defined, AutoCAD always uses its own and these do nothing. After a command is undefined, they keep it working in every drawing: intercepted if the user ticked it, otherwise passed straight to the AutoCAD command. Each drawing also restores any command the user has not ticked when it opens. If MOVE or any of the others ever stops responding, type `C3D-IMPACT-RESTORE`.
 
 Nothing persists outside the session: `UNDEFINE` resets when Civil 3D closes, and uninstalling removes the stored preference.
 
-CAD administrators control this in `C3DTools-Config.lsp`:
+CAD administrators control this in `CutOnce-Config.lsp`:
 
 - `("ImpactInterceptAllowed" . nil)` prevents anyone from enabling it.
 - `("ImpactInterceptDefault" . T)` turns on all four for users who have not made their own choice, and `("ImpactInterceptDefault" . ("MOVE" "ROTATE"))` turns on just those listed.
@@ -78,33 +78,37 @@ Requirements: Civil 3D 2021 or later on 64-bit Windows.
 
 1. Close Civil 3D.
 2. Unzip the release and double-click **Install.cmd**.
-3. Start Civil 3D and type `C3DTOOLS-STATUS`.
+3. Start Civil 3D and type `CUTONCE-STATUS`.
 
-This installs to `%APPDATA%\Autodesk\ApplicationPlugins\C3DTools.bundle`, which Civil 3D loads automatically and trusts by default. You do not need to change acaddoc.lsp, the support path or trusted locations.
+This installs to `%APPDATA%\Autodesk\ApplicationPlugins\CutOnce.bundle`, which Civil 3D loads automatically and trusts by default. You do not need to change acaddoc.lsp, the support path or trusted locations.
 
 Other options (run `Install.ps1` from PowerShell, or pass the same switches to `Install.cmd`):
 
 | Goal | Command |
 |---|---|
 | All users on the machine (run as administrator) | `Install.cmd -Scope AllUsers` |
-| Choose the log folder | `Install.cmd -LogDir "D:\CAD\C3DTools\Logs"` |
-| Custom install folder, such as a network share | `Install.cmd -InstallDir "\\server\cad\C3DTools"` |
+| Choose the log folder | `Install.cmd -LogDir "D:\CAD\CutOnce\Logs"` |
+| Custom install folder, such as a network share | `Install.cmd -InstallDir "\\server\cad\CutOnce"` |
 
 With a custom install folder, the installer prints a `(load ...)` line for you to add to acaddoc.lsp. You also need to add that folder to **Options > Files > Trusted Locations**.
 
-Reinstalling or upgrading keeps an existing `C3DTools-Config.lsp`.
+Reinstalling or upgrading keeps an existing `CutOnce-Config.lsp`.
+
+### Upgrading from C3DTools
+
+CutOnce was previously called C3DTools. Running `Install.cmd` removes the old `C3DTools.bundle`, copies logs from `%LOCALAPPDATA%\C3DTools\Logs` to the new log folder, and keeps your saved settings. `C3DTOOLS_HOME` and `C3DTOOLS_LOGDIR` are still honoured, and the old `C3DTOOLS-STATUS` and `C3DTOOLS-FINDCIVIL` commands still work. If you used a custom install folder, update the `(load ...)` line in acaddoc.lsp to point at `CutOnce-Loader.lsp`.
 
 ### Upgrading from the trial scripts
 
-Remove the old `(load "C:/Civil3DTools/...")` lines from acaddoc.lsp and any Startup Suite entries for `C3DGUARD.lsp`, `C3DAUDIT.lsp` and `Civil3D-ImpactAgent.lsp`. C3DTools warns at load if it finds them still loaded. Logs no longer go to `C:\Civil3DTools\C3DGuard\`. Copy old CSVs to the new log folder if you want to keep the history.
+Remove the old `(load "C:/Civil3DTools/...")` lines from acaddoc.lsp and any Startup Suite entries for `C3DGUARD.lsp`, `C3DAUDIT.lsp` and `Civil3D-ImpactAgent.lsp`. CutOnce warns at load if it finds them still loaded. Logs no longer go to `C:\Civil3DTools\C3DGuard\`. Copy old CSVs to the new log folder if you want to keep the history.
 
 ## Configure
 
-Settings live in `C3DTools-Config.lsp`, in the install folder's `Contents`. It is a plain-text file and has a comment for every setting.
+Settings live in `CutOnce-Config.lsp`, in the install folder's `Contents`. It is a plain-text file and has a comment for every setting.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `LogDir` | `%LOCALAPPDATA%\C3DTools\Logs\` | Where logs and reports go. The `C3DTOOLS_LOGDIR` environment variable overrides it. |
+| `LogDir` | `%LOCALAPPDATA%\CutOnce\Logs\` | Where logs and reports go. The `CUTONCE_LOGDIR` environment variable overrides it. |
 | `GuardGrowthWarnPct` | `20` | Growth between saves that triggers a warning |
 | `AuditOnSave` | on | Re-audit the saved drawing after each save |
 | `ImpactWarnings` | on | Impact dialog for grip edits and surface edits |
@@ -113,14 +117,14 @@ Settings live in `C3DTools-Config.lsp`, in the install folder's `Contents`. It i
 | `ImpactInterceptDefault` | off | Interception for users who have not chosen: `nil`, `T` (all four), or a list of commands |
 | `ImpactExtraCommands` | none | More Civil 3D command names to watch. Confirm a name with `C3DGUARD-LOGCOMMANDS` before adding it. |
 
-Folder lookup order. Install folder: `C3DTOOLS_HOME`, then the bundle location. Log folder: `C3DTOOLS_LOGDIR`, then `LogDir`, then the default.
+Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. Log folder: `CUTONCE_LOGDIR`, then `LogDir`, then the default.
 
 ## Commands
 
 | Command | Purpose |
 |---|---|
-| `C3DTOOLS-STATUS` | Version, folders, Civil 3D connection |
-| `C3DTOOLS-FINDCIVIL` | Finds the Civil 3D COM version if the connection fails (slow, one-time) |
+| `CUTONCE-STATUS` | Version, folders, Civil 3D connection |
+| `CUTONCE-FINDCIVIL` | Finds the Civil 3D COM version if the connection fails (slow, one-time) |
 | `C3DGUARD-STATUS` / `-CHECKNOW` / `-SUMMARY` / `-LOG` | Guard status, health check now, history rollup, log paths |
 | `C3DGUARD-DUMPOBJECTS` | Raw object counts, for checking a number against Toolspace |
 | `C3DGUARD-LOGCOMMANDS` | Prints every command name as it runs, for finding a ribbon command's real name |
@@ -142,11 +146,11 @@ All files go to the log folder, none to the drawing's folder:
 - `Opened.csv`: one row per drawing opened
 - `Civil3D_Audit_Report.csv` and `Civil3D_Audit_XrefDetail.csv`: the latest audit of each drawing
 
-These files contain drawing paths and names. C3DTools makes no network connections.
+These files contain drawing paths and names. CutOnce makes no network connections.
 
 ## Performance
 
-- **Civil 3D connection.** The first connection tries a short list of versions, then remembers the one that works for later drawings and future sessions. The full registry scan only runs when you type `C3DTOOLS-FINDCIVIL`.
+- **Civil 3D connection.** The first connection tries a short list of versions, then remembers the one that works for later drawings and future sessions. The full registry scan only runs when you type `CUTONCE-FINDCIVIL`.
 - **Audit on save.** Runs after the save completes, covers only the drawing that was saved, and caches which style collections exist.
 - **Guard on save.** Reads `Health.csv` only on the first save of each session.
 - **Impact.** Scans Model Space once per dialog instead of once per object analysed.
@@ -154,7 +158,7 @@ These files contain drawing paths and names. C3DTools makes no network connectio
 ## Known limitations
 
 - AutoLISP cannot cancel a command from a dialog, so the warning only informs. The user stops the edit with ESC after clicking OK.
-- With STRETCH intercepted and nothing pre-selected, C3DTools asks for the selection itself and passes it to STRETCH. STRETCH then moves whole objects rather than stretching a crossing window. Pre-select with a crossing window, or leave STRETCH unticked.
+- With STRETCH intercepted and nothing pre-selected, CutOnce asks for the selection itself and passes it to STRETCH. STRETCH then moves whole objects rather than stretching a crossing window. Pre-select with a crossing window, or leave STRETCH unticked.
 - Surface edits started from Toolspace's right-click menu do not raise a command event, so neither Guard nor Impact sees them.
 - Only these Civil 3D commands are watched, because they are the names observed in a live session: `AECCRAISELOWERSURFACE`, `AECCADDSURFACELINE`, `AECCDELETESURFACELINE`, `AECCADDSURFACEPOINT`, `AECCDELETESURFACEPOINT`, `AECCEDITSURFACEPOINT`, `AECCMOVESURFACEPOINT` and `AECCEDITSURFACESWAPEDGE`. Alignment and profile editor commands are not watched until their names are confirmed. Grip edits of alignments and profiles are watched.
 - Pipe proximity uses bounding boxes, so treat it as "worth checking".

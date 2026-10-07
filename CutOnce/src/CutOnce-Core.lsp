@@ -1,8 +1,8 @@
 ;;; ============================================================================
-;;; C3DTools-Core.lsp
+;;; CutOnce-Core.lsp
 ;;;
 ;;; Shared services for C3DGuard, C3DAudit and C3DImpact:
-;;;   - configuration lookup (C3DTools-Config.lsp + environment overrides)
+;;;   - configuration lookup (CutOnce-Config.lsp + environment overrides)
 ;;;   - install and log folder resolution
 ;;;   - fail-safe COM property helpers
 ;;;   - CSV helpers
@@ -20,7 +20,7 @@
 ;; ---------------------------------------------------------------------------
 ;; Configuration
 ;;
-;; C3DTools-Config.lsp sets *c3dt:config* to an association list of
+;; CutOnce-Config.lsp sets *c3dt:config* to an association list of
 ;; ("Key" . value) pairs before this file loads. A key that is missing from
 ;; the list falls back to the default given at the call site.
 ;; ---------------------------------------------------------------------------
@@ -35,12 +35,15 @@
 )
 
 ;; Per-user preference stored in the AutoCAD profile (HKCU), survives restarts.
+;; Choices saved before the CutOnce rename (as "C3DTools.<name>") still apply
+;; until the user changes them.
 (defun c3dt:pref-get (name)
-  (c3dt:nonblank (getenv (strcat "C3DTools." name)))
+  (cond ((c3dt:nonblank (getenv (strcat "CutOnce." name))))
+        ((c3dt:nonblank (getenv (strcat "C3DTools." name)))))
 )
 
 (defun c3dt:pref-set (name value)
-  (vl-catch-all-apply 'setenv (list (strcat "C3DTools." name) value))
+  (vl-catch-all-apply 'setenv (list (strcat "CutOnce." name) value))
   value
 )
 
@@ -70,16 +73,17 @@
   )
 )
 
-;; Install folder, as resolved by C3DTools-Loader.lsp.
+;; Install folder, as resolved by CutOnce-Loader.lsp.
 (defun c3dt:home ( )
   (if (and (boundp '*c3dt:home*) *c3dt:home*) *c3dt:home* "")
 )
 
 ;; Log folder. Resolution order:
-;;   1. C3DTOOLS_LOGDIR (Windows environment variable, or setenv in AutoCAD)
-;;   2. "LogDir" in C3DTools-Config.lsp
-;;   3. %LOCALAPPDATA%\C3DTools\Logs\
-;;   4. AutoCAD's TEMPPREFIX folder + C3DTools\Logs\
+;;   1. CUTONCE_LOGDIR (Windows environment variable, or setenv in AutoCAD);
+;;      the pre-rename C3DTOOLS_LOGDIR is still honoured
+;;   2. "LogDir" in CutOnce-Config.lsp
+;;   3. %LOCALAPPDATA%\CutOnce\Logs\
+;;   4. AutoCAD's TEMPPREFIX folder + CutOnce\Logs\
 ;; Resolved once per drawing session and cached.
 (setq *c3dt:log-dir* nil)
 
@@ -88,11 +92,12 @@
     (progn
       (setq d
         (cond
+          ((c3dt:nonblank (getenv "CUTONCE_LOGDIR")))
           ((c3dt:nonblank (getenv "C3DTOOLS_LOGDIR")))
           ((c3dt:nonblank (c3dt:cfg "LogDir" nil)))
           ((setq la (c3dt:nonblank (getenv "LOCALAPPDATA")))
-           (strcat la "\\C3DTools\\Logs"))
-          (T (strcat (getvar "TEMPPREFIX") "C3DTools\\Logs"))
+           (strcat la "\\CutOnce\\Logs"))
+          (T (strcat (getvar "TEMPPREFIX") "CutOnce\\Logs"))
         )
       )
       (setq d (c3dt:dir-slash d))
@@ -280,9 +285,9 @@
 ;; Finding <ver> is the slow part, so the result is cached at three levels:
 ;;   1. this drawing session      (*c3dt:civil-app*)
 ;;   2. every drawing this session (the Visual LISP blackboard)
-;;   3. future sessions            (per-user AutoCAD profile, C3DTools.CivilProgID)
+;;   3. future sessions            (per-user AutoCAD profile, CutOnce.CivilProgID)
 ;; On a cache miss only a short candidate list is tried. The full registry
-;; scan is never run automatically; C3DTOOLS-FINDCIVIL runs it on demand and
+;; scan is never run automatically; CUTONCE-FINDCIVIL runs it on demand and
 ;; stores the answer.
 ;; ---------------------------------------------------------------------------
 
@@ -369,8 +374,8 @@
 
 ;; Diagnostic: full HKCR scan (slow, on demand only), tests each ProgID live,
 ;; and stores the first working one so every later connection is instant.
-(defun c:C3DTOOLS-FINDCIVIL ( / all matches found)
-  (c3dt:msg "C3DTools" "Scanning the registry for Civil 3D ProgIDs (this can take a while)...")
+(defun c:CUTONCE-FINDCIVIL ( / all matches found)
+  (c3dt:msg "CutOnce" "Scanning the registry for Civil 3D ProgIDs (this can take a while)...")
   (setq all (vl-catch-all-apply 'vl-registry-descendents (list "HKEY_CLASSES_ROOT")))
   (if (vl-catch-all-error-p all) (setq all nil))
   (setq matches nil)
@@ -381,7 +386,7 @@
   )
   (setq matches (vl-sort matches (function (lambda (a b) (> (c3dt:progid-rank a) (c3dt:progid-rank b))))))
   (if (not matches)
-    (c3dt:msg "C3DTools" "No Civil 3D ProgID is registered. This is plain AutoCAD, or Civil 3D needs a repair install.")
+    (c3dt:msg "CutOnce" "No Civil 3D ProgID is registered. This is plain AutoCAD, or Civil 3D needs a repair install.")
     (foreach pid matches
       (if (c3dt:try-civil-progid pid)
         (progn
@@ -396,7 +401,7 @@
     (progn
       (c3dt:remember-civil-progid found)
       (setq *c3dt:civil-app* nil)
-      (c3dt:msg "C3DTools" (strcat "Saved " found " for future sessions."))
+      (c3dt:msg "CutOnce" (strcat "Saved " found " for future sessions."))
     )
   )
   (princ)
@@ -407,7 +412,7 @@
 ;;
 ;; Every warning has a topic; the topic maps to a section anchor on the
 ;; knowledge-base page, following the page's "Linking warnings to articles"
-;; table. LearnMoreUrl / LearnMoreAnchors in C3DTools-Config.lsp override the
+;; table. LearnMoreUrl / LearnMoreAnchors in CutOnce-Config.lsp override the
 ;; defaults below (the older ImpactLearnMore* keys are still read). A topic
 ;; missing from the config falls back to its default; set it to "" to open
 ;; the top of the page.
@@ -472,12 +477,12 @@
 (defun c3dt:ensure-dcl ( / path f)
   (if (not (and *c3dt:dcl-path* (findfile *c3dt:dcl-path*)))
     (progn
-      (setq path (vl-filename-mktemp "c3dtools" nil ".dcl"))
+      (setq path (vl-filename-mktemp "cutonce" nil ".dcl"))
       (if (setq f (open path "w"))
         (progn
           (foreach ln
             '("c3dt_notice : dialog {"
-              "  label = \"C3DTools\";"
+              "  label = \"CutOnce\";"
               "  : list_box { key = \"notice_text\"; height = 14; width = 76; }"
               "  : row {"
               "    alignment = centered; fixed_width = true;"
@@ -528,17 +533,22 @@
   (princ)
 )
 
-(defun c:C3DTOOLS-STATUS ( / app)
+(defun c:CUTONCE-STATUS ( / app)
   (setq app (c3dt:civil-app))
-  (c3dt:msg "C3DTools" (strcat "Version " *c3dt:version* " - published by " *c3dt:publisher*))
+  (c3dt:msg "CutOnce" (strcat "Version " *c3dt:version* " - published by " *c3dt:publisher*))
   (princ (strcat "\n  Install folder:  " (c3dt:home)))
   (princ (strcat "\n  Log folder:      " (c3dt:log-dir)))
   (princ (strcat "\n  Civil 3D COM:    "
                  (if app
                    (strcat "connected (" (cond ((vl-bb-ref '*c3dt:bb-civil-progid*)) ("?")) ")")
-                   "not connected - run C3DTOOLS-FINDCIVIL")))
+                   "not connected - run CUTONCE-FINDCIVIL")))
   (princ "\n  Tool status:     C3DGUARD-STATUS, C3D-IMPACT-STATUS")
   (princ)
 )
+
+;; Command names from before the CutOnce rename, kept for existing scripts
+;; and toolbar buttons.
+(defun c:C3DTOOLS-STATUS ( ) (c:CUTONCE-STATUS))
+(defun c:C3DTOOLS-FINDCIVIL ( ) (c:CUTONCE-FINDCIVIL))
 
 (princ)

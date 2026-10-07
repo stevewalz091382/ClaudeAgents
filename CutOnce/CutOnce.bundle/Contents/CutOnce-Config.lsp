@@ -1,5 +1,5 @@
 ;;; ============================================================================
-;;; C3DTools-Config.lsp  -  settings for C3DTools
+;;; CutOnce-Config.lsp  -  settings for CutOnce
 ;;;
 ;;; Edit the values below, save, and restart Civil 3D (or open a new drawing).
 ;;; This file is plain text on purpose so CAD administrators can change it
@@ -14,10 +14,10 @@
     ;; ---- Folders -----------------------------------------------------------
 
     ;; Where Health.csv, Events.csv, Opened.csv and the audit reports go.
-    ;; nil = %LOCALAPPDATA%\C3DTools\Logs\ (per user, per machine).
-    ;; Use forward slashes, e.g. "D:/CAD/C3DTools/Logs" or a shared
-    ;; folder "//server/cad/C3DTools/Logs".
-    ;; The C3DTOOLS_LOGDIR environment variable, if set, overrides this.
+    ;; nil = %LOCALAPPDATA%\CutOnce\Logs\ (per user, per machine).
+    ;; Use forward slashes, e.g. "D:/CAD/CutOnce/Logs" or a shared
+    ;; folder "//server/cad/CutOnce/Logs".
+    ;; The CUTONCE_LOGDIR environment variable, if set, overrides this.
     ("LogDir" . nil)
 
     ;; ---- C3DGuard ----------------------------------------------------------

@@ -13,8 +13,8 @@ A Claude Code pipeline: architect, coder, tester, manager, driven by one `/build
       commands/
         build.md        /build command that runs the whole chain
     CLAUDE.md           context the session loads automatically
-    C3DTools/           Civil 3D AutoLISP tools (Guard, Audit, Impact) and installer;
-                        see C3DTools/README.md and C3DTools/BUILD.md
+    CutOnce/           Civil 3D AutoLISP tools (Guard, Audit, Impact) and installer;
+                        see CutOnce/README.md and CutOnce/BUILD.md
 
 ## Use on the web
 

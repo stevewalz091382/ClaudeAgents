@@ -19,7 +19,7 @@
 ;;; Not covered: manual TIN edits made from Toolspace's right-click menu do not
 ;;; raise a command event, so AutoLISP cannot see them.
 ;;;
-;;; Logs (in the C3DTools log folder, see C3DTOOLS-STATUS):
+;;; Logs (in the CutOnce log folder, see CUTONCE-STATUS):
 ;;;   Health.csv   one row per save
 ;;;   Events.csv   one row per flagged event
 ;;;   Opened.csv   one row per drawing opened
@@ -34,7 +34,7 @@
 ;;;                         find the real name of a ribbon or menu command)
 ;;;
 ;;; Naming: every function and global here starts with c3dguard: / *c3dguard:.
-;;; Requires C3DTools-Core.lsp.
+;;; Requires CutOnce-Core.lsp.
 ;;; ============================================================================
 
 (vl-load-com)
@@ -764,7 +764,7 @@
               (setq vals (cdr vals) names (cdr names))
             )
           )
-          (princ "\n    (opened, never saved with C3DTools loaded)")
+          (princ "\n    (opened, never saved with CutOnce loaded)")
         )
       )
     )
