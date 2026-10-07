@@ -24,10 +24,7 @@ if (Get-Process -Name acad -ErrorAction SilentlyContinue) {
 
 $bundles = @(
     (Join-Path $env:APPDATA      'Autodesk\ApplicationPlugins\CutOnce.bundle'),
-    (Join-Path $env:ProgramData  'Autodesk\ApplicationPlugins\CutOnce.bundle'),
-    # pre-rename installs
-    (Join-Path $env:APPDATA      'Autodesk\ApplicationPlugins\ModelWise.bundle'),
-    (Join-Path $env:ProgramData  'Autodesk\ApplicationPlugins\ModelWise.bundle')
+    (Join-Path $env:ProgramData  'Autodesk\ApplicationPlugins\CutOnce.bundle')
 )
 foreach ($b in $bundles) {
     if (Test-Path $b) {
@@ -37,26 +34,21 @@ foreach ($b in $bundles) {
 }
 
 foreach ($target in 'User', 'Machine') {
-    foreach ($pair in @(@('CUTONCE_HOME', 'CutOnce'), @('MODELWISE_HOME', 'ModelWise'))) {
-    $instDir = [Environment]::GetEnvironmentVariable($pair[0], $target)
-    $n = $pair[1]
-    if ($instDir -and (Test-Path (Join-Path $instDir "$n-Loader.lsp"))) {
-        foreach ($f in "$n-Loader.lsp", "$n-Config.lsp", "$n-Config.sample.lsp", "$n.vlx") {
+    $instDir = [Environment]::GetEnvironmentVariable('CUTONCE_HOME', $target)
+    if ($instDir -and (Test-Path (Join-Path $instDir 'CutOnce-Loader.lsp'))) {
+        foreach ($f in 'CutOnce-Loader.lsp', 'CutOnce-Config.lsp', 'CutOnce-Config.sample.lsp', 'CutOnce.vlx') {
             Remove-Item (Join-Path $instDir $f) -Force -ErrorAction SilentlyContinue
         }
         Remove-Item (Join-Path $instDir 'src') -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "Removed $n files from $instDir"
+        Write-Host "Removed CutOnce files from $instDir"
         Write-Host '  Remember to delete its (load ...) line from acaddoc.lsp.'
     }
+    $logs = [Environment]::GetEnvironmentVariable('CUTONCE_LOGDIR', $target)
+    if ($RemoveLogs -and $logs -and (Test-Path $logs)) {
+        Remove-Item $logs -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "Removed $logs"
     }
-    foreach ($logVar in 'CUTONCE_LOGDIR', 'MODELWISE_LOGDIR') {
-        $logs = [Environment]::GetEnvironmentVariable($logVar, $target)
-        if ($RemoveLogs -and $logs -and (Test-Path $logs)) {
-            Remove-Item $logs -Recurse -Force -ErrorAction SilentlyContinue
-            Write-Host "Removed $logs"
-        }
-    }
-    foreach ($name in 'CUTONCE_HOME', 'CUTONCE_LOGDIR', 'MODELWISE_HOME', 'MODELWISE_LOGDIR') {
+    foreach ($name in 'CUTONCE_HOME', 'CUTONCE_LOGDIR') {
         try { [Environment]::SetEnvironmentVariable($name, $null, $target) } catch { }
     }
 }
@@ -69,19 +61,15 @@ if (Test-Path $acadKey) {
         Where-Object { $_.PSPath -like '*\FixedProfile\General' } |
         ForEach-Object {
             $key = $_
-            # ModelWise.* and C3DTools.* entries are choices carried over from
-            # earlier versions; remove them too.
-            $key.GetValueNames() | Where-Object { $_ -like 'CutOnce.*' -or $_ -like 'ModelWise.*' -or $_ -like 'C3DTools.*' } | ForEach-Object {
+            $key.GetValueNames() | Where-Object { $_ -like 'CutOnce.*' } | ForEach-Object {
                 Remove-ItemProperty -Path $key.PSPath -Name $_ -ErrorAction SilentlyContinue
             }
         }
 }
 
 if ($RemoveLogs) {
-    foreach ($folder in 'CutOnce', 'ModelWise') {
-        $default = Join-Path $env:LOCALAPPDATA $folder
-        if (Test-Path $default) { Remove-Item $default -Recurse -Force; Write-Host "Removed $default" }
-    }
+    $default = Join-Path $env:LOCALAPPDATA 'CutOnce'
+    if (Test-Path $default) { Remove-Item $default -Recurse -Force; Write-Host "Removed $default" }
 }
 
 Write-Host 'CutOnce removed.'

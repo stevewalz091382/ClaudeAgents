@@ -5,8 +5,8 @@ Runs anywhere Python 3 runs (no AutoCAD needed). It cannot prove the code
 works in Civil 3D; it catches the mistakes that are easy to make by hand:
 
   1. Unbalanced parentheses or unterminated strings, per file.
-  2. Any top-level defun or global setq that is not prefixed (mwise:,
-     mwcc:, mwguard:, mwimpact:, mwhealth:, mwstd: or a CUTONCE command).
+  2. Any top-level defun or global setq that is not prefixed (cutonce:,
+     cocc:, coguard:, coimpact:, cohealth:, costd: or a CUTONCE command).
   3. Leftover development notes or third-party references.
 
 Exit code 0 when clean, 1 otherwise.
@@ -18,7 +18,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FILES = sorted((ROOT / "src").glob("*.lsp")) + sorted((ROOT / "CutOnce.bundle" / "Contents").glob("*.lsp"))
 
-PREFIXES = ("mwise:", "mwcc:", "mwguard:", "mwimpact:", "mwhealth:", "mwstd:")
+PREFIXES = ("cutonce:", "cocc:", "coguard:", "coimpact:", "cohealth:", "costd:")
 COMMAND_PREFIXES = ("c:cutonce", "c:-cutonce")
 GLOBAL_PREFIXES = tuple("*" + p for p in PREFIXES)
 
@@ -26,6 +26,8 @@ BANNED = [
     r"confirmed live", r"onedrive", r"(?-i:\bHDR\b)", r"power ?bi", r"dashboard",
     r"civil3dtools", r"c:\\\\civil3dtools", r"tell me", r"chat messages",
     r"dropgeom",
+    # earlier product names (the knowledge-base page address is the one exception)
+    r"model ?wise(?!-assistant)", r"c3dtools", r"bylayercheck",
 ]
 
 

@@ -1,9 +1,7 @@
 ;;; ============================================================================
 ;;; CutOnce-Health.lsp
 ;;;
-;;; One health record per drawing check, kept as history. This replaces the
-;;; separate audit report (Civil3D_Audit_Report.csv and
-;;; Civil3D_Audit_XrefDetail.csv); every column those files had is here.
+;;; One health record per drawing check, kept as history.
 ;;;
 ;;; Health.csv  one row per check:
 ;;;   who / when / which drawing / what triggered it (Save, Open, Audit,
@@ -30,24 +28,24 @@
 ;;;   CUTONCE-AUDIT-FOLDER  open, record and close every .dwg in a chosen folder
 ;;;   CUTONCE-GUARD-CHECKNOW, CUTONCE-GUARD-SUMMARY  (see CutOnce-Guard.lsp)
 ;;;
-;;; Naming: every function and global here starts with mwhealth: / *mwhealth:.
+;;; Naming: every function and global here starts with cohealth: / *cohealth:.
 ;;; Requires CutOnce-Core.lsp and CutOnce-Standards.lsp.
 ;;; ============================================================================
 
 (vl-load-com)
 
-(defun mwhealth:log (msg) (mwise:msg "CutOnce Health" msg))
+(defun cohealth:log (msg) (cutonce:msg "CutOnce Health" msg))
 
-(defun mwhealth:path ( )      (mwise:log-file "Health.csv"))
-(defun mwhealth:xrefs-path ( ) (mwise:log-file "Xrefs.csv"))
+(defun cohealth:path ( )      (cutonce:log-file "Health.csv"))
+(defun cohealth:xrefs-path ( ) (cutonce:log-file "Xrefs.csv"))
 
 ;; ---------------------------------------------------------------------------
 ;; Columns
 ;; ---------------------------------------------------------------------------
 
-(setq *mwhealth:id-columns* '("Timestamp" "Trigger" "User" "DrawingPath" "DrawingName"))
+(setq *cohealth:id-columns* '("Timestamp" "Trigger" "User" "DrawingPath" "DrawingName"))
 
-(setq *mwhealth:metric-columns*
+(setq *cohealth:metric-columns*
   '("Layers" "Linetypes" "Blocks" "Layouts" "RegApps" "Styles"
     "Alignments" "Profiles" "ProfileViews" "Surfaces" "Corridors" "Assemblies"
     "PipeNetworks" "GravityPipes" "GravityStructures" "PressurePipeNetworks"
@@ -56,28 +54,28 @@
     "BlockDefColorNotByLayer" "BlockDefLinetypeNotByLayer"
     "Xrefs" "XrefsBroken" "XrefsUnloaded" "XrefsOffOrigin"))
 
-(setq *mwhealth:setting-columns*
+(setq *cohealth:setting-columns*
   '("AngularUnits" "ImperialToMetricConversion" "CoordinateSystem" "InsUnits" "DrawingScale"))
 
 ;; Metrics compared against the previous check for unusual growth.
-(setq *mwhealth:growth-watch*
+(setq *cohealth:growth-watch*
   '("Layers" "Linetypes" "Blocks" "Layouts" "Xrefs" "RegApps" "Styles"
     "Alignments" "Profiles" "ProfileViews" "Surfaces" "Corridors" "Assemblies"
     "PipeNetworks" "PressurePipeNetworks" "SectionViews" "Sections"
     "Hatches" "TextObjects"))
 
-(defun mwhealth:columns ( )
-  (append *mwhealth:id-columns* *mwhealth:metric-columns* *mwhealth:setting-columns*)
+(defun cohealth:columns ( )
+  (append *cohealth:id-columns* *cohealth:metric-columns* *cohealth:setting-columns*)
 )
 
-(defun mwhealth:header ( ) (mwise:join (mwhealth:columns) ","))
+(defun cohealth:header ( ) (cutonce:join (cohealth:columns) ","))
 
-(setq *mwhealth:xref-header*
+(setq *cohealth:xref-header*
   (strcat "Timestamp,Trigger,User,DrawingPath,DrawingName,XrefName,XrefPath,Type,Status,"
           "Nested,Instances,InsertX,InsertY,InsertZ,Rotation,Scale,AtOrigin"))
 
-(defun mwhealth:growth-pct ( / v)
-  (setq v (mwise:cfg "GuardGrowthWarnPct" 20))
+(defun cohealth:growth-pct ( / v)
+  (setq v (cutonce:cfg "GuardGrowthWarnPct" 20))
   (if (numberp v) v 20)
 )
 
@@ -87,7 +85,7 @@
 ;; Which root (if any) holds each name is cached for the session.
 ;; ---------------------------------------------------------------------------
 
-(setq *mwhealth:style-collections*
+(setq *cohealth:style-collections*
   '("AlignmentStyles" "AlignmentLabelStyles" "AssemblyStyles"
     "BuildingSiteStyles" "CatchmentStyles" "CatchmentLabelStyles"
     "CodeSetStyles" "CorridorStyles" "FeatureLineStyles"
@@ -117,28 +115,28 @@
     "TableStyles")
 )
 
-(setq *mwhealth:style-root-cache* nil)
+(setq *cohealth:style-root-cache* nil)
 
-(defun mwhealth:count-styles (civilDoc / roots total cached idx n)
-  (setq roots (list civilDoc (mwise:prop civilDoc 'Styles) (mwise:prop civilDoc 'Settings)))
+(defun cohealth:count-styles (civilDoc / roots total cached idx n)
+  (setq roots (list civilDoc (cutonce:prop civilDoc 'Styles) (cutonce:prop civilDoc 'Settings)))
   (setq total 0)
-  (foreach nm *mwhealth:style-collections*
-    (setq cached (assoc nm *mwhealth:style-root-cache*))
+  (foreach nm *cohealth:style-collections*
+    (setq cached (assoc nm *cohealth:style-root-cache*))
     (cond
       ((and cached (= (cdr cached) -1)) nil)
       (cached
-       (setq total (+ total (mwise:prop-count (nth (cdr cached) roots) nm))))
+       (setq total (+ total (cutonce:prop-count (nth (cdr cached) roots) nm))))
       (T
        (setq idx 0 n nil)
        (while (and (< idx 3) (not n))
-         (if (nth idx roots) (setq n (mwise:prop (nth idx roots) nm)))
+         (if (nth idx roots) (setq n (cutonce:prop (nth idx roots) nm)))
          (if (not n) (setq idx (1+ idx)))
        )
        (if n
          (progn
-           (setq total (+ total (mwise:count n)))
-           (setq *mwhealth:style-root-cache* (cons (cons nm idx) *mwhealth:style-root-cache*)))
-         (setq *mwhealth:style-root-cache* (cons (cons nm -1) *mwhealth:style-root-cache*))
+           (setq total (+ total (cutonce:count n)))
+           (setq *cohealth:style-root-cache* (cons (cons nm idx) *cohealth:style-root-cache*)))
+         (setq *cohealth:style-root-cache* (cons (cons nm -1) *cohealth:style-root-cache*))
        )
       )
     )
@@ -146,14 +144,14 @@
   total
 )
 
-(defun mwhealth:getvar (doc name / r)
+(defun cohealth:getvar (doc name / r)
   (setq r (vl-catch-all-apply 'vlax-invoke (list doc 'GetVariable name)))
   (if (vl-catch-all-error-p r) "n/a" r)
 )
 
-(defun mwhealth:na (v) (if (null v) "n/a" v))
+(defun cohealth:na (v) (if (null v) "n/a" v))
 
-(defun mwhealth:sum (objcounts wildcard / total)
+(defun cohealth:sum (objcounts wildcard / total)
   (setq total 0)
   (foreach pair objcounts
     (if (wcmatch (strcase (car pair)) (strcase wildcard)) (setq total (+ total (cdr pair))))
@@ -165,41 +163,41 @@
 ;; Collect: every Health.csv value for one drawing.
 ;; civilDoc may be nil (at open, plain AutoCAD, or no COM connection); the
 ;; Styles and settings columns then read n/a.
-;; Returns the standards facts (see mwstd:collect) plus one pair per column.
+;; Returns the standards facts (see costd:collect) plus one pair per column.
 ;; ---------------------------------------------------------------------------
 
-(defun mwhealth:collect (doc civilDoc scanblocks / std oc unitZone)
-  (setq std (mwstd:collect doc scanblocks))
-  (setq oc (mwstd:fact std "objcounts"))
+(defun cohealth:collect (doc civilDoc scanblocks / std oc unitZone)
+  (setq std (costd:collect doc scanblocks))
+  (setq oc (costd:fact std "objcounts"))
   (if civilDoc
-    (setq unitZone (mwise:prop (mwise:prop (mwise:prop civilDoc 'Settings) 'DrawingSettings) 'UnitZoneSettings))
+    (setq unitZone (cutonce:prop (cutonce:prop (cutonce:prop civilDoc 'Settings) 'DrawingSettings) 'UnitZoneSettings))
   )
   (append
     std
     (list
-      (cons "Layers"               (mwise:count (vla-get-Layers doc)))
-      (cons "Linetypes"            (mwise:count (vla-get-Linetypes doc)))
-      (cons "Blocks"               (mwise:count (vla-get-Blocks doc)))
-      (cons "Layouts"              (mwise:count (vla-get-Layouts doc)))
-      (cons "RegApps"              (mwise:count (vla-get-RegisteredApplications doc)))
-      (cons "Styles"               (if civilDoc (mwhealth:count-styles civilDoc) "n/a"))
-      (cons "Alignments"           (mwhealth:sum oc "AECCDBALIGNMENT"))
-      (cons "Profiles"             (mwhealth:sum oc "AECCDBVALIGNMENT"))
-      (cons "ProfileViews"         (mwhealth:sum oc "AECCDBGRAPHPROFILE"))
-      (cons "Surfaces"             (mwhealth:sum oc "AECCDBSURFACETIN,AECCDBSURFACEGRID,AECCDBSURFACEVOLUME"))
-      (cons "Corridors"            (mwhealth:sum oc "AECCDBCORRIDOR"))
-      (cons "Assemblies"           (mwhealth:sum oc "AECCDBASSEMBLY"))
-      (cons "PipeNetworks"         (mwhealth:sum oc "AECCDBNETWORK"))
-      (cons "GravityPipes"         (mwhealth:sum oc "AECCDBPIPE"))
-      (cons "GravityStructures"    (mwhealth:sum oc "AECCDBSTRUCTURE"))
-      (cons "PressurePipeNetworks" (mwhealth:sum oc "AECCDBPRESSUREPIPENETWORK,AECCDBPRESSURENETWORK"))
-      (cons "SectionViews"         (mwhealth:sum oc "AECCDBSECTIONVIEW"))
-      (cons "Sections"             (mwhealth:sum oc "AECCDBSECTION"))
-      (cons "AngularUnits"               (if civilDoc (mwhealth:na (mwise:prop unitZone 'AngularUnits)) "n/a"))
-      (cons "ImperialToMetricConversion" (if civilDoc (mwhealth:na (mwise:prop unitZone 'ImperialToMetricConversion)) "n/a"))
-      (cons "CoordinateSystem"           (if civilDoc (mwhealth:na (mwise:prop unitZone 'CoordinateSystemCode)) "n/a"))
-      (cons "InsUnits"                   (mwhealth:getvar doc "INSUNITS"))
-      (cons "DrawingScale"               (mwhealth:getvar doc "DIMSCALE"))
+      (cons "Layers"               (cutonce:count (vla-get-Layers doc)))
+      (cons "Linetypes"            (cutonce:count (vla-get-Linetypes doc)))
+      (cons "Blocks"               (cutonce:count (vla-get-Blocks doc)))
+      (cons "Layouts"              (cutonce:count (vla-get-Layouts doc)))
+      (cons "RegApps"              (cutonce:count (vla-get-RegisteredApplications doc)))
+      (cons "Styles"               (if civilDoc (cohealth:count-styles civilDoc) "n/a"))
+      (cons "Alignments"           (cohealth:sum oc "AECCDBALIGNMENT"))
+      (cons "Profiles"             (cohealth:sum oc "AECCDBVALIGNMENT"))
+      (cons "ProfileViews"         (cohealth:sum oc "AECCDBGRAPHPROFILE"))
+      (cons "Surfaces"             (cohealth:sum oc "AECCDBSURFACETIN,AECCDBSURFACEGRID,AECCDBSURFACEVOLUME"))
+      (cons "Corridors"            (cohealth:sum oc "AECCDBCORRIDOR"))
+      (cons "Assemblies"           (cohealth:sum oc "AECCDBASSEMBLY"))
+      (cons "PipeNetworks"         (cohealth:sum oc "AECCDBNETWORK"))
+      (cons "GravityPipes"         (cohealth:sum oc "AECCDBPIPE"))
+      (cons "GravityStructures"    (cohealth:sum oc "AECCDBSTRUCTURE"))
+      (cons "PressurePipeNetworks" (cohealth:sum oc "AECCDBPRESSUREPIPENETWORK,AECCDBPRESSURENETWORK"))
+      (cons "SectionViews"         (cohealth:sum oc "AECCDBSECTIONVIEW"))
+      (cons "Sections"             (cohealth:sum oc "AECCDBSECTION"))
+      (cons "AngularUnits"               (if civilDoc (cohealth:na (cutonce:prop unitZone 'AngularUnits)) "n/a"))
+      (cons "ImperialToMetricConversion" (if civilDoc (cohealth:na (cutonce:prop unitZone 'ImperialToMetricConversion)) "n/a"))
+      (cons "CoordinateSystem"           (if civilDoc (cohealth:na (cutonce:prop unitZone 'CoordinateSystemCode)) "n/a"))
+      (cons "InsUnits"                   (cohealth:getvar doc "INSUNITS"))
+      (cons "DrawingScale"               (cohealth:getvar doc "DIMSCALE"))
     )
   )
 )
@@ -210,67 +208,67 @@
 
 ;; Previous check of a drawing, as ((column . value) ...). The first lookup
 ;; in a session reads Health.csv; later ones use memory.
-(setq *mwhealth:last* nil)
+(setq *cohealth:last* nil)
 
-(defun mwhealth:remember (drawpath facts)
-  (setq *mwhealth:last*
+(defun cohealth:remember (drawpath facts)
+  (setq *cohealth:last*
     (cons drawpath
-          (mapcar (function (lambda (c) (cons c (cdr (assoc c facts))))) *mwhealth:metric-columns*)))
+          (mapcar (function (lambda (c) (cons c (cdr (assoc c facts))))) *cohealth:metric-columns*)))
 )
 
-(defun mwhealth:previous (drawpath / lines pidx lastrow fields)
-  (if (and *mwhealth:last* (= (car *mwhealth:last*) drawpath))
-    (cdr *mwhealth:last*)
+(defun cohealth:previous (drawpath / lines pidx lastrow fields)
+  (if (and *cohealth:last* (= (car *cohealth:last*) drawpath))
+    (cdr *cohealth:last*)
     (progn
-      (setq lines (mwise:read-lines (mwhealth:path)))
-      (if (and lines (= (car lines) (mwhealth:header)))
+      (setq lines (cutonce:read-lines (cohealth:path)))
+      (if (and lines (= (car lines) (cohealth:header)))
         (progn
-          (setq pidx (vl-position "DrawingPath" (mwhealth:columns)))
+          (setq pidx (vl-position "DrawingPath" (cohealth:columns)))
           (foreach line (cdr lines)
-            (setq fields (mwise:csv-split line ","))
+            (setq fields (cutonce:csv-split line ","))
             (if (and (> (length fields) pidx) (= (nth pidx fields) drawpath)) (setq lastrow fields))
           )
           (if lastrow
             (mapcar (function (lambda (c v) (cons c (if (wcmatch v "#*") (atoi v) v))))
-                    (mwhealth:columns) lastrow))
+                    (cohealth:columns) lastrow))
         )
       )
     )
   )
 )
 
-(defun mwhealth:row (trigger drawpath drawname facts)
+(defun cohealth:row (trigger drawpath drawname facts)
   (strcat
-    (mwise:csv-row (list (mwise:timestamp) trigger (mwise:user) drawpath drawname))
+    (cutonce:csv-row (list (cutonce:timestamp) trigger (cutonce:user) drawpath drawname))
     ","
-    (mwise:csv-row (mapcar (function (lambda (c) (cdr (assoc c facts))))
-                          (append *mwhealth:metric-columns* *mwhealth:setting-columns*))))
+    (cutonce:csv-row (mapcar (function (lambda (c) (cdr (assoc c facts))))
+                          (append *cohealth:metric-columns* *cohealth:setting-columns*))))
 )
 
-(defun mwhealth:xref-rows (trigger drawpath drawname facts / ts user pt)
-  (setq ts (mwise:timestamp) user (mwise:user))
+(defun cohealth:xref-rows (trigger drawpath drawname facts / ts user pt)
+  (setq ts (cutonce:timestamp) user (cutonce:user))
   (mapcar
     (function (lambda (x)
       ;; x = (name path type status nested instances point rotation scale atOrigin)
       (setq pt (nth 6 x))
-      (mwise:csv-row
+      (cutonce:csv-row
         (list ts trigger user drawpath drawname
               (nth 0 x) (nth 1 x) (nth 2 x) (nth 3 x) (nth 4 x) (nth 5 x)
               (if pt (car pt)) (if pt (cadr pt)) (if pt (caddr pt))
               (nth 7 x) (nth 8 x) (nth 9 x)))))
-    (mwstd:fact facts "xrefdetail"))
+    (costd:fact facts "xrefdetail"))
 )
 
 ;; Writes the Health.csv row (and Xrefs.csv rows when that log is on).
 ;; force = T writes even when logging is switched off (explicit CUTONCE-AUDIT).
-(defun mwhealth:write (doc facts trigger force / drawpath drawname)
-  (setq drawpath (cond ((mwise:str-prop doc 'FullName)) (""))
-        drawname (cond ((mwise:str-prop doc 'Name)) ("")))
-  (mwise:append-line (mwhealth:path) (mwhealth:header)
-                    (mwhealth:row trigger drawpath drawname facts))
-  (if (or force (mwise:log-on-p "LogXrefs"))
-    (mwise:append-lines (mwhealth:xrefs-path) *mwhealth:xref-header*
-                       (mwhealth:xref-rows trigger drawpath drawname facts))
+(defun cohealth:write (doc facts trigger force / drawpath drawname)
+  (setq drawpath (cond ((cutonce:str-prop doc 'FullName)) (""))
+        drawname (cond ((cutonce:str-prop doc 'Name)) ("")))
+  (cutonce:append-line (cohealth:path) (cohealth:header)
+                    (cohealth:row trigger drawpath drawname facts))
+  (if (or force (cutonce:log-on-p "LogXrefs"))
+    (cutonce:append-lines (cohealth:xrefs-path) *cohealth:xref-header*
+                       (cohealth:xref-rows trigger drawpath drawname facts))
   )
 )
 
@@ -278,10 +276,10 @@
 ;; Save-time checks: unusual growth and xrefs off 0,0,0
 ;; ---------------------------------------------------------------------------
 
-(defun mwhealth:growth-flags (prev facts / flags oldv newv)
+(defun cohealth:growth-flags (prev facts / flags oldv newv)
   (setq flags nil)
   (if prev
-    (foreach metric *mwhealth:growth-watch*
+    (foreach metric *cohealth:growth-watch*
       (setq oldv (cdr (assoc metric prev)) newv (cdr (assoc metric facts)))
       (if (and (numberp oldv) (numberp newv))
         (cond
@@ -289,7 +287,7 @@
            (setq flags (cons (list metric oldv newv "new registered app(s), often left by a bind or a foreign block") flags)))
           ((and (= oldv 0) (> newv 0))
            (setq flags (cons (list metric oldv newv "new since the last check") flags)))
-          ((and (> oldv 0) (>= (* 100.0 (/ (float (- newv oldv)) oldv)) (mwhealth:growth-pct)))
+          ((and (> oldv 0) (>= (* 100.0 (/ (float (- newv oldv)) oldv)) (cohealth:growth-pct)))
            (setq flags (cons (list metric oldv newv
                                    (strcat "up " (rtos (* 100.0 (/ (float (- newv oldv)) oldv)) 2 0) "% since the last check"))
                              flags)))
@@ -300,30 +298,30 @@
   (reverse flags)
 )
 
-(defun mwhealth:alert-growth (drawname flags)
-  (mwise:log-event "SAVE-FLAG"
+(defun cohealth:alert-growth (drawname flags)
+  (cutonce:log-event "SAVE-FLAG"
     (apply 'strcat (mapcar (function (lambda (x) (strcat (car x) " " (itoa (cadr x)) "->" (itoa (caddr x)) "  "))) flags)))
-  (mwise:notice
+  (cutonce:notice
     (strcat
       "CutOnce Guard: unusual growth since the last check of\n" drawname ":\n\n"
       (apply 'strcat
         (mapcar (function (lambda (x)
                   (strcat "  " (car x) ": " (itoa (cadr x)) " -> " (itoa (caddr x)) "  (" (nth 3 x) ")\n")))
                 flags))
-      "\nFull history: " (mwhealth:path)
+      "\nFull history: " (cohealth:path)
       "\nTurn this check off in the CutOnce Control Center (type CUTONCE)."
     )
     "GUARD_GROWTH"
   )
 )
 
-(defun mwhealth:alert-origin (badpts)
-  (mwise:log-event "XREF-BASEPOINT" (apply 'strcat (mapcar (function (lambda (p) (strcat (car p) "  "))) badpts)))
-  (mwise:notice
+(defun cohealth:alert-origin (badpts)
+  (cutonce:log-event "XREF-BASEPOINT" (apply 'strcat (mapcar (function (lambda (p) (strcat (car p) "  "))) badpts)))
+  (cutonce:notice
     (strcat
       "CutOnce Guard: xref insertion point(s) are not at 0,0,0:\n\n"
       (apply 'strcat
-        (mapcar (function (lambda (p) (strcat "  " (car p) ": " (mwstd:pt-text (cadr p)) "\n")))
+        (mapcar (function (lambda (p) (strcat "  " (car p) ": " (costd:pt-text (cadr p)) "\n")))
                 badpts))
       "\nA non-zero xref insertion point commonly causes misalignment against\n"
       "a shared coordinate system or data shortcuts."
@@ -335,38 +333,38 @@
 
 ;; trigger: "Save" (reactor) or "Manual" (CUTONCE-GUARD-CHECKNOW).
 ;; Manual runs both alerts and writes the row whatever the settings say.
-(defun mwhealth:check (trigger / manual doc drawpath drawname wantLog wantGrowth wantOrigin facts prev flags badpts)
+(defun cohealth:check (trigger / manual doc drawpath drawname wantLog wantGrowth wantOrigin facts prev flags badpts)
   (setq manual (= trigger "Manual"))
-  (setq wantLog    (or manual (mwise:log-on-p "LogHealthOnSave"))
-        wantGrowth (or manual (mwise:on-p "GuardGrowth"))
-        wantOrigin (or manual (mwise:on-p "GuardXrefOrigin")))
-  (setq doc (mwise:active-doc))
-  (setq drawpath (mwise:nonblank (mwise:str-prop doc 'FullName))
-        drawname (cond ((mwise:str-prop doc 'Name)) ("")))
+  (setq wantLog    (or manual (cutonce:log-on-p "LogHealthOnSave"))
+        wantGrowth (or manual (cutonce:on-p "GuardGrowth"))
+        wantOrigin (or manual (cutonce:on-p "GuardXrefOrigin")))
+  (setq doc (cutonce:active-doc))
+  (setq drawpath (cutonce:nonblank (cutonce:str-prop doc 'FullName))
+        drawname (cond ((cutonce:str-prop doc 'Name)) ("")))
   (cond
     ((not (or wantLog wantGrowth wantOrigin)) nil)
     ((or (not drawpath) (/= (getvar "DWGTITLED") 1))
-     (mwhealth:log "This drawing has not been saved yet - health check skipped."))
+     (cohealth:log "This drawing has not been saved yet - health check skipped."))
     (T
-     (setq facts (mwhealth:collect doc (mwise:civil-doc) (mwise:on-p "StdScanBlocks")))
+     (setq facts (cohealth:collect doc (cutonce:civil-doc) (cutonce:on-p "StdScanBlocks")))
      (if wantGrowth
        (progn
-         (setq prev (vl-catch-all-apply 'mwhealth:previous (list drawpath)))
+         (setq prev (vl-catch-all-apply 'cohealth:previous (list drawpath)))
          (if (vl-catch-all-error-p prev) (setq prev nil))
        )
      )
-     (if wantLog (vl-catch-all-apply 'mwhealth:write (list doc facts trigger manual)))
-     (mwhealth:remember drawpath facts)
-     (if (and wantGrowth (setq flags (mwhealth:growth-flags prev facts)))
-       (mwhealth:alert-growth drawname flags))
-     (if (and wantOrigin (setq badpts (mwstd:fact facts "offorigin")))
-       (mwhealth:alert-origin badpts))
+     (if wantLog (vl-catch-all-apply 'cohealth:write (list doc facts trigger manual)))
+     (cohealth:remember drawpath facts)
+     (if (and wantGrowth (setq flags (cohealth:growth-flags prev facts)))
+       (cohealth:alert-growth drawname flags))
+     (if (and wantOrigin (setq badpts (costd:fact facts "offorigin")))
+       (cohealth:alert-origin badpts))
     )
   )
 )
 
-(defun mwhealth:begin-save (reactor arglist)
-  (vl-catch-all-apply 'mwhealth:check (list "Save"))
+(defun cohealth:begin-save (reactor arglist)
+  (vl-catch-all-apply 'cohealth:check (list "Save"))
   (princ)
 )
 
@@ -377,19 +375,19 @@
 ;; Civil 3D is still starting), so Styles and settings read n/a.
 ;; ---------------------------------------------------------------------------
 
-(defun mwhealth:on-open ( / doc drawpath wantCheck wantLog facts)
-  (setq wantCheck (mwise:on-p "StdCheckOnOpen")
-        wantLog   (mwise:log-on-p "LogHealthOnOpen"))
-  (setq doc (mwise:active-doc))
+(defun cohealth:on-open ( / doc drawpath wantCheck wantLog facts)
+  (setq wantCheck (cutonce:on-p "StdCheckOnOpen")
+        wantLog   (cutonce:log-on-p "LogHealthOnOpen"))
+  (setq doc (cutonce:active-doc))
   (if (and (= 1 (getvar "DWGTITLED"))
-           (setq drawpath (mwise:nonblank (mwise:str-prop doc 'FullName)))
+           (setq drawpath (cutonce:nonblank (cutonce:str-prop doc 'FullName)))
            (or wantCheck wantLog))
     (progn
-      (setq facts (mwhealth:collect doc nil (mwise:on-p "StdScanBlocks")))
-      (if wantLog (vl-catch-all-apply 'mwhealth:write (list doc facts "Open" nil)))
+      (setq facts (cohealth:collect doc nil (cutonce:on-p "StdScanBlocks")))
+      (if wantLog (vl-catch-all-apply 'cohealth:write (list doc facts "Open" nil)))
       ;; the state at open is the baseline for this session's first save
-      (mwhealth:remember drawpath facts)
-      (if wantCheck (mwstd:show-report facts (cond ((mwise:str-prop doc 'Name)) ("")) nil))
+      (cohealth:remember drawpath facts)
+      (if wantCheck (costd:show-report facts (cond ((cutonce:str-prop doc 'Name)) ("")) nil))
     )
   )
   (princ)
@@ -399,7 +397,7 @@
 ;; Excel presentation (manual commands only)
 ;; ---------------------------------------------------------------------------
 
-(defun mwhealth:open-in-excel (csvpath / xl wb ws used win)
+(defun cohealth:open-in-excel (csvpath / xl wb ws used win)
   (setq xl (vl-catch-all-apply 'vlax-get-or-create-object (list "Excel.Application")))
   (if (or (vl-catch-all-error-p xl) (null xl))
     (princ (strcat "\nExcel is not available - open " csvpath " by hand."))
@@ -427,32 +425,32 @@
 ;; because the user asked for them.
 ;; ---------------------------------------------------------------------------
 
-(defun mwhealth:audit-doc (d / facts)
-  (if (mwise:nonblank (mwise:str-prop d 'FullName))
+(defun cohealth:audit-doc (d / facts)
+  (if (cutonce:nonblank (cutonce:str-prop d 'FullName))
     (progn
-      (setq facts (mwhealth:collect d (mwise:civil-doc) (mwise:on-p "StdScanBlocks")))
-      (mwhealth:write d facts "Audit" T)
+      (setq facts (cohealth:collect d (cutonce:civil-doc) (cutonce:on-p "StdScanBlocks")))
+      (cohealth:write d facts "Audit" T)
       T
     )
-    (progn (princ (strcat "\nSkipped (never saved): " (cond ((mwise:str-prop d 'Name)) ("?")))) nil)
+    (progn (princ (strcat "\nSkipped (never saved): " (cond ((cutonce:str-prop d 'Name)) ("?")))) nil)
   )
 )
 
 (defun c:CUTONCE-AUDIT ( / acadApp original n r)
-  (setq acadApp (vlax-get-acad-object) original (mwise:active-doc) n 0)
-  (if (not (mwise:civil-app))
+  (setq acadApp (vlax-get-acad-object) original (cutonce:active-doc) n 0)
+  (if (not (cutonce:civil-app))
     (princ "\nCivil 3D COM is not connected - Styles and settings will read n/a. Run CUTONCE-FINDCIVIL to fix.")
   )
   (vlax-for d (vla-get-Documents acadApp)
     (vl-catch-all-apply 'vla-put-ActiveDocument (list acadApp d))
-    (setq r (vl-catch-all-apply 'mwhealth:audit-doc (list d)))
+    (setq r (vl-catch-all-apply 'cohealth:audit-doc (list d)))
     (cond ((vl-catch-all-error-p r)
-           (princ (strcat "\nFailed: " (cond ((mwise:str-prop d 'Name)) ("?")) " - " (vl-catch-all-error-message r))))
+           (princ (strcat "\nFailed: " (cond ((cutonce:str-prop d 'Name)) ("?")) " - " (vl-catch-all-error-message r))))
           (r (setq n (1+ n))))
   )
   (vl-catch-all-apply 'vla-put-ActiveDocument (list acadApp original))
-  (princ (strcat "\n" (itoa n) " drawing(s) recorded in " (mwhealth:path)))
-  (if (> n 0) (mwhealth:open-in-excel (mwhealth:path)))
+  (princ (strcat "\n" (itoa n) " drawing(s) recorded in " (cohealth:path)))
+  (if (> n 0) (cohealth:open-in-excel (cohealth:path)))
   (princ)
 )
 
@@ -471,14 +469,14 @@
           (princ (strcat "\nSkipped (could not open): " fn))
           (progn
             (vl-catch-all-apply 'vla-put-ActiveDocument (list acadApp d))
-            (setq r (vl-catch-all-apply 'mwhealth:audit-doc (list d)))
+            (setq r (vl-catch-all-apply 'cohealth:audit-doc (list d)))
             (if (and r (not (vl-catch-all-error-p r))) (setq n (1+ n)))
             (vl-catch-all-apply 'vla-close (list d :vlax-false))
           )
         )
       )
-      (princ (strcat "\n" (itoa n) " drawing(s) recorded in " (mwhealth:path)))
-      (if (> n 0) (mwhealth:open-in-excel (mwhealth:path)))
+      (princ (strcat "\n" (itoa n) " drawing(s) recorded in " (cohealth:path)))
+      (if (> n 0) (cohealth:open-in-excel (cohealth:path)))
     )
   )
   (princ)
@@ -489,20 +487,20 @@
 ;; a reload does not stack duplicates.
 ;; ---------------------------------------------------------------------------
 
-(if (not (boundp '*mwhealth:save-reactor*)) (setq *mwhealth:save-reactor* nil))
+(if (not (boundp '*cohealth:save-reactor*)) (setq *cohealth:save-reactor* nil))
 
-(defun mwhealth:init ( / r)
-  (if (not *mwhealth:save-reactor*)
+(defun cohealth:init ( / r)
+  (if (not *cohealth:save-reactor*)
     (progn
       (setq r (vl-catch-all-apply 'vlr-editor-reactor
-                (list nil (list (cons :vlr-beginSave 'mwhealth:begin-save)))))
+                (list nil (list (cons :vlr-beginSave 'cohealth:begin-save)))))
       (if (vl-catch-all-error-p r)
-        (mwhealth:log "Could not start the save hook; run CUTONCE-GUARD-CHECKNOW by hand.")
-        (setq *mwhealth:save-reactor* r)
+        (cohealth:log "Could not start the save hook; run CUTONCE-GUARD-CHECKNOW by hand.")
+        (setq *cohealth:save-reactor* r)
       )
     )
   )
 )
 
-(mwhealth:init)
+(cohealth:init)
 (princ)

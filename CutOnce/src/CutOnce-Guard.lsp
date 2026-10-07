@@ -37,24 +37,24 @@
 ;;;   CUTONCE-GUARD-LOGCOMMANDS  echo every command name as it starts (use this to
 ;;;                         find the real name of a ribbon or menu command)
 ;;;
-;;; Naming: every function and global here starts with mwguard: / *mwguard:.
+;;; Naming: every function and global here starts with coguard: / *coguard:.
 ;;; Requires CutOnce-Core.lsp and CutOnce-Health.lsp.
 ;;; ============================================================================
 
 (vl-load-com)
 
-(defun mwguard:log (msg) (mwise:msg "CutOnce Guard" msg))
+(defun coguard:log (msg) (cutonce:msg "CutOnce Guard" msg))
 
-(setq *mwguard:logall* nil)
+(setq *coguard:logall* nil)
 
-(defun mwguard:trace (msg)
-  (if *mwguard:logall* (princ (strcat "\n[CutOnce Guard TRACE] " msg)))
+(defun coguard:trace (msg)
+  (if *coguard:logall* (princ (strcat "\n[CutOnce Guard TRACE] " msg)))
   (princ)
 )
 
-(defun mwguard:opened-path ( ) (mwise:log-file "Opened.csv"))
+(defun coguard:opened-path ( ) (cutonce:log-file "Opened.csv"))
 
-(defun mwguard:log-event (kind detail) (mwise:log-event kind detail))
+(defun coguard:log-event (kind detail) (cutonce:log-event kind detail))
 
 
 ;; ---------------------------------------------------------------------------
@@ -62,7 +62,7 @@
 ;; Space and every paper-space layout, keyed by ObjectName.
 ;; ---------------------------------------------------------------------------
 
-(defun mwguard:friendly-name (raw)
+(defun coguard:friendly-name (raw)
   (cond
     ((= raw "AcDbBlockReference") "Block")
     ((= raw "AeccDbAlignment") "Alignment")
@@ -89,11 +89,11 @@
   )
 )
 
-(defun mwguard:scan-space-into (spaceBlk counts / oname pair)
+(defun coguard:scan-space-into (spaceBlk counts / oname pair)
   (vl-catch-all-apply
     (function (lambda ()
       (vlax-for ent spaceBlk
-        (setq oname (mwise:object-name ent))
+        (setq oname (cutonce:object-name ent))
         (if (or (= oname "AcDbBlockReference") (wcmatch (strcase oname) "AECC*"))
           (progn
             (setq pair (assoc oname counts))
@@ -110,14 +110,14 @@
 
 ;; The Layouts collection includes "Model", whose block is Model Space;
 ;; skip it so Model Space is not counted twice.
-(defun mwguard:object-snapshot (doc / counts blk)
-  (setq counts (mwguard:scan-space-into (vla-get-ModelSpace doc) nil))
+(defun coguard:object-snapshot (doc / counts blk)
+  (setq counts (coguard:scan-space-into (vla-get-ModelSpace doc) nil))
   (vl-catch-all-apply
     (function (lambda ()
       (vlax-for lay (vla-get-Layouts doc)
-        (if (eq (mwise:prop lay 'ModelType) :vlax-false)
-          (if (setq blk (mwise:prop lay 'Block))
-            (setq counts (mwguard:scan-space-into blk counts))
+        (if (eq (cutonce:prop lay 'ModelType) :vlax-false)
+          (if (setq blk (cutonce:prop lay 'Block))
+            (setq counts (coguard:scan-space-into blk counts))
           )
         )
       )
@@ -126,7 +126,7 @@
   counts
 )
 
-(defun mwguard:sum-counts (counts wildcard / total)
+(defun coguard:sum-counts (counts wildcard / total)
   (setq total 0)
   (foreach pair counts
     (if (wcmatch (strcase (car pair)) (strcase wildcard)) (setq total (+ total (cdr pair))))
@@ -138,12 +138,12 @@
 ;; Risk 1: EXPLODE
 ;; ---------------------------------------------------------------------------
 
-(setq *mwguard:explode-snapshot* nil)
-(setq *mwguard:explode-attrib-snapshot* nil)
+(setq *coguard:explode-snapshot* nil)
+(setq *coguard:explode-attrib-snapshot* nil)
 
-(defun mwguard:report-civil-loss (before after / lost bv av)
+(defun coguard:report-civil-loss (before after / lost bv av)
   (cond
-    ((not before) (mwguard:trace "EXPLODE ended without a before-snapshot."))
+    ((not before) (coguard:trace "EXPLODE ended without a before-snapshot."))
     (T
      (setq lost nil)
      (foreach pair before
@@ -152,17 +152,17 @@
      )
      (if lost
        (progn
-         (mwguard:log-event "EXPLODE-LOSS"
+         (coguard:log-event "EXPLODE-LOSS"
            (apply 'strcat
              (mapcar (function (lambda (x)
-                       (strcat (mwguard:friendly-name (car x)) " " (itoa (cadr x)) "->" (itoa (caddr x)) "  ")))
+                       (strcat (coguard:friendly-name (car x)) " " (itoa (cadr x)) "->" (itoa (caddr x)) "  ")))
                      lost)))
-         (mwise:notice
+         (cutonce:notice
            (strcat
              "CutOnce Guard: EXPLODE just removed or converted an object.\n\n"
              (apply 'strcat
                (mapcar (function (lambda (x)
-                         (strcat "  " (mwguard:friendly-name (car x)) ": " (itoa (cadr x)) " -> "
+                         (strcat "  " (coguard:friendly-name (car x)) ": " (itoa (cadr x)) " -> "
                                  (itoa (caddr x)) " (down " (itoa (- (cadr x) (caddr x))) ")\n")))
                        lost))
              "\nThe exploded object is now plain geometry and has lost its design intent.\n\n"
@@ -171,19 +171,19 @@
            "GUARD_EXPLODE"
          )
        )
-       (mwguard:trace "EXPLODE ended - no object-type count decreased.")
+       (coguard:trace "EXPLODE ended - no object-type count decreased.")
      )
     )
   )
 )
 
-(defun mwguard:attrib-block-count (doc / n)
+(defun coguard:attrib-block-count (doc / n)
   (setq n 0)
   (vl-catch-all-apply
     (function (lambda ()
       (vlax-for ent (vla-get-ModelSpace doc)
-        (if (and (= (mwise:object-name ent) "AcDbBlockReference")
-                 (eq (mwise:prop ent 'HasAttributes) :vlax-true))
+        (if (and (= (cutonce:object-name ent) "AcDbBlockReference")
+                 (eq (cutonce:prop ent 'HasAttributes) :vlax-true))
           (setq n (1+ n))
         )
       )
@@ -192,11 +192,11 @@
   n
 )
 
-(defun mwguard:report-attrib-loss (before after)
+(defun coguard:report-attrib-loss (before after)
   (if (and before after (< after before))
     (progn
-      (mwguard:log-event "ATTRIB-LOSS" (strcat "attributed blocks " (itoa before) "->" (itoa after)))
-      (mwise:notice
+      (coguard:log-event "ATTRIB-LOSS" (strcat "attributed blocks " (itoa before) "->" (itoa after)))
+      (cutonce:notice
         (strcat
           "CutOnce Guard: EXPLODE just converted " (itoa (- before after)) " attributed block(s)\n"
           "into plain text and geometry (BURST does this too).\n\n"
@@ -207,7 +207,7 @@
         "GUARD_ATTRIB"
       )
     )
-    (mwguard:trace "EXPLODE ended - attributed-block count did not decrease.")
+    (coguard:trace "EXPLODE ended - attributed-block count did not decrease.")
   )
 )
 
@@ -215,23 +215,23 @@
 ;; Risk 2: XREF / XBIND binding
 ;; ---------------------------------------------------------------------------
 
-(setq *mwguard:xref-snapshot* nil)
+(setq *coguard:xref-snapshot* nil)
 
-(defun mwguard:xref-names (doc / names)
+(defun coguard:xref-names (doc / names)
   (setq names nil)
   (vlax-for blk (vla-get-Blocks doc)
-    (if (eq (mwise:prop blk 'IsXRef) :vlax-true) (setq names (cons (vla-get-Name blk) names)))
+    (if (eq (cutonce:prop blk 'IsXRef) :vlax-true) (setq names (cons (vla-get-Name blk) names)))
   )
   names
 )
 
-(defun mwguard:report-binds (before after / bound)
+(defun coguard:report-binds (before after / bound)
   (setq bound nil)
   (foreach n before (if (not (member n after)) (setq bound (cons n bound))))
   (if bound
     (progn
-      (mwguard:log-event "XREF-BIND" (apply 'strcat (mapcar (function (lambda (n) (strcat n "  "))) bound)))
-      (mwise:notice
+      (coguard:log-event "XREF-BIND" (apply 'strcat (mapcar (function (lambda (n) (strcat n "  "))) bound)))
+      (cutonce:notice
         (strcat
           "CutOnce Guard: an xref was just bound into this drawing:\n\n"
           (apply 'strcat (mapcar (function (lambda (n) (strcat "  " n "\n"))) bound))
@@ -243,7 +243,7 @@
         "GUARD_XREF_BIND"
       )
     )
-    (mwguard:trace "XREF/XBIND ended - no xref was bound.")
+    (coguard:trace "XREF/XBIND ended - no xref was bound.")
   )
 )
 
@@ -251,11 +251,11 @@
 ;; Risk 3: MOVE / COPY of an xref, and xref insertion points off 0,0,0
 ;; ---------------------------------------------------------------------------
 
-(setq *mwguard:xrefpts-snapshot* nil)
-(setq *mwguard:check-xref-move* nil)
+(setq *coguard:xrefpts-snapshot* nil)
+(setq *coguard:check-xref-move* nil)
 
-(defun mwguard:get-point (ent propname / raw pt)
-  (setq raw (mwise:prop ent propname))
+(defun coguard:get-point (ent propname / raw pt)
+  (setq raw (cutonce:prop ent propname))
   (if raw
     (progn
       (setq pt (vl-catch-all-apply
@@ -266,25 +266,25 @@
   )
 )
 
-(defun mwguard:near-zero-p (pt / tol)
+(defun coguard:near-zero-p (pt / tol)
   (setq tol 1e-6)
   (and pt (< (abs (car pt)) tol) (< (abs (cadr pt)) tol) (< (abs (caddr pt)) tol))
 )
 
-(defun mwguard:points-equal (a b)
+(defun coguard:points-equal (a b)
   (and a b (equal a b 1e-6))
 )
 
 ;; Xref insertion points in Model Space: ((name point) ...)
-(defun mwguard:xref-insert-points (doc / xrefnames pts bname ip)
-  (setq xrefnames (mwguard:xref-names doc) pts nil)
+(defun coguard:xref-insert-points (doc / xrefnames pts bname ip)
+  (setq xrefnames (coguard:xref-names doc) pts nil)
   (vl-catch-all-apply
     (function (lambda ()
       (vlax-for ent (vla-get-ModelSpace doc)
-        (if (and (= (mwise:object-name ent) "AcDbBlockReference")
-                 (setq bname (mwise:str-prop ent 'Name))
+        (if (and (= (cutonce:object-name ent) "AcDbBlockReference")
+                 (setq bname (cutonce:str-prop ent 'Name))
                  (member bname xrefnames)
-                 (setq ip (mwguard:get-point ent 'InsertionPoint)))
+                 (setq ip (coguard:get-point ent 'InsertionPoint)))
           (setq pts (cons (list bname ip) pts))
         )
       )
@@ -293,15 +293,15 @@
   pts
 )
 
-(defun mwguard:selection-has-xref (ss doc / xrefnames n i obj found)
+(defun coguard:selection-has-xref (ss doc / xrefnames n i obj found)
   (setq found nil)
   (if ss
     (progn
-      (setq xrefnames (mwguard:xref-names doc) n (sslength ss) i 0)
+      (setq xrefnames (coguard:xref-names doc) n (sslength ss) i 0)
       (while (and (< i n) (not found))
         (setq obj (vlax-ename->vla-object (ssname ss i)))
-        (if (and (= (mwise:object-name obj) "AcDbBlockReference")
-                 (member (mwise:str-prop obj 'Name) xrefnames))
+        (if (and (= (cutonce:object-name obj) "AcDbBlockReference")
+                 (member (cutonce:str-prop obj 'Name) xrefnames))
           (setq found T)
         )
         (setq i (1+ i))
@@ -311,19 +311,19 @@
   found
 )
 
-(defun mwguard:report-xref-move (before after / changed match)
+(defun coguard:report-xref-move (before after / changed match)
   (setq changed nil)
   (foreach b before
     (setq match nil)
     (foreach a after
-      (if (and (= (car a) (car b)) (mwguard:points-equal (cadr a) (cadr b))) (setq match T))
+      (if (and (= (car a) (car b)) (coguard:points-equal (cadr a) (cadr b))) (setq match T))
     )
     (if (not match) (setq changed T))
   )
   (if (or changed (/= (length before) (length after)))
     (progn
-      (mwguard:log-event "XREF-MOVED" "an xref insertion point changed position")
-      (mwise:notice
+      (coguard:log-event "XREF-MOVED" "an xref insertion point changed position")
+      (cutonce:notice
         (strcat
           "CutOnce Guard: an xref's position just changed (moved or copied).\n\n"
           "Moving or copying an xref shifts everything in it out of alignment\n"
@@ -333,7 +333,7 @@
         "GUARD_XREF_MOVED"
       )
     )
-    (mwguard:trace "MOVE/COPY ended - no xref moved.")
+    (coguard:trace "MOVE/COPY ended - no xref moved.")
   )
 )
 
@@ -341,8 +341,8 @@
 ;; Advisories
 ;; ---------------------------------------------------------------------------
 
-(defun mwguard:advise-refedit ( )
-  (mwise:notice
+(defun coguard:advise-refedit ( )
+  (cutonce:notice
     (strcat
       "CutOnce Guard: starting REFEDIT (in-place reference edit).\n\n"
       "Changes made now can be saved straight back into the referenced drawing\n"
@@ -353,8 +353,8 @@
   )
 )
 
-(defun mwguard:advise-refclose ( )
-  (mwise:notice
+(defun coguard:advise-refclose ( )
+  (cutonce:notice
     (strcat
       "CutOnce Guard: closing the in-place reference edit.\n\n"
       "Choosing Save writes your changes into the external drawing now, for\n"
@@ -364,8 +364,8 @@
   )
 )
 
-(defun mwguard:advise-promote ( )
-  (mwise:notice
+(defun coguard:advise-promote ( )
+  (cutonce:notice
     (strcat
       "CutOnce Guard: PROMOTEREFERENCE was just run.\n\n"
       "Promoting a data-shortcut reference makes an independent copy in this\n"
@@ -377,14 +377,14 @@
 )
 
 
-(defun mwguard:advise-text-once (cmd)
+(defun coguard:advise-text-once (cmd)
   ;; Shown once per Civil 3D session, across every open drawing (blackboard),
   ;; but every use is logged so plain-text habits can be measured.
-  (if (not (vl-bb-ref '*mwguard:bb-text-tip-shown*))
+  (if (not (vl-bb-ref '*coguard:bb-text-tip-shown*))
     (progn
-      (vl-bb-set '*mwguard:bb-text-tip-shown* T)
-      (mwguard:log-event "TEXT-TIP" (strcat cmd " started, tip shown"))
-      (mwise:notice
+      (vl-bb-set '*coguard:bb-text-tip-shown* T)
+      (coguard:log-event "TEXT-TIP" (strcat cmd " started, tip shown"))
+      (cutonce:notice
         (strcat
           "CutOnce Guard tip (shown once per session):\n\n"
           "Plain TEXT/MTEXT for stations, elevations or offsets won't update if\n"
@@ -395,7 +395,7 @@
         "GUARD_TEXT"
       )
     )
-    (mwguard:log-event "TEXT-USED" (strcat cmd " started (tip already shown this session)"))
+    (coguard:log-event "TEXT-USED" (strcat cmd " started (tip already shown this session)"))
   )
 )
 
@@ -404,85 +404,85 @@
 ;; turned off costs nothing (no snapshot is taken).
 ;; ---------------------------------------------------------------------------
 
-(defun mwguard:cmd-will-start (reactor arglist)
-  (vl-catch-all-apply 'mwguard:cmd-will-start-body (list arglist))
+(defun coguard:cmd-will-start (reactor arglist)
+  (vl-catch-all-apply 'coguard:cmd-will-start-body (list arglist))
   (princ)
 )
 
-(defun mwguard:cmd-will-start-body (arglist / cmd doc ss)
+(defun coguard:cmd-will-start-body (arglist / cmd doc ss)
   (setq cmd (strcase (car arglist)))
-  (if *mwguard:logall* (princ (strcat "\n[CutOnce Guard] command: " cmd)))
-  (setq doc (mwise:active-doc))
+  (if *coguard:logall* (princ (strcat "\n[CutOnce Guard] command: " cmd)))
+  (setq doc (cutonce:active-doc))
   (cond
     ((= cmd "EXPLODE")
-     (if (mwise:on-p "GuardExplode")
-       (setq *mwguard:explode-snapshot* (mwguard:object-snapshot doc)
-             *mwguard:explode-attrib-snapshot* (mwguard:attrib-block-count doc)))
+     (if (cutonce:on-p "GuardExplode")
+       (setq *coguard:explode-snapshot* (coguard:object-snapshot doc)
+             *coguard:explode-attrib-snapshot* (coguard:attrib-block-count doc)))
     )
     ((member cmd '("XREF" "-XREF" "XBIND" "-XBIND"))
-     (if (mwise:on-p "GuardXrefBind")
-       (setq *mwguard:xref-snapshot* (mwguard:xref-names doc)))
+     (if (cutonce:on-p "GuardXrefBind")
+       (setq *coguard:xref-snapshot* (coguard:xref-names doc)))
     )
     ((member cmd '("MOVE" "COPY"))
-     (if (mwise:on-p "GuardXrefMove")
+     (if (cutonce:on-p "GuardXrefMove")
        (progn
          ;; MOVE/COPY are frequent: check only the pickfirst selection when
          ;; there is one, and fall back to a full scan only when there is not.
          (setq ss (ssget "_I"))
-         (setq *mwguard:check-xref-move* (if (or (not ss) (mwguard:selection-has-xref ss doc)) T nil))
-         (setq *mwguard:xrefpts-snapshot* (if *mwguard:check-xref-move* (mwguard:xref-insert-points doc)))
+         (setq *coguard:check-xref-move* (if (or (not ss) (coguard:selection-has-xref ss doc)) T nil))
+         (setq *coguard:xrefpts-snapshot* (if *coguard:check-xref-move* (coguard:xref-insert-points doc)))
        )
      )
     )
     ((= cmd "REFEDIT")
-     (if (mwise:on-p "GuardRefEdit")
-       (progn (mwguard:log-event "ADVISORY-REFEDIT" "REFEDIT started") (mwguard:advise-refedit))))
+     (if (cutonce:on-p "GuardRefEdit")
+       (progn (coguard:log-event "ADVISORY-REFEDIT" "REFEDIT started") (coguard:advise-refedit))))
     ((member cmd '("REFCLOSE" "-REFCLOSE"))
-     (if (mwise:on-p "GuardRefEdit")
-       (progn (mwguard:log-event "ADVISORY-REFCLOSE" "REFCLOSE started") (mwguard:advise-refclose))))
+     (if (cutonce:on-p "GuardRefEdit")
+       (progn (coguard:log-event "ADVISORY-REFCLOSE" "REFCLOSE started") (coguard:advise-refclose))))
     ((= cmd "PROMOTEREFERENCE")
-     (if (mwise:on-p "GuardPromote")
-       (progn (mwguard:log-event "ADVISORY-PROMOTE" "PROMOTEREFERENCE run") (mwguard:advise-promote))))
+     (if (cutonce:on-p "GuardPromote")
+       (progn (coguard:log-event "ADVISORY-PROMOTE" "PROMOTEREFERENCE run") (coguard:advise-promote))))
     ((member cmd '("TEXT" "DTEXT" "MTEXT"))
-     (if (mwise:on-p "GuardTextTip") (mwguard:advise-text-once cmd)))
+     (if (cutonce:on-p "GuardTextTip") (coguard:advise-text-once cmd)))
   )
 )
 
-(defun mwguard:cmd-ended (reactor arglist)
-  (vl-catch-all-apply 'mwguard:cmd-ended-body (list arglist))
+(defun coguard:cmd-ended (reactor arglist)
+  (vl-catch-all-apply 'coguard:cmd-ended-body (list arglist))
   (princ)
 )
 
-(defun mwguard:cmd-ended-body (arglist / cmd doc)
+(defun coguard:cmd-ended-body (arglist / cmd doc)
   (setq cmd (strcase (car arglist)))
-  (setq doc (mwise:active-doc))
+  (setq doc (cutonce:active-doc))
   (cond
     ((= cmd "EXPLODE")
-     (if *mwguard:explode-snapshot*
-       (mwguard:report-civil-loss *mwguard:explode-snapshot* (mwguard:object-snapshot doc)))
-     (if *mwguard:explode-attrib-snapshot*
-       (mwguard:report-attrib-loss *mwguard:explode-attrib-snapshot* (mwguard:attrib-block-count doc)))
-     (setq *mwguard:explode-snapshot* nil *mwguard:explode-attrib-snapshot* nil)
+     (if *coguard:explode-snapshot*
+       (coguard:report-civil-loss *coguard:explode-snapshot* (coguard:object-snapshot doc)))
+     (if *coguard:explode-attrib-snapshot*
+       (coguard:report-attrib-loss *coguard:explode-attrib-snapshot* (coguard:attrib-block-count doc)))
+     (setq *coguard:explode-snapshot* nil *coguard:explode-attrib-snapshot* nil)
     )
     ((member cmd '("XREF" "-XREF" "XBIND" "-XBIND"))
-     (if *mwguard:xref-snapshot*
-       (mwguard:report-binds *mwguard:xref-snapshot* (mwguard:xref-names doc))
+     (if *coguard:xref-snapshot*
+       (coguard:report-binds *coguard:xref-snapshot* (coguard:xref-names doc))
      )
-     (setq *mwguard:xref-snapshot* nil)
+     (setq *coguard:xref-snapshot* nil)
     )
-    ((and (member cmd '("MOVE" "COPY")) *mwguard:check-xref-move*)
-     (mwguard:report-xref-move *mwguard:xrefpts-snapshot* (mwguard:xref-insert-points doc))
-     (setq *mwguard:xrefpts-snapshot* nil *mwguard:check-xref-move* nil)
+    ((and (member cmd '("MOVE" "COPY")) *coguard:check-xref-move*)
+     (coguard:report-xref-move *coguard:xrefpts-snapshot* (coguard:xref-insert-points doc))
+     (setq *coguard:xrefpts-snapshot* nil *coguard:check-xref-move* nil)
     )
   )
 )
 
-(defun mwguard:cmd-clear (reactor arglist)
-  (setq *mwguard:explode-snapshot* nil
-        *mwguard:explode-attrib-snapshot* nil
-        *mwguard:xref-snapshot* nil
-        *mwguard:xrefpts-snapshot* nil
-        *mwguard:check-xref-move* nil)
+(defun coguard:cmd-clear (reactor arglist)
+  (setq *coguard:explode-snapshot* nil
+        *coguard:explode-attrib-snapshot* nil
+        *coguard:xref-snapshot* nil
+        *coguard:xrefpts-snapshot* nil
+        *coguard:check-xref-move* nil)
   (princ)
 )
 
@@ -491,13 +491,13 @@
 ;; loader runs once per drawing, so this is exactly one row per open).
 ;; ---------------------------------------------------------------------------
 
-(defun mwguard:log-opened ( / doc drawpath)
-  (setq doc (mwise:active-doc))
-  (if (and (mwise:log-on-p "LogOpened")
+(defun coguard:log-opened ( / doc drawpath)
+  (setq doc (cutonce:active-doc))
+  (if (and (cutonce:log-on-p "LogOpened")
            (= (getvar "DWGTITLED") 1)
-           (setq drawpath (mwise:nonblank (mwise:str-prop doc 'FullName))))
-    (mwise:append-line (mwguard:opened-path) "Timestamp,User,DrawingPath,DrawingName"
-      (mwise:csv-row (list (mwise:timestamp) (mwise:user) drawpath (cond ((mwise:str-prop doc 'Name)) ("")))))
+           (setq drawpath (cutonce:nonblank (cutonce:str-prop doc 'FullName))))
+    (cutonce:append-line (coguard:opened-path) "Timestamp,User,DrawingPath,DrawingName"
+      (cutonce:csv-row (list (cutonce:timestamp) (cutonce:user) drawpath (cond ((cutonce:str-prop doc 'Name)) ("")))))
   )
 )
 
@@ -506,52 +506,52 @@
 ;; reload does not stack duplicates. (The save reactor is in CutOnce-Health.lsp.)
 ;; ---------------------------------------------------------------------------
 
-(if (not (boundp '*mwguard:cmd-reactor*)) (setq *mwguard:cmd-reactor* nil))
+(if (not (boundp '*coguard:cmd-reactor*)) (setq *coguard:cmd-reactor* nil))
 
-(defun mwguard:init ( )
-  (if (not *mwguard:cmd-reactor*)
-    (setq *mwguard:cmd-reactor*
+(defun coguard:init ( )
+  (if (not *coguard:cmd-reactor*)
+    (setq *coguard:cmd-reactor*
       (vlr-command-reactor nil
-        (list (cons :vlr-commandWillStart 'mwguard:cmd-will-start)
-              (cons :vlr-commandEnded     'mwguard:cmd-ended)
-              (cons :vlr-commandCancelled 'mwguard:cmd-clear)
-              (cons :vlr-commandFailed    'mwguard:cmd-clear))))
+        (list (cons :vlr-commandWillStart 'coguard:cmd-will-start)
+              (cons :vlr-commandEnded     'coguard:cmd-ended)
+              (cons :vlr-commandCancelled 'coguard:cmd-clear)
+              (cons :vlr-commandFailed    'coguard:cmd-clear))))
   )
-  (vl-catch-all-apply 'mwguard:log-opened nil)
+  (vl-catch-all-apply 'coguard:log-opened nil)
 )
 
 ;; ---------------------------------------------------------------------------
 ;; Commands
 ;; ---------------------------------------------------------------------------
 
-(setq *mwguard:switches*
+(setq *coguard:switches*
   '("GuardExplode" "GuardXrefBind" "GuardXrefMove" "GuardRefEdit" "GuardPromote"
     "GuardTextTip" "GuardGrowth" "GuardXrefOrigin"))
 
 (defun c:CUTONCE-GUARD-STATUS ( )
-  (mwguard:log (strcat "Command reactor:  " (if *mwguard:cmd-reactor* "active" "not loaded")))
-  (mwguard:log (strcat "Save reactor:     " (if *mwhealth:save-reactor* "active" "not loaded")))
-  (mwguard:log (strcat "Growth threshold: " (rtos (mwhealth:growth-pct) 2 0) "%"))
-  (mwguard:log (strcat "Log folder:       " (mwise:log-dir)))
-  (foreach k *mwguard:switches*
-    (princ (strcat "\n  " (mwise:setting-label k) ": " (if (mwise:on-p k) "on" "off")
-                   (if (mwise:locked-p k) "  (set by CAD admin)" "")))
+  (coguard:log (strcat "Command reactor:  " (if *coguard:cmd-reactor* "active" "not loaded")))
+  (coguard:log (strcat "Save reactor:     " (if *cohealth:save-reactor* "active" "not loaded")))
+  (coguard:log (strcat "Growth threshold: " (rtos (cohealth:growth-pct) 2 0) "%"))
+  (coguard:log (strcat "Log folder:       " (cutonce:log-dir)))
+  (foreach k *coguard:switches*
+    (princ (strcat "\n  " (cutonce:setting-label k) ": " (if (cutonce:on-p k) "on" "off")
+                   (if (cutonce:locked-p k) "  (set by CAD admin)" "")))
   )
   (princ "\n  Change these in the CutOnce Control Center (type CUTONCE).")
   (princ)
 )
 
 (defun c:CUTONCE-GUARD-CHECKNOW ( )
-  (vl-catch-all-apply 'mwhealth:check (list "Manual"))
+  (vl-catch-all-apply 'cohealth:check (list "Manual"))
   (princ)
 )
 
 (defun c:CUTONCE-GUARD-DUMPOBJECTS ( / counts)
-  (setq counts (mwguard:object-snapshot (mwise:active-doc)))
+  (setq counts (coguard:object-snapshot (cutonce:active-doc)))
   (if (not counts)
-    (mwguard:log "No AECC* or block objects in Model Space or any layout.")
+    (coguard:log "No AECC* or block objects in Model Space or any layout.")
     (progn
-      (mwguard:log "Raw ObjectName counts (Model Space + all layouts):")
+      (coguard:log "Raw ObjectName counts (Model Space + all layouts):")
       (foreach pair (vl-sort counts (function (lambda (a b) (< (car a) (car b)))))
         (princ (strcat "\n  " (car pair) " = " (itoa (cdr pair))))
       )
@@ -561,29 +561,29 @@
 )
 
 (defun c:CUTONCE-GUARD-LOG ( )
-  (mwguard:log (strcat "Health history: " (mwhealth:path)))
-  (mwguard:log (strcat "Xref detail:    " (mwhealth:xrefs-path)))
-  (mwguard:log (strcat "Event log:      " (mwise:events-path)))
-  (mwguard:log (strcat "Opened log:     " (mwguard:opened-path)))
-  (mwguard:log (strcat "Logging is " (if (mwise:on-p "LogEnabled") "on." "OFF (turn it on in the Control Center: CUTONCE).")))
+  (coguard:log (strcat "Health history: " (cohealth:path)))
+  (coguard:log (strcat "Xref detail:    " (cohealth:xrefs-path)))
+  (coguard:log (strcat "Event log:      " (cutonce:events-path)))
+  (coguard:log (strcat "Opened log:     " (coguard:opened-path)))
+  (coguard:log (strcat "Logging is " (if (cutonce:on-p "LogEnabled") "on." "OFF (turn it on in the Control Center: CUTONCE).")))
   (princ)
 )
 
 ;; Index of a column in a CSV header line, or nil.
-(defun mwguard:col (header name)
-  (if header (vl-position name (mwise:csv-split header ",")))
+(defun coguard:col (header name)
+  (if header (vl-position name (cutonce:csv-split header ",")))
 )
 
 ;; Every drawing seen in Opened.csv or Health.csv, its latest health row and
 ;; its flagged-event count, whether or not it is open now.
-(defun mwguard:summary ( / lines hdr ip in it fields dp dn pair byDraw evcounts lastRow names vals)
+(defun coguard:summary ( / lines hdr ip in it fields dp dn pair byDraw evcounts lastRow names vals)
   (setq byDraw nil)
   ;; Opened.csv
-  (setq lines (mwise:read-lines (mwguard:opened-path)) hdr (car lines)
-        ip (mwguard:col hdr "DrawingPath") in (mwguard:col hdr "DrawingName"))
+  (setq lines (cutonce:read-lines (coguard:opened-path)) hdr (car lines)
+        ip (coguard:col hdr "DrawingPath") in (coguard:col hdr "DrawingName"))
   (if (and ip in)
     (foreach line (cdr lines)
-      (setq fields (mwise:csv-split line ","))
+      (setq fields (cutonce:csv-split line ","))
       (if (> (length fields) (max ip in))
         (progn
           (setq dp (nth ip fields) dn (nth in fields))
@@ -593,12 +593,12 @@
     )
   )
   ;; Health.csv (current layout only; archived files are not read)
-  (setq lines (mwise:read-lines (mwhealth:path)) hdr (car lines))
-  (if (= hdr (mwhealth:header))
+  (setq lines (cutonce:read-lines (cohealth:path)) hdr (car lines))
+  (if (= hdr (cohealth:header))
     (progn
-      (setq ip (mwguard:col hdr "DrawingPath") in (mwguard:col hdr "DrawingName"))
+      (setq ip (coguard:col hdr "DrawingPath") in (coguard:col hdr "DrawingName"))
       (foreach line (cdr lines)
-        (setq fields (mwise:csv-split line ","))
+        (setq fields (cutonce:csv-split line ","))
         (if (> (length fields) (max ip in))
           (progn
             (setq dp (nth ip fields) dn (nth in fields) pair (assoc dp byDraw))
@@ -611,11 +611,11 @@
     )
   )
   ;; Events.csv
-  (setq evcounts nil lines (mwise:read-lines (mwise:events-path)) hdr (car lines)
-        ip (mwguard:col hdr "DrawingPath"))
+  (setq evcounts nil lines (cutonce:read-lines (cutonce:events-path)) hdr (car lines)
+        ip (coguard:col hdr "DrawingPath"))
   (if ip
     (foreach line (cdr lines)
-      (setq fields (mwise:csv-split line ","))
+      (setq fields (cutonce:csv-split line ","))
       (if (> (length fields) ip)
         (progn
           (setq dp (nth ip fields) pair (assoc dp evcounts))
@@ -625,9 +625,9 @@
     )
   )
   (if (not byDraw)
-    (mwguard:log "Nothing tracked yet - open or save a drawing first.")
+    (coguard:log "Nothing tracked yet - open or save a drawing first.")
     (progn
-      (mwguard:log (strcat (itoa (length byDraw)) " drawing(s) tracked:"))
+      (coguard:log (strcat (itoa (length byDraw)) " drawing(s) tracked:"))
       (foreach row byDraw
         (setq dp (car row) dn (cadr row) lastRow (cddr row))
         (princ (strcat "\n  " dn "  (" dp ")"))
@@ -635,9 +635,9 @@
         (if lastRow
           (progn
             (princ (strcat "\n    last check: " (nth 0 lastRow) " (" (nth 1 lastRow) ")\n    "))
-            (setq names (mwhealth:columns) vals lastRow)
+            (setq names (cohealth:columns) vals lastRow)
             (while (and vals names)
-              (if (not (member (car names) *mwhealth:id-columns*))
+              (if (not (member (car names) *cohealth:id-columns*))
                 (princ (strcat (car names) "=" (car vals) "  ")))
               (setq vals (cdr vals) names (cdr names))
             )
@@ -651,19 +651,19 @@
 )
 
 (defun c:CUTONCE-GUARD-SUMMARY ( / r)
-  (setq r (vl-catch-all-apply 'mwguard:summary nil))
-  (if (vl-catch-all-error-p r) (mwguard:log (strcat "Summary failed: " (vl-catch-all-error-message r))))
+  (setq r (vl-catch-all-apply 'coguard:summary nil))
+  (if (vl-catch-all-error-p r) (coguard:log (strcat "Summary failed: " (vl-catch-all-error-message r))))
   (princ)
 )
 
 (defun c:CUTONCE-GUARD-LOGCOMMANDS ( )
-  (setq *mwguard:logall* (not *mwguard:logall*))
-  (mwguard:log
-    (if *mwguard:logall*
+  (setq *coguard:logall* (not *coguard:logall*))
+  (coguard:log
+    (if *coguard:logall*
       "Command echo ON - every command name prints as it starts. Run CUTONCE-GUARD-LOGCOMMANDS again to stop."
       "Command echo OFF."))
   (princ)
 )
 
-(mwguard:init)
+(coguard:init)
 (princ)

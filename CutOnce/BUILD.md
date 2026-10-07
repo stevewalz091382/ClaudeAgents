@@ -41,7 +41,7 @@ powershell -ExecutionPolicy Bypass -File build\Make-Release.ps1
 
 This produces `dist\CutOnce-<version>.zip` with the bundle (loader, config, VLX, manifest), the installers and `README.md`. The sources are left out.
 
-The publisher is set to Stephen Walz in `CutOnce.bundle\PackageContents.xml`. Bump `AppVersion` there, and `*mwise:version*` in `src\CutOnce-Core.lsp`, for each release. Keep `UpgradeCode` the same across all releases.
+The publisher is set to Stephen Walz in `CutOnce.bundle\PackageContents.xml`. Bump `AppVersion` there, and `*cutonce:version*` in `src\CutOnce-Core.lsp`, for each release. Keep `UpgradeCode` the same across all releases.
 
 ## 5. Smoke test (each Civil 3D release you support)
 
@@ -55,13 +55,11 @@ The publisher is set to Stephen Walz in `CutOnce.bundle\PackageContents.xml`. Bu
 | `EXPLODE` an alignment, then `U` | Guard warning, and a row in `Events.csv`. |
 | Open a drawing with a non-ByLayer object or a broken xref | The standards check reports it on open. |
 | Save | A row in `Health.csv`. |
-| `MW`, `MW-STATUS`, `MODELWISE`, `C3DTOOLS-STATUS` | Each runs the matching `CUTONCE` command. |
-| Install over an existing ModelWise | `ModelWise.bundle` is removed; its config, log folder, logs and each designer's choices carry over. |
 | `CUTONCE-IMPACT-RESTORE` | MOVE, STRETCH, ROTATE and SCALE all work normally. |
 
 ## 6. Before listing publicly
 
-- [ ] **Legal review of the audit/health logging (formerly C3DAudit).** The trial version described itself as recreating an existing Power BI dashboard, built around specific project drawings. If that dashboard, its metric set or its column names belong to HDR (or any other employer or client), counsel needs to clear C3DAudit before it is listed. Removing that wording from the comments does not settle the question. Also confirm who owns the code in all four tools, given the employment and IP-assignment terms in force while it was written.
+- [ ] **Legal review of the Health logging.** The trial version described itself as recreating an existing Power BI dashboard, built around specific project drawings. If that dashboard, its metric set or its column names belong to HDR (or any other employer or client), counsel needs to clear C3DAudit before it is listed. Removing that wording from the comments does not settle the question. Also confirm who owns the code in all four tools, given the employment and IP-assignment terms in force while it was written.
 - [ ] Support contact and privacy statement for the store listing. The tools write drawing paths and names to local CSV files. They make no network calls.
 - [ ] Disclose MOVE/STRETCH/ROTATE/SCALE interception in the listing text (see README).
 - [ ] Smoke test passed on every Civil 3D release named in the listing.

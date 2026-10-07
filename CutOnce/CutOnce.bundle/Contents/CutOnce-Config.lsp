@@ -17,7 +17,7 @@
 ;;; Control Center and the value here always applies.
 ;;; ============================================================================
 
-(setq *mwise:config*
+(setq *cutonce:config*
   '(
     ;; ---- Folders -----------------------------------------------------------
 
@@ -53,7 +53,7 @@
     ("GuardGrowth"      . T)    ; unusual growth since the last check
     ("GuardXrefOrigin"  . T)    ; xref not inserted at 0,0,0
 
-    ;; Standards check when a drawing opens (formerly ByLayerCheck)
+    ;; Standards check when a drawing opens
     ("StdCheckOnOpen"   . T)    ; run the check on open (CUTONCE-CHECK runs it any time)
     ("StdByLayer"       . T)    ; objects whose color or linetype is not ByLayer
     ("StdXrefStatus"    . T)    ; xrefs broken (not found) or unloaded
@@ -104,8 +104,6 @@
     ;; ---- Learn More links --------------------------------------------------
 
     ;; Page opened by the Learn More buttons: "Civil 3D Warnings Explained".
-    ;; A config carried over from C3DTools that still names the retired
-    ;; kb-tools-for-civil-3d page is ignored, so it reaches this page instead.
     ("LearnMoreUrl" . "https://designtovisualization.com/kb-c3d-and-modelwise-assistant/")
 
     ;; Section of that page for each warning (the part after "#"), matching

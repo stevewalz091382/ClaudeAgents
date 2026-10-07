@@ -21,86 +21,84 @@
 ;;;   CUTONCE     the dialog
 ;;;   -CUTONCE    command-line version for scripts and macros, e.g.
 ;;;                         ^C^C-CUTONCE;LogEnabled;;  toggles logging
-;;;   Older ModelWise / C3DTools / ByLayerCheck command names still work; see the
-;;;   "Older command names" section at the end of this file.
 ;;;
 ;;; This file loads last. It also runs the open-time work for the drawing
 ;;; (standards check and Health.csv row) once everything else is loaded.
 ;;;
-;;; Naming: every function and global here starts with mwcc: / *mwcc:.
+;;; Naming: every function and global here starts with cocc: / *cocc:.
 ;;; Requires all other CutOnce files.
 ;;; ============================================================================
 
 (vl-load-com)
 
-(defun mwcc:log (msg) (mwise:msg "CutOnce" msg))
+(defun cocc:log (msg) (cutonce:msg "CutOnce" msg))
 
 ;; Master switch -> the items it governs (greyed out while it is off).
-(setq *mwcc:children*
+(setq *cocc:children*
   '(("ImpactWarnings" "ImpactGrips" "ImpactSurface" "ImpactTransform" "ImpactOther" "every" "once")
     ("StdCheckOnOpen" "StdByLayer" "StdXrefStatus" "StdXrefOrigin" "StdAlwaysShow")
     ("LogEnabled" "LogHealthOnSave" "LogHealthOnOpen" "LogXrefs" "LogEvents" "LogOpened")))
 
-(defun mwcc:icpt-key (cn) (strcat "icpt_" cn))
+(defun cocc:icpt-key (cn) (strcat "icpt_" cn))
 
 ;; ---------------------------------------------------------------------------
-;; Interception defaults (same rules as mwimpact:intercept-wanted-p)
+;; Interception defaults (same rules as coimpact:intercept-wanted-p)
 ;; ---------------------------------------------------------------------------
 
-(defun mwcc:intercept-default-p (cn / def)
-  (setq def (mwise:cfg "ImpactInterceptDefault" nil))
+(defun cocc:intercept-default-p (cn / def)
+  (setq def (cutonce:cfg "ImpactInterceptDefault" nil))
   (cond
-    ((not (mwimpact:intercept-allowed-p)) nil)
+    ((not (coimpact:intercept-allowed-p)) nil)
     ((null def) nil)
-    ((listp def) (if (member cn (mapcar 'strcase (vl-remove-if-not 'mwise:nonblank def))) T))
+    ((listp def) (if (member cn (mapcar 'strcase (vl-remove-if-not 'cutonce:nonblank def))) T))
     (T T)
   )
 )
 
 ;; Turns interception on/off for one command. With reset, a choice equal to
 ;; the administrator default is stored as "no choice".
-(defun mwcc:apply-intercept (cn on reset)
-  (if (and reset (eq (if on T nil) (mwcc:intercept-default-p cn)))
+(defun cocc:apply-intercept (cn on reset)
+  (if (and reset (eq (if on T nil) (cocc:intercept-default-p cn)))
     (progn
-      (mwise:pref-set (strcat "ImpactIntercept." cn) "")
-      (if (mwise:pref-get "ImpactIntercept") (mwise:pref-set "ImpactIntercept" ""))
-      (if on (mwimpact:intercept-on cn) (mwimpact:intercept-off cn))
+      (cutonce:pref-set (strcat "ImpactIntercept." cn) "")
+      (if (cutonce:pref-get "ImpactIntercept") (cutonce:pref-set "ImpactIntercept" ""))
+      (if on (coimpact:intercept-on cn) (coimpact:intercept-off cn))
     )
-    (mwimpact:set-intercept cn on)
+    (coimpact:set-intercept cn on)
   )
 )
 
-(defun mwcc:default-freq ( )
-  (if (= (mwise:cfg "ImpactWarnFrequency" "every") "once") "once" "every")
+(defun cocc:default-freq ( )
+  (if (= (cutonce:cfg "ImpactWarnFrequency" "every") "once") "once" "every")
 )
 
 ;; ---------------------------------------------------------------------------
 ;; Dialog definition (DCL written to a temp file on first use)
 ;; ---------------------------------------------------------------------------
 
-(if (not (boundp '*mwcc:dcl-path*)) (setq *mwcc:dcl-path* nil))
+(if (not (boundp '*cocc:dcl-path*)) (setq *cocc:dcl-path* nil))
 
-(defun mwcc:toggle-line (key)
-  (strcat "      : toggle { key = \"" key "\"; label = \"" (mwise:setting-label key) "\"; }")
+(defun cocc:toggle-line (key)
+  (strcat "      : toggle { key = \"" key "\"; label = \"" (cutonce:setting-label key) "\"; }")
 )
 
-(defun mwcc:group-lines (title keys extra)
+(defun cocc:group-lines (title keys extra)
   (append
     (list "    : boxed_column {" (strcat "      label = \"" title "\";"))
-    (mapcar 'mwcc:toggle-line keys)
+    (mapcar 'cocc:toggle-line keys)
     extra
     (list "    }"))
 )
 
-(defun mwcc:dcl-lines ( )
+(defun cocc:dcl-lines ( )
   (append
     (list
-      "mwcc_dialog : dialog {"
+      "cocc_dialog : dialog {"
       "  label = \"CutOnce Control Center\";"
       "  : text { label = \"Choose which checks, warnings and logs run for you. Changes apply to every open drawing.\"; }"
       "  : row {"
       "   : column {")
-    (mwcc:group-lines "Change-impact warnings"
+    (cocc:group-lines "Change-impact warnings"
       '("ImpactWarnings" "ImpactGrips" "ImpactSurface" "ImpactTransform" "ImpactOther")
       (list
         "      : radio_column {"
@@ -119,19 +117,19 @@
       "      }"
       "      : button { key = \"icpt_about\"; label = \"What interception does...\"; fixed_width = true; }"
       "    }")
-    (mwcc:group-lines "Data-loss guards"
+    (cocc:group-lines "Data-loss guards"
       '("GuardExplode" "GuardXrefBind" "GuardXrefMove" "GuardRefEdit" "GuardPromote" "GuardTextTip")
       nil)
     (list
       "   }"
       "   : column {")
-    (mwcc:group-lines "Checks on save"
+    (cocc:group-lines "Checks on save"
       '("GuardGrowth" "GuardXrefOrigin")
       nil)
-    (mwcc:group-lines "Standards check when a drawing opens"
+    (cocc:group-lines "Standards check when a drawing opens"
       '("StdCheckOnOpen" "StdByLayer" "StdXrefStatus" "StdXrefOrigin" "StdAlwaysShow" "StdScanBlocks")
       nil)
-    (mwcc:group-lines "Logging"
+    (cocc:group-lines "Logging"
       '("LogEnabled" "LogHealthOnSave" "LogHealthOnOpen" "LogXrefs" "LogEvents" "LogOpened")
       (list
         "      : text { key = \"logdir\"; width = 60; }"
@@ -151,88 +149,88 @@
   )
 )
 
-(defun mwcc:ensure-dcl ( / path f)
-  (if (not (and *mwcc:dcl-path* (findfile *mwcc:dcl-path*)))
+(defun cocc:ensure-dcl ( / path f)
+  (if (not (and *cocc:dcl-path* (findfile *cocc:dcl-path*)))
     (progn
-      (setq path (vl-filename-mktemp "mwcc" nil ".dcl"))
+      (setq path (vl-filename-mktemp "cocc" nil ".dcl"))
       (if (setq f (open path "w"))
         (progn
-          (foreach ln (mwcc:dcl-lines) (write-line ln f))
+          (foreach ln (cocc:dcl-lines) (write-line ln f))
           (close f)
-          (setq *mwcc:dcl-path* path)
+          (setq *cocc:dcl-path* path)
         )
       )
     )
   )
-  *mwcc:dcl-path*
+  *cocc:dcl-path*
 )
 
 ;; ---------------------------------------------------------------------------
 ;; Dialog behaviour (these run while the dialog is open)
 ;; ---------------------------------------------------------------------------
 
-(setq *mwcc:reset* nil)
-(setq *mwcc:values* nil)
+(setq *cocc:reset* nil)
+(setq *cocc:values* nil)
 
-(defun mwcc:tile-on (key) (= (get_tile key) "1"))
+(defun cocc:tile-on (key) (= (get_tile key) "1"))
 
 ;; Greys out locked items, and children of a master switch that is off.
-(defun mwcc:refresh-modes ( / allowed parentOff)
-  (foreach key (mwise:setting-keys)
-    (mode_tile key (if (mwise:locked-p key) 1 0))
+(defun cocc:refresh-modes ( / allowed parentOff)
+  (foreach key (cutonce:setting-keys)
+    (mode_tile key (if (cutonce:locked-p key) 1 0))
   )
   (foreach k '("every" "once")
-    (mode_tile k (if (mwise:locked-p "ImpactWarnFrequency") 1 0))
+    (mode_tile k (if (cutonce:locked-p "ImpactWarnFrequency") 1 0))
   )
-  (foreach grp *mwcc:children*
-    (setq parentOff (not (mwcc:tile-on (car grp))))
+  (foreach grp *cocc:children*
+    (setq parentOff (not (cocc:tile-on (car grp))))
     (foreach child (cdr grp)
       (if (or parentOff
-              (mwise:locked-p child)
-              (and (member child '("every" "once")) (mwise:locked-p "ImpactWarnFrequency")))
+              (cutonce:locked-p child)
+              (and (member child '("every" "once")) (cutonce:locked-p "ImpactWarnFrequency")))
         (mode_tile child 1)
         (mode_tile child 0)
       )
     )
   )
-  (setq allowed (mwimpact:intercept-allowed-p))
-  (foreach cn *mwimpact:native-commands*
-    (mode_tile (mwcc:icpt-key cn) (if (or (not allowed) (member cn *mwimpact:foreign*)) 1 0))
+  (setq allowed (coimpact:intercept-allowed-p))
+  (foreach cn *coimpact:native-commands*
+    (mode_tile (cocc:icpt-key cn) (if (or (not allowed) (member cn *coimpact:foreign*)) 1 0))
   )
 )
 
-(defun mwcc:fill-tiles (useDefaults)
-  (foreach key (mwise:setting-keys)
-    (if (not (and useDefaults (mwise:locked-p key)))
-      (set_tile key (if (if useDefaults (mwise:setting-default key) (mwise:on-p key)) "1" "0")))
+(defun cocc:fill-tiles (useDefaults)
+  (foreach key (cutonce:setting-keys)
+    (if (not (and useDefaults (cutonce:locked-p key)))
+      (set_tile key (if (if useDefaults (cutonce:setting-default key) (cutonce:on-p key)) "1" "0")))
   )
-  (if (not (and useDefaults (mwise:locked-p "ImpactWarnFrequency")))
-    (set_tile "freq" (if useDefaults (mwcc:default-freq) (mwimpact:warn-mode))))
-  (foreach cn *mwimpact:native-commands*
-    (set_tile (mwcc:icpt-key cn)
-      (if (if useDefaults (mwcc:intercept-default-p cn) (mwimpact:intercept-active-p cn)) "1" "0"))
+  (if (not (and useDefaults (cutonce:locked-p "ImpactWarnFrequency")))
+    (set_tile "freq" (if useDefaults (cocc:default-freq) (coimpact:warn-mode))))
+  (foreach cn *coimpact:native-commands*
+    (set_tile (cocc:icpt-key cn)
+      (if (if useDefaults (cocc:intercept-default-p cn) (coimpact:intercept-active-p cn)) "1" "0"))
   )
-  (mwcc:refresh-modes)
+  (cocc:refresh-modes)
 )
 
-(defun mwcc:press-defaults ( )
-  (setq *mwcc:reset* T)
-  (mwcc:fill-tiles T)
+(defun cocc:press-defaults ( )
+  (setq *cocc:reset* T)
+  (cocc:fill-tiles T)
   (set_tile "locknote" "Defaults restored in the dialog. Click OK to keep them.")
 )
 
-(defun mwcc:capture ( )
-  (setq *mwcc:values*
+(defun cocc:capture ( )
+  (setq *cocc:values*
     (append
-      (mapcar (function (lambda (k) (cons k (get_tile k)))) (mwise:setting-keys))
+      (mapcar (function (lambda (k) (cons k (get_tile k)))) (cutonce:setting-keys))
       (list (cons "freq" (get_tile "freq")))
-      (mapcar (function (lambda (cn) (cons cn (get_tile (mwcc:icpt-key cn))))) *mwimpact:native-commands*)))
+      (mapcar (function (lambda (cn) (cons cn (get_tile (cocc:icpt-key cn))))) *coimpact:native-commands*)))
 )
 
-(defun mwcc:about-intercept ( )
-  (alert (mwise:join
-           (if (mwimpact:intercept-allowed-p)
-             (append *mwimpact:intercept-text*
+(defun cocc:about-intercept ( )
+  (alert (cutonce:join
+           (if (coimpact:intercept-allowed-p)
+             (append *coimpact:intercept-text*
                      (list "" "Interception only shows a warning when change-impact warnings"
                               "and \"MOVE / STRETCH / ROTATE / SCALE\" are switched on."))
              (list "Command interception has been disabled by your CAD administrator."))
@@ -240,7 +238,7 @@
 )
 
 ;; Opens a folder in Windows Explorer.
-(defun mwcc:open-folder (dir / sh)
+(defun cocc:open-folder (dir / sh)
   (setq sh (vl-catch-all-apply 'vlax-get-or-create-object (list "Shell.Application")))
   (if (and sh (not (vl-catch-all-error-p sh)))
     (progn
@@ -252,34 +250,34 @@
   (princ)
 )
 
-(defun mwcc:any-locked-p ( )
-  (or (vl-some 'mwise:locked-p (mwise:setting-keys))
-      (mwise:locked-p "ImpactWarnFrequency")
-      (not (mwimpact:intercept-allowed-p)))
+(defun cocc:any-locked-p ( )
+  (or (vl-some 'cutonce:locked-p (cutonce:setting-keys))
+      (cutonce:locked-p "ImpactWarnFrequency")
+      (not (coimpact:intercept-allowed-p)))
 )
 
 ;; ---------------------------------------------------------------------------
 ;; Applying the captured choices
 ;; ---------------------------------------------------------------------------
 
-(defun mwcc:apply (values reset / on freq)
-  (foreach key (mwise:setting-keys)
+(defun cocc:apply (values reset / on freq)
+  (foreach key (cutonce:setting-keys)
     (setq on (= (cdr (assoc key values)) "1"))
-    (if (or reset (not (eq on (mwise:on-p key))))
-      (mwise:set-on key on))
+    (if (or reset (not (eq on (cutonce:on-p key))))
+      (cutonce:set-on key on))
   )
   (setq freq (cdr (assoc "freq" values)))
   (if (and (member freq '("every" "once"))
-           (not (mwise:locked-p "ImpactWarnFrequency"))
-           (or reset (/= freq (mwimpact:warn-mode))))
-    (mwimpact:set-warn-mode freq))
-  (if (mwimpact:intercept-allowed-p)
-    (foreach cn *mwimpact:native-commands*
-      (if (not (member cn *mwimpact:foreign*))
+           (not (cutonce:locked-p "ImpactWarnFrequency"))
+           (or reset (/= freq (coimpact:warn-mode))))
+    (coimpact:set-warn-mode freq))
+  (if (coimpact:intercept-allowed-p)
+    (foreach cn *coimpact:native-commands*
+      (if (not (member cn *coimpact:foreign*))
         (progn
           (setq on (= (cdr (assoc cn values)) "1"))
-          (if (or reset (not (eq on (if (mwimpact:intercept-active-p cn) T nil))))
-            (mwcc:apply-intercept cn on reset))
+          (if (or reset (not (eq on (if (coimpact:intercept-active-p cn) T nil))))
+            (cocc:apply-intercept cn on reset))
         )
       )
     )
@@ -290,82 +288,82 @@
 ;; CUTONCE (dialog)
 ;; ---------------------------------------------------------------------------
 
-(defun mwcc:dialog ( / path dcl_id result)
-  (setq path (mwcc:ensure-dcl) *mwcc:reset* nil *mwcc:values* nil result 0)
+(defun cocc:dialog ( / path dcl_id result)
+  (setq path (cocc:ensure-dcl) *cocc:reset* nil *cocc:values* nil result 0)
   (if (and path (> (setq dcl_id (load_dialog path)) 0))
     (progn
-      (if (new_dialog "mwcc_dialog" dcl_id)
+      (if (new_dialog "cocc_dialog" dcl_id)
         (progn
-          (mwcc:fill-tiles nil)
-          (set_tile "logdir" (strcat "Log folder: " (mwise:log-dir)))
+          (cocc:fill-tiles nil)
+          (set_tile "logdir" (strcat "Log folder: " (cutonce:log-dir)))
           (set_tile "locknote"
-            (if (mwcc:any-locked-p) "Greyed-out items are set by your CAD administrator." ""))
-          (foreach grp *mwcc:children*
-            (action_tile (car grp) "(mwcc:refresh-modes)"))
-          (action_tile "icpt_about" "(mwcc:about-intercept)")
-          (action_tile "openlogs" "(mwcc:open-folder (mwise:log-dir))")
-          (action_tile "defaults" "(mwcc:press-defaults)")
-          (action_tile "learn_more" "(mwise:open-kb \"CONTROL_CENTER\")")
-          (action_tile "accept" "(mwcc:capture)(done_dialog 1)")
+            (if (cocc:any-locked-p) "Greyed-out items are set by your CAD administrator." ""))
+          (foreach grp *cocc:children*
+            (action_tile (car grp) "(cocc:refresh-modes)"))
+          (action_tile "icpt_about" "(cocc:about-intercept)")
+          (action_tile "openlogs" "(cocc:open-folder (cutonce:log-dir))")
+          (action_tile "defaults" "(cocc:press-defaults)")
+          (action_tile "learn_more" "(cutonce:open-kb \"CONTROL_CENTER\")")
+          (action_tile "accept" "(cocc:capture)(done_dialog 1)")
           (action_tile "cancel" "(done_dialog 0)")
           (setq result (start_dialog))
         )
       )
       (unload_dialog dcl_id)
     )
-    (mwcc:log "Dialog unavailable - use -CUTONCE instead.")
+    (cocc:log "Dialog unavailable - use -CUTONCE instead.")
   )
-  (if (and (= result 1) *mwcc:values*)
+  (if (and (= result 1) *cocc:values*)
     (progn
-      (mwcc:apply *mwcc:values* *mwcc:reset*)
-      (mwcc:log "Settings saved. They apply to every open drawing.")
-      (mwcc:print-summary)
+      (cocc:apply *cocc:values* *cocc:reset*)
+      (cocc:log "Settings saved. They apply to every open drawing.")
+      (cocc:print-summary)
     )
   )
   (princ)
 )
 
-(defun c:CUTONCE ( ) (mwcc:dialog))
+(defun c:CUTONCE ( ) (cocc:dialog))
 
 ;; ---------------------------------------------------------------------------
 ;; Listing
 ;; ---------------------------------------------------------------------------
 
-(setq *mwcc:group-titles*
+(setq *cocc:group-titles*
   '(("Impact" . "Change-impact warnings")
     ("Guard"  . "Data-loss guards")
     ("Save"   . "Checks on save")
     ("Open"   . "Standards check when a drawing opens")
     ("Log"    . "Logging")))
 
-(defun mwcc:print-all ( / grp)
-  (mwcc:log "Current settings (type a name to toggle it):")
-  (foreach g *mwcc:group-titles*
+(defun cocc:print-all ( / grp)
+  (cocc:log "Current settings (type a name to toggle it):")
+  (foreach g *cocc:group-titles*
     (princ (strcat "\n  " (cdr g)))
-    (foreach e *mwise:settings*
+    (foreach e *cutonce:settings*
       (if (= (cadr e) (car g))
-        (princ (strcat "\n    " (if (mwise:on-p (car e)) "[on]  " "[off] ") (car e)
-                       "  - " (caddr e) (if (mwise:locked-p (car e)) "  (set by CAD admin)" ""))))
+        (princ (strcat "\n    " (if (cutonce:on-p (car e)) "[on]  " "[off] ") (car e)
+                       "  - " (caddr e) (if (cutonce:locked-p (car e)) "  (set by CAD admin)" ""))))
     )
     (if (= (car g) "Impact")
       (progn
-        (princ (strcat "\n    Frequency: " (if (= (mwimpact:warn-mode) "once") "once per command per session" "every time")))
+        (princ (strcat "\n    Frequency: " (if (= (coimpact:warn-mode) "once") "once per command per session" "every time")))
         (princ "\n    Interception: ")
-        (if (not (mwimpact:intercept-allowed-p))
+        (if (not (coimpact:intercept-allowed-p))
           (princ "disabled by your CAD administrator")
-          (foreach cn *mwimpact:native-commands*
-            (princ (strcat cn " " (if (mwimpact:intercept-active-p cn) "ON" "off") "  "))))
+          (foreach cn *coimpact:native-commands*
+            (princ (strcat cn " " (if (coimpact:intercept-active-p cn) "ON" "off") "  "))))
       )
     )
   )
-  (princ (strcat "\n  Log folder: " (mwise:log-dir)))
+  (princ (strcat "\n  Log folder: " (cutonce:log-dir)))
   (princ)
 )
 
-(defun mwcc:print-summary ( / off)
-  (setq off (vl-remove-if 'mwise:on-p (mwise:setting-keys)))
-  (princ (strcat "\n  Logging: " (if (mwise:on-p "LogEnabled") "on" "OFF")
-                 "   Impact warnings: " (if (mwise:on-p "ImpactWarnings") "on" "OFF")
+(defun cocc:print-summary ( / off)
+  (setq off (vl-remove-if 'cutonce:on-p (cutonce:setting-keys)))
+  (princ (strcat "\n  Logging: " (if (cutonce:on-p "LogEnabled") "on" "OFF")
+                 "   Impact warnings: " (if (cutonce:on-p "ImpactWarnings") "on" "OFF")
                  "   Switched off: " (if off (itoa (length off)) "none")))
   (princ "\n  Type -CUTONCE then List for the full list.")
   (princ)
@@ -379,18 +377,18 @@
 ;;        ^C^C-CUTONCE;Move;X;
 ;; ---------------------------------------------------------------------------
 
-(setq *mwcc:keywords* '("LIST" "FREQUENCY" "MOVE" "STRETCH" "ROTATE" "SCALE" "WARNINGS" "DEFAULTS" "EXIT"))
+(setq *cocc:keywords* '("LIST" "FREQUENCY" "MOVE" "STRETCH" "ROTATE" "SCALE" "WARNINGS" "DEFAULTS" "EXIT"))
 
 ;; Resolves typed input to a keyword or setting key; nil if unknown/ambiguous.
-(setq *mwcc:abbrev*
+(setq *cocc:abbrev*
   '(("X" . "EXIT") ("L" . "LIST") ("F" . "FREQUENCY") ("M" . "MOVE") ("ST" . "STRETCH")
     ("R" . "ROTATE") ("SC" . "SCALE") ("W" . "WARNINGS") ("D" . "DEFAULTS")))
 
-(defun mwcc:resolve (in / up names exact pre)
+(defun cocc:resolve (in / up names exact pre)
   (setq up (strcase in))
-  (setq names (append *mwcc:keywords* (mapcar 'strcase (mwise:setting-keys))))
+  (setq names (append *cocc:keywords* (mapcar 'strcase (cutonce:setting-keys))))
   (cond
-    ((assoc up *mwcc:abbrev*) (cdr (assoc up *mwcc:abbrev*)))
+    ((assoc up *cocc:abbrev*) (cdr (assoc up *cocc:abbrev*)))
     ((setq exact (car (vl-member-if (function (lambda (n) (= n up))) names))) exact)
     (T
      (setq pre (vl-remove-if-not (function (lambda (n) (wcmatch n (strcat up "*")))) names))
@@ -399,154 +397,83 @@
   )
 )
 
-(defun mwcc:key-from-upper (up)
-  (car (vl-member-if (function (lambda (k) (= (strcase k) up))) (mwise:setting-keys)))
+(defun cocc:key-from-upper (up)
+  (car (vl-member-if (function (lambda (k) (= (strcase k) up))) (cutonce:setting-keys)))
 )
 
-(defun mwcc:toggle-key (key / on)
+(defun cocc:toggle-key (key / on)
   (cond
-    ((mwise:locked-p key) (mwcc:log (strcat key " is set by your CAD administrator.")))
+    ((cutonce:locked-p key) (cocc:log (strcat key " is set by your CAD administrator.")))
     (T
-     (setq on (not (mwise:on-p key)))
-     (mwise:set-on key on)
-     (mwcc:log (strcat (mwise:setting-label key) ": " (if on "ON" "OFF")))
+     (setq on (not (cutonce:on-p key)))
+     (cutonce:set-on key on)
+     (cocc:log (strcat (cutonce:setting-label key) ": " (if on "ON" "OFF")))
     )
   )
 )
 
-(defun mwcc:reset-all ( / vals)
+(defun cocc:reset-all ( / vals)
   (setq vals
     (append
-      (mapcar (function (lambda (k) (cons k (if (mwise:setting-default k) "1" "0")))) (mwise:setting-keys))
-      (list (cons "freq" (mwcc:default-freq)))
-      (mapcar (function (lambda (cn) (cons cn (if (mwcc:intercept-default-p cn) "1" "0")))) *mwimpact:native-commands*)))
-  (mwcc:apply vals T)
-  (mwcc:log "All settings restored to the defaults.")
+      (mapcar (function (lambda (k) (cons k (if (cutonce:setting-default k) "1" "0")))) (cutonce:setting-keys))
+      (list (cons "freq" (cocc:default-freq)))
+      (mapcar (function (lambda (cn) (cons cn (if (cocc:intercept-default-p cn) "1" "0")))) *coimpact:native-commands*)))
+  (cocc:apply vals T)
+  (cocc:log "All settings restored to the defaults.")
 )
 
-(defun mwcc:command-line ( / in kw cn on)
-  (mwcc:print-summary)
+(defun cocc:command-line ( / in kw cn on)
+  (cocc:print-summary)
   (while
     (progn
       (setq in (getstring "\nSetting to toggle, or [List/Frequency/Move/Stretch/Rotate/Scale/Warnings/Defaults/eXit] <eXit>: "))
-      (and in (/= in "") (/= (setq kw (mwcc:resolve in)) "EXIT"))
+      (and in (/= in "") (/= (setq kw (cocc:resolve in)) "EXIT"))
     )
     (cond
-      ((null kw) (mwcc:log (strcat "\"" in "\" is not a setting name (or matches more than one). Type List to see them.")))
-      ((= kw "LIST") (mwcc:print-all))
-      ((= kw "WARNINGS") (mwcc:toggle-key "ImpactWarnings"))
+      ((null kw) (cocc:log (strcat "\"" in "\" is not a setting name (or matches more than one). Type List to see them.")))
+      ((= kw "LIST") (cocc:print-all))
+      ((= kw "WARNINGS") (cocc:toggle-key "ImpactWarnings"))
       ((= kw "FREQUENCY")
-       (if (mwise:locked-p "ImpactWarnFrequency")
-         (mwcc:log "Warning frequency is set by your CAD administrator.")
+       (if (cutonce:locked-p "ImpactWarnFrequency")
+         (cocc:log "Warning frequency is set by your CAD administrator.")
          (progn
-           (mwimpact:set-warn-mode (if (= (mwimpact:warn-mode) "once") "every" "once"))
-           (mwcc:log (strcat "Impact warnings: " (if (= (mwimpact:warn-mode) "once") "once per command per session" "every time"))))))
-      ((= kw "DEFAULTS") (mwcc:reset-all))
-      ((member kw *mwimpact:native-commands*)
+           (coimpact:set-warn-mode (if (= (coimpact:warn-mode) "once") "every" "once"))
+           (cocc:log (strcat "Impact warnings: " (if (= (coimpact:warn-mode) "once") "once per command per session" "every time"))))))
+      ((= kw "DEFAULTS") (cocc:reset-all))
+      ((member kw *coimpact:native-commands*)
        (setq cn kw)
        (cond
-         ((not (mwimpact:intercept-allowed-p))
-          (mwcc:log "Command interception has been disabled by your CAD administrator."))
-         ((member cn *mwimpact:foreign*)
-          (mwcc:log (strcat "Another add-on already defines C:" cn " - it cannot be intercepted.")))
+         ((not (coimpact:intercept-allowed-p))
+          (cocc:log "Command interception has been disabled by your CAD administrator."))
+         ((member cn *coimpact:foreign*)
+          (cocc:log (strcat "Another add-on already defines C:" cn " - it cannot be intercepted.")))
          (T
-          (setq on (not (mwimpact:intercept-active-p cn)))
+          (setq on (not (coimpact:intercept-active-p cn)))
           (if on
             (princ (strcat "\nNote: " cn " is now UNDEFINED for this session and replaced by the CutOnce"
                            " version; LISP or macros calling " cn " without \"_.\" get it too.")))
-          (mwimpact:set-intercept cn on)
-          (mwcc:log (strcat cn " interception " (if on "ON" "OFF"))))
+          (coimpact:set-intercept cn on)
+          (cocc:log (strcat cn " interception " (if on "ON" "OFF"))))
        ))
-      (T (mwcc:toggle-key (mwcc:key-from-upper kw)))
+      (T (cocc:toggle-key (cocc:key-from-upper kw)))
     )
   )
   (princ)
 )
 
-(defun c:-CUTONCE ( ) (mwcc:command-line))
-
-;; ---------------------------------------------------------------------------
-;; Older command names (ModelWise, C3DTools 1.x / 2.0 and ByLayerCheck). Each one runs
-;; the CutOnce command, so existing toolbar buttons, macros and habits keep
-;; working. A name another add-on already defines is left alone.
-;; ---------------------------------------------------------------------------
-
-(setq *mwcc:legacy-commands*
-  '(("C3DTOOLS-STATUS"       . "CUTONCE-STATUS")
-    ("C3DTOOLS-FINDCIVIL"    . "CUTONCE-FINDCIVIL")
-    ("C3D-MODEL-MANAGER"     . "CUTONCE")
-    ("-C3D-MODEL-MANAGER"    . "-CUTONCE")
-    ("C3DMM"                 . "CUTONCE")
-    ("C3D-IMPACT-SETTINGS"   . "CUTONCE")
-    ("C3D-IMPACT-INTERCEPT"  . "CUTONCE")
-    ("-C3D-IMPACT-SETTINGS"  . "-CUTONCE")
-    ("C3D-IMPACT-ON"         . "CUTONCE-IMPACT-ON")
-    ("C3D-IMPACT-OFF"        . "CUTONCE-IMPACT-OFF")
-    ("C3D-IMPACT-RESTORE"    . "CUTONCE-IMPACT-RESTORE")
-    ("C3D-IMPACT-STATUS"     . "CUTONCE-IMPACT-STATUS")
-    ("C3D-IMPACT-DEBUG"      . "CUTONCE-IMPACT-DEBUG")
-    ("C3DCHECK"              . "CUTONCE-CHECK")
-    ("C3DCHECK-STATUS"       . "CUTONCE-CHECK-STATUS")
-    ("BLCHECK"               . "CUTONCE-CHECK")
-    ("BLCHECK-STATUS"        . "CUTONCE-CHECK-STATUS")
-    ("C3DAUDIT"              . "CUTONCE-AUDIT")
-    ("C3DAUDIT-FOLDER"       . "CUTONCE-AUDIT-FOLDER")
-    ("C3DGUARD-STATUS"       . "CUTONCE-GUARD-STATUS")
-    ("C3DGUARD-CHECKNOW"     . "CUTONCE-GUARD-CHECKNOW")
-    ("C3DGUARD-DUMPOBJECTS"  . "CUTONCE-GUARD-DUMPOBJECTS")
-    ("C3DGUARD-LOG"          . "CUTONCE-GUARD-LOG")
-    ("C3DGUARD-SUMMARY"      . "CUTONCE-GUARD-SUMMARY")
-    ("C3DGUARD-LOGCOMMANDS"  . "CUTONCE-GUARD-LOGCOMMANDS")
-    ;; ModelWise 2.0 names
-    ("MODELWISE"             . "CUTONCE")
-    ("-MODELWISE"            . "-CUTONCE")
-    ("MW"                    . "CUTONCE")
-    ("MW-STATUS"             . "CUTONCE-STATUS")
-    ("MW-FINDCIVIL"          . "CUTONCE-FINDCIVIL")
-    ("MW-CHECK"              . "CUTONCE-CHECK")
-    ("MW-CHECK-STATUS"       . "CUTONCE-CHECK-STATUS")
-    ("MW-AUDIT"              . "CUTONCE-AUDIT")
-    ("MW-AUDIT-FOLDER"       . "CUTONCE-AUDIT-FOLDER")
-    ("MW-GUARD-STATUS"       . "CUTONCE-GUARD-STATUS")
-    ("MW-GUARD-CHECKNOW"     . "CUTONCE-GUARD-CHECKNOW")
-    ("MW-GUARD-DUMPOBJECTS"  . "CUTONCE-GUARD-DUMPOBJECTS")
-    ("MW-GUARD-LOG"          . "CUTONCE-GUARD-LOG")
-    ("MW-GUARD-SUMMARY"      . "CUTONCE-GUARD-SUMMARY")
-    ("MW-GUARD-LOGCOMMANDS"  . "CUTONCE-GUARD-LOGCOMMANDS")
-    ("MW-IMPACT-ON"          . "CUTONCE-IMPACT-ON")
-    ("MW-IMPACT-OFF"         . "CUTONCE-IMPACT-OFF")
-    ("MW-IMPACT-RESTORE"     . "CUTONCE-IMPACT-RESTORE")
-    ("MW-IMPACT-STATUS"      . "CUTONCE-IMPACT-STATUS")
-    ("MW-IMPACT-DEBUG"       . "CUTONCE-IMPACT-DEBUG")))
-
-(defun mwcc:install-legacy-commands ( / old new)
-  (foreach pair *mwcc:legacy-commands*
-    (setq old (read (strcat "C:" (car pair))) new (read (strcat "C:" (cdr pair))))
-    (if (and (or (not (boundp old)) (member (car pair) *mwcc:legacy-defined*))
-             (boundp new))
-      (progn
-        (eval (list 'defun old nil (list new)))
-        (if (not (member (car pair) *mwcc:legacy-defined*))
-          (setq *mwcc:legacy-defined* (cons (car pair) *mwcc:legacy-defined*)))
-      )
-    )
-  )
-)
-
-(if (not (boundp '*mwcc:legacy-defined*)) (setq *mwcc:legacy-defined* nil))
-(mwcc:install-legacy-commands)
+(defun c:-CUTONCE ( ) (cocc:command-line))
 
 ;; ---------------------------------------------------------------------------
 ;; Open-time work for this drawing, now that every file is loaded.
 ;; ---------------------------------------------------------------------------
 
-(defun mwcc:on-open ( / r)
-  (setq r (vl-catch-all-apply 'mwhealth:on-open nil))
+(defun cocc:on-open ( / r)
+  (setq r (vl-catch-all-apply 'cohealth:on-open nil))
   (if (vl-catch-all-error-p r)
-    (mwcc:log (strcat "Open-time check failed: " (vl-catch-all-error-message r)))
+    (cocc:log (strcat "Open-time check failed: " (vl-catch-all-error-message r)))
   )
   (princ)
 )
 
-(mwcc:on-open)
+(cocc:on-open)
 (princ)

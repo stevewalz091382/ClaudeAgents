@@ -5,7 +5,7 @@
     ProductType="Application"
     Name="CutOnce"
     AppVersion="2.0.0"
-    Description="CutOnce for Civil 3D (formerly ModelWise): data-loss guards, change-impact warnings, ByLayer and xref standards checks, and drawing health logs, controlled per designer."
+    Description="CutOnce for Civil 3D: data-loss guards, change-impact warnings, ByLayer and xref standards checks, and drawing health logs, controlled per designer."
     Author="Stephen Walz"
     ProductCode="{BA953C42-1FDA-4A0D-8371-4C37CE1477B7}"
     UpgradeCode="{FD9441FE-9603-4169-8EFD-D9FDD76DD7B1}">

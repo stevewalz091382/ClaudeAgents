@@ -8,11 +8,11 @@ CutOnce keeps Civil 3D models healthy while designers work. It does three things
 - **Learn.** Every warning explains why it matters and links to a knowledge-base article for that exact situation.
 - **Insights.** Logs model health on every open and save, so teams can see trends across drawings, projects and people.
 
-CutOnce is one AutoLISP package that loads into every drawing. It was previously called **ModelWise** (and before that **C3DTools**), and it now includes the former **ByLayerCheck** add-on. Each designer decides what runs for them in the **CutOnce Control Center**.
+CutOnce is one AutoLISP package that loads into every drawing. Each designer decides what runs for them in the **CutOnce Control Center**.
 
 | Part | What it does | Interrupts the user? |
 |---|---|---|
-| **Standards check** (formerly ByLayerCheck) | When a drawing opens: objects not ByLayer, xrefs broken or unloaded, xrefs not at 0,0,0 | Only when something is wrong (or always, if the designer chooses) |
+| **Standards check** | When a drawing opens: objects not ByLayer, xrefs broken or unloaded, xrefs not at 0,0,0 | Only when something is wrong (or always, if the designer chooses) |
 | **Health log** | Writes a Health.csv row (and Xrefs.csv detail) on every save and open: counts, styles, ByLayer, xrefs, drawing settings | Never |
 | **Guard** | Warns when EXPLODE, BURST, XREF bind, or moving an xref destroys data. Flags unusual growth and xrefs off 0,0,0 on save | Only when something risky happens |
 | **Impact** | Before an alignment, surface or profile is edited, lists what depends on it | On grip edits, surface edits and MOVE/STRETCH/ROTATE/SCALE of those objects |
@@ -44,7 +44,6 @@ Command-line version, for scripts and toolbar buttons: `-CUTONCE`. Type a settin
 | `^C^C-CUTONCE;LogEnabled;;` | Toggle all logging |
 | `^C^C-CUTONCE;StdCheckOnOpen;;` | Toggle the standards check on open |
 | `^C^C-CUTONCE;Move;;` | Toggle MOVE interception |
-| `^C^C-C3D-IMPACT-SETTINGS;Move;X;` | Older C3DTools button, still works |
 
 Setting names: `ImpactWarnings`, `ImpactGrips`, `ImpactSurface`, `ImpactTransform`, `ImpactOther`, `GuardExplode`, `GuardXrefBind`, `GuardXrefMove`, `GuardRefEdit`, `GuardPromote`, `GuardTextTip`, `GuardGrowth`, `GuardXrefOrigin`, `StdCheckOnOpen`, `StdByLayer`, `StdXrefStatus`, `StdXrefOrigin`, `StdAlwaysShow`, `StdScanBlocks`, `LogEnabled`, `LogHealthOnSave`, `LogHealthOnOpen`, `LogXrefs`, `LogEvents`, `LogOpened`.
 
@@ -57,9 +56,9 @@ All files go to the log folder (see `CUTONCE-STATUS`), none to the drawing's fol
 | `Health.csv` | check (Save, Open, Audit, Manual) | Who, when, trigger, drawing, then the columns below |
 | `Xrefs.csv` | xref, per Health.csv row | Name, path, Attach/Overlay, Loaded/Unloaded/Not Found, nested, instances, insertion point, rotation, scale, at 0,0,0 |
 | `Events.csv` | warning shown | Who, when, drawing, event type, detail. Includes every impact warning (`IMPACT`), guard warning and advisory, standards issues on open, and every TEXT / DTEXT / MTEXT start (`TEXT-TIP` the first time in a session, `TEXT-USED` after that) |
+| `Opened.csv` | drawing opened | Who, when, drawing |
 
 **Event codes:** `IMPACT`, `STANDARDS-OPEN`, `EXPLODE-LOSS`, `ATTRIB-LOSS`, `XREF-BIND`, `XREF-MOVED`, `XREF-BASEPOINT`, `SAVE-FLAG`, `ADVISORY-REFEDIT`, `ADVISORY-REFCLOSE`, `ADVISORY-PROMOTE`, `TEXT-TIP`, `TEXT-USED`.
-| `Opened.csv` | drawing opened | Who, when, drawing |
 
 **Health.csv columns**
 
@@ -71,9 +70,9 @@ All files go to the log folder (see `CUTONCE-STATUS`), none to the drawing's fol
 - Xrefs: `Xrefs, XrefsBroken, XrefsUnloaded, XrefsOffOrigin`
 - Settings: `AngularUnits, ImperialToMetricConversion, CoordinateSystem, InsUnits, DrawingScale`
 
-**The audit report is retired.** `Civil3D_Audit_Report.csv` and `Civil3D_Audit_XrefDetail.csv` are no longer written. Every column they had is now in Health.csv or Xrefs.csv, and the history is kept instead of only the latest audit. For the latest state of a drawing, filter Health.csv on `DrawingPath` and take the newest `Timestamp`. Existing audit CSVs are left in place.
+**Health.csv keeps history.** For the latest state of a drawing, filter on `DrawingPath` and take the newest `Timestamp`.
 
-**Upgrading logs from C3DTools 1.x.** The first time CutOnce writes a log whose columns changed, the old file is renamed to `<name>-archived-<date>.csv` and a new file starts. Nothing is deleted. The first save of each drawing after upgrading has no growth baseline.
+**If a later version changes a log's columns,** the old file is renamed to `<name>-archived-<date>.csv` and a new file starts. Nothing is deleted.
 
 Notes:
 
@@ -147,7 +146,7 @@ Every CutOnce warning has a **Learn More** button that opens its own section of 
 
 The standards check can find several problems at once, so its dialog shows one button per problem found (for example "Not ByLayer..." and "Broken / unloaded xrefs..."), plus "Reading this check...".
 
-The page address and sections are set by `LearnMoreUrl` and `LearnMoreAnchors` in `CutOnce-Config.lsp`. A config carried over from C3DTools that still points at the retired `kb-tools-for-civil-3d` page is ignored, so every link reaches the new page without editing it.
+The page address and sections are set by `LearnMoreUrl` and `LearnMoreAnchors` in `CutOnce-Config.lsp`.
 
 ## Install
 
@@ -159,47 +158,6 @@ Requirements: Civil 3D 2021 or later on 64-bit Windows.
 
 This installs to `%APPDATA%\Autodesk\ApplicationPlugins\CutOnce.bundle`, which Civil 3D loads automatically and trusts by default.
 
-### Upgrading from ModelWise
-
-Run **Install.cmd** as usual. CutOnce is ModelWise 2.0 under its new name, so nothing changes in how it works. The installer:
-
-| What | Where it goes |
-|---|---|
-| `ModelWise-Config.lsp` (your firm settings) | Becomes `CutOnce-Config.lsp`, if CutOnce has no config yet |
-| `MODELWISE_LOGDIR` (custom log folder) | Becomes `CUTONCE_LOGDIR`, so logs keep going to the same folder |
-| Logs in `%LOCALAPPDATA%\ModelWise\Logs` | Copied to `%LOCALAPPDATA%\CutOnce\Logs`. The originals are left in place |
-| Each designer's choices (`ModelWise.*` in the AutoCAD profile) | Copied to `CutOnce.*` the first time CutOnce loads for that user |
-| `ModelWise.bundle` | Deleted |
-
-`MODELWISE`, `-MODELWISE`, `MW` and every `MW-*` command still work; they run the matching `CUTONCE` command. If ModelWise was installed to a custom folder, change its `(load ...)` line in acaddoc.lsp to point at `CutOnce-Loader.lsp`.
-
-### Upgrading from C3DTools or ByLayerCheck
-
-Run **Install.cmd** as usual. The installer moves everything over, then removes the old add-ons so nothing runs twice:
-
-| What | Where it goes |
-|---|---|
-| `C3DTools-Config.lsp` (your firm settings) | Becomes `CutOnce-Config.lsp`, if CutOnce has no config yet. The full 2.0 list is saved beside it as `CutOnce-Config.sample.lsp` |
-| `C3DTOOLS_LOGDIR` (custom log folder) | Becomes `CUTONCE_LOGDIR`, so logs keep going to the same folder |
-| Logs in `%LOCALAPPDATA%\C3DTools\Logs` | Copied to `%LOCALAPPDATA%\CutOnce\Logs`. The originals are left in place |
-| Each designer's choices (`C3DTools.*` in the AutoCAD profile) | Copied to `CutOnce.*` the first time CutOnce loads for that user |
-| `C3DTools.bundle`, `ByLayerCheck.bundle` | Deleted |
-
-If C3DTools or ByLayerCheck was installed to a custom folder, remove its `(load ...)` line from acaddoc.lsp. The installer names the folder, and CutOnce warns at load if it finds either one still loaded.
-
-**Old command names still work.** Toolbar buttons, macros and habits keep running:
-
-| Old | New |
-|---|---|
-| `C3D-MODEL-MANAGER`, `C3DMM`, `C3D-IMPACT-SETTINGS`, `C3D-IMPACT-INTERCEPT` | `CUTONCE` |
-| `-C3D-MODEL-MANAGER`, `-C3D-IMPACT-SETTINGS` | `-CUTONCE` |
-| `MODELWISE`, `MW`, `-MODELWISE`, `MW-*` (ModelWise) | `CUTONCE`, `-CUTONCE`, `CUTONCE-*` |
-| `C3DTOOLS-STATUS`, `C3DTOOLS-FINDCIVIL` | `CUTONCE-STATUS`, `CUTONCE-FINDCIVIL` |
-| `C3DCHECK`, `BLCHECK` (and `-STATUS`) | `CUTONCE-CHECK` (and `-STATUS`) |
-| `C3DAUDIT`, `C3DAUDIT-FOLDER` | `CUTONCE-AUDIT`, `CUTONCE-AUDIT-FOLDER` |
-| `C3DGUARD-*` | `CUTONCE-GUARD-*` |
-| `C3D-IMPACT-ON`, `-OFF`, `-RESTORE`, `-STATUS`, `-DEBUG` | `CUTONCE-IMPACT-ON`, `-OFF`, `-RESTORE`, `-STATUS`, `-DEBUG` |
-
 | Goal | Command |
 |---|---|
 | All users on the machine (run as administrator) | `Install.cmd -Scope AllUsers` |
@@ -208,7 +166,7 @@ If C3DTools or ByLayerCheck was installed to a custom folder, remove its `(load 
 
 With a custom install folder, the installer prints a `(load ...)` line for acaddoc.lsp. Also add that folder to **Options > Files > Trusted Locations**.
 
-Reinstalling keeps an existing `CutOnce-Config.lsp` and writes the current version next to it as `CutOnce-Config.sample.lsp`. Keys missing from your config use the built-in defaults (everything on, interception off), so an upgrade works without editing it.
+Reinstalling keeps an existing `CutOnce-Config.lsp` and writes the current version next to it as `CutOnce-Config.sample.lsp`. Keys missing from your config use the built-in defaults (everything on, interception off), so a reinstall works without editing it.
 
 ## Configure (CAD administrators)
 
@@ -221,7 +179,7 @@ Reinstalling keeps an existing `CutOnce-Config.lsp` and writes the current versi
 - `ImpactExtraCommands`: more Civil 3D command names to watch. Confirm a name with `CUTONCE-GUARD-LOGCOMMANDS` first.
 - `GuardGrowthWarnPct` (default 20), `LogDir`, `LearnMoreUrl`, `LearnMoreAnchors`.
 
-Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. Log folder: `CUTONCE_LOGDIR` (or a leftover `C3DTOOLS_LOGDIR`), then `LogDir`, then `%LOCALAPPDATA%\CutOnce\Logs\`.
+Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. Log folder: `CUTONCE_LOGDIR`, then `LogDir`, then `%LOCALAPPDATA%\CutOnce\Logs\`.
 
 ## Commands
 
@@ -262,4 +220,4 @@ Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. L
 
 ## Uninstall
 
-Double-click **Uninstall.cmd**. Add `-RemoveLogs` to delete logs as well. Each designer's Control Center choices are removed, including any carried over from C3DTools.
+Double-click **Uninstall.cmd**. Add `-RemoveLogs` to delete logs as well. Each designer's Control Center choices are removed.
