@@ -2,7 +2,7 @@
 ;;; CutOnce-ControlCenter.lsp
 ;;;
 ;;; CutOnce Control Center: one place where each designer chooses which
-;;; CutOnce checks, warnings, interceptions and logs run for them. Choices are
+;;; CutOnce checks, warnings and logs run for them. Choices are
 ;;; stored per user (AutoCAD profile) and apply to every drawing at once.
 ;;; Items the CAD administrator has locked ("LockedSettings" in
 ;;; CutOnce-Config.lsp) are shown greyed out with the administrator's value.
@@ -12,9 +12,8 @@
 ;;;                            MOVE, COPY, STRETCH, ROTATE, SCALE, EXPLODE,
 ;;;                            XREF/XBIND, REFEDIT/REFCLOSE, PROMOTEREFERENCE,
 ;;;                            TEXT, DTEXT, MTEXT, grip edits, surface edits,
-;;;                            other watched commands. "Warn" on each row;
-;;;                            "Warn before" (interception) on MOVE, COPY,
-;;;                            STRETCH, ROTATE, SCALE and EXPLODE
+;;;                            other watched commands (with instructions
+;;;                            for the CAD administrator on adding them)
 ;;;   Save checks              unusual growth, xrefs not at 0,0,0
 ;;;   Standards check on open  ByLayer, xref status (broken / unloaded),
 ;;;                            xrefs not at 0,0,0, always show, block defs
@@ -43,46 +42,12 @@
     (mapcar 'car (vl-remove-if-not (function (lambda (e) (= (cadr e) "Cmd"))) *cutonce:settings*)))
 )
 
-;; The intercepted command behind a "Warn<CMD>" row, or nil.
-(defun cocc:row-command (key / cn)
-  (setq cn (substr key 5))
-  (if (member cn *coimpact:native-commands*) cn)
-)
-
 ;; Master switch -> the items it governs (greyed out while it is off).
 (setq *cocc:children*
   (list
     (append '("CommandWarnings" "every" "once") (cocc:cmd-keys))
     '("StdCheckOnOpen" "StdByLayer" "StdXrefStatus" "StdXrefOrigin" "StdAlwaysShow")
     '("LogEnabled" "LogHealthOnSave" "LogHealthOnOpen" "LogXrefs" "LogEvents" "LogOpened")))
-
-(defun cocc:icpt-key (cn) (strcat "icpt_" cn))
-
-;; ---------------------------------------------------------------------------
-;; Interception defaults (same rules as coimpact:intercept-wanted-p)
-;; ---------------------------------------------------------------------------
-
-(defun cocc:intercept-default-p (cn / def)
-  (setq def (cutonce:cfg "InterceptDefault" nil))
-  (cond
-    ((not (coimpact:intercept-allowed-p)) nil)
-    ((null def) nil)
-    ((listp def) (if (member cn (mapcar 'strcase (vl-remove-if-not 'cutonce:nonblank def))) T))
-    (T T)
-  )
-)
-
-;; Turns interception on/off for one command. With reset, a choice equal to
-;; the administrator default is stored as "no choice".
-(defun cocc:apply-intercept (cn on reset)
-  (if (and reset (eq (if on T nil) (cocc:intercept-default-p cn)))
-    (progn
-      (cutonce:pref-set (strcat "Intercept." cn) "")
-      (if on (coimpact:intercept-on cn) (coimpact:intercept-off cn))
-    )
-    (coimpact:set-intercept cn on)
-  )
-)
 
 (defun cocc:default-freq ( ) (cutonce:default-warn-mode))
 
@@ -94,14 +59,6 @@
 
 (defun cocc:toggle-line (key)
   (strcat "      : toggle { key = \"" key "\"; label = \"" (cutonce:setting-label key) "\"; }")
-)
-
-(defun cocc:cmd-row (key / cn)
-  (setq cn (cocc:row-command key))
-  (strcat "      : row { : toggle { key = \"" key "\"; label = \"" (cutonce:setting-label key)
-          "\"; width = 52; fixed_width = true; }"
-          (if cn (strcat " : toggle { key = \"" (cocc:icpt-key cn) "\"; label = \"Warn before\"; }") "")
-          " }")
 )
 
 (defun cocc:group-lines (title keys extra)
@@ -129,11 +86,10 @@
       "        : radio_button { key = \"every\"; label = \"Every time the command runs\"; }"
       "        : radio_button { key = \"once\"; label = \"Once per command, per Civil 3D session\"; }"
       "      }"
-      "      : text { label = \"Warn: show the warning for that command.\"; }"
-      "      : text { label = \"Warn before: intercept the command and warn before it runs.\"; }")
-    (mapcar 'cocc:cmd-row (cocc:cmd-keys))
+      "      : text { label = \"Show the warning for:\"; }")
+    (mapcar 'cocc:toggle-line (cocc:cmd-keys))
     (list
-      "      : button { key = \"icpt_about\"; label = \"What 'Warn before' does...\"; fixed_width = true; }"
+      "      : button { key = \"other_help\"; label = \"How to add other watched commands...\"; fixed_width = true; }"
       "    }")
     (list
       "   }"
@@ -190,7 +146,7 @@
 (defun cocc:tile-on (key) (= (get_tile key) "1"))
 
 ;; Greys out locked items, and children of a master switch that is off.
-(defun cocc:refresh-modes ( / allowed parentOff freqLocked)
+(defun cocc:refresh-modes ( / parentOff freqLocked)
   (setq freqLocked (cutonce:locked-p "WarnFrequency"))
   (foreach key (cutonce:setting-keys)
     (mode_tile key (if (cutonce:locked-p key) 1 0))
@@ -206,17 +162,6 @@
       )
     )
   )
-  ;; "Warn before" needs interception allowed, the master switch and the
-  ;; command's own row on
-  (setq allowed (coimpact:intercept-allowed-p))
-  (foreach cn *coimpact:native-commands*
-    (mode_tile (cocc:icpt-key cn)
-      (if (or (not allowed)
-              (member cn *coimpact:foreign*)
-              (not (cocc:tile-on "CommandWarnings"))
-              (not (cocc:tile-on (strcat "Warn" cn))))
-        1 0))
-  )
 )
 
 (defun cocc:fill-tiles (useDefaults)
@@ -226,10 +171,6 @@
   )
   (if (not (and useDefaults (cutonce:locked-p "WarnFrequency")))
     (set_tile "freq" (if useDefaults (cocc:default-freq) (cutonce:warn-mode))))
-  (foreach cn *coimpact:native-commands*
-    (set_tile (cocc:icpt-key cn)
-      (if (if useDefaults (cocc:intercept-default-p cn) (coimpact:intercept-active-p cn)) "1" "0"))
-  )
   (cocc:refresh-modes)
 )
 
@@ -243,18 +184,54 @@
   (setq *cocc:values*
     (append
       (mapcar (function (lambda (k) (cons k (get_tile k)))) (cutonce:setting-keys))
-      (list (cons "freq" (get_tile "freq")))
-      (mapcar (function (lambda (cn) (cons cn (get_tile (cocc:icpt-key cn))))) *coimpact:native-commands*)))
+      (list (cons "freq" (get_tile "freq")))))
 )
 
-(defun cocc:about-intercept ( )
-  (alert (cutonce:join
-           (if (coimpact:intercept-allowed-p)
-             (append *coimpact:intercept-text*
-                     (list "" "\"Warn before\" only works while \"Show command warnings\" and that"
-                              "command's own row are ticked."))
-             (list "Command interception has been disabled by your CAD administrator."))
-           "\n"))
+;; Instructions for the CAD administrator on adding commands to the
+;; "Other watched commands" row (ImpactExtraCommands in CutOnce-Config.lsp).
+(defun cocc:other-help ( / extra cfgpath)
+  (setq extra (cutonce:cfg "ImpactExtraCommands" nil)
+        extra (if (listp extra) (vl-remove-if-not 'cutonce:nonblank extra))
+        cfgpath (strcat (cutonce:home) "CutOnce-Config.lsp"))
+  (cutonce:notice-links
+    (cutonce:join
+      (list
+        "OTHER WATCHED COMMANDS - for CAD administrators"
+        ""
+        "CutOnce shows the change-impact warning for the commands in this list,"
+        "in addition to the ones it watches already. The warning lists what"
+        "depends on the selected alignment, profile or surface. With nothing"
+        "selected, a command whose name contains SURFACE, PROFILE or ALIGNMENT"
+        "reports on every object of that type; any other command shows no"
+        "warning, because there is nothing to analyse."
+        ""
+        "1. Find the command's exact name"
+        "   - Type CUTONCE-GUARD-LOGCOMMANDS to turn command-name echo on."
+        "   - Start the command the way designers do (ribbon, menu or"
+        "     command line)."
+        "   - Note the name printed on the command line, e.g. AECCSOMECOMMAND."
+        "   - Type CUTONCE-GUARD-LOGCOMMANDS again to turn the echo off."
+        ""
+        "2. Open the CutOnce configuration file in Notepad:"
+        (strcat "   " cfgpath)
+        "   (For a network install, edit the copy in the shared folder.)"
+        ""
+        "3. Find this line:"
+        "     (\"ImpactExtraCommands\" . nil)"
+        "   and replace nil with the names in quotes, separated by spaces:"
+        "     (\"ImpactExtraCommands\" . (\"AECCSOMECOMMAND\" \"AECCOTHER\"))"
+        ""
+        "4. Save the file, then restart Civil 3D (or open a new drawing)."
+        ""
+        "5. Keep \"Other watched commands\" ticked in this Control Center. To"
+        "   enforce it for everyone, add \"WarnOTHER\" to LockedSettings in"
+        "   the same file."
+        ""
+        "Reinstalling CutOnce keeps your configuration file."
+        ""
+        (strcat "Watched now: " (if extra (cutonce:join (mapcar 'strcase extra) ", ") "none")))
+      "\n")
+    nil)
 )
 
 ;; Opens a folder in Windows Explorer.
@@ -272,8 +249,7 @@
 
 (defun cocc:any-locked-p ( )
   (or (vl-some 'cutonce:locked-p (cutonce:setting-keys))
-      (cutonce:locked-p "WarnFrequency")
-      (not (coimpact:intercept-allowed-p)))
+      (cutonce:locked-p "WarnFrequency"))
 )
 
 ;; ---------------------------------------------------------------------------
@@ -291,17 +267,6 @@
            (not (cutonce:locked-p "WarnFrequency"))
            (or reset (/= freq (cutonce:warn-mode))))
     (cutonce:set-warn-mode freq))
-  (if (coimpact:intercept-allowed-p)
-    (foreach cn *coimpact:native-commands*
-      (if (not (member cn *coimpact:foreign*))
-        (progn
-          (setq on (= (cdr (assoc cn values)) "1"))
-          (if (or reset (not (eq on (if (coimpact:intercept-active-p cn) T nil))))
-            (cocc:apply-intercept cn on reset))
-        )
-      )
-    )
-  )
 )
 
 ;; ---------------------------------------------------------------------------
@@ -320,10 +285,7 @@
             (if (cocc:any-locked-p) "Greyed-out items are set by your CAD administrator." ""))
           (foreach grp *cocc:children*
             (action_tile (car grp) "(cocc:refresh-modes)"))
-          ;; a command's "Warn before" follows its own "Warn" tick
-          (foreach cn *coimpact:native-commands*
-            (action_tile (strcat "Warn" cn) "(cocc:refresh-modes)"))
-          (action_tile "icpt_about" "(cocc:about-intercept)")
+          (action_tile "other_help" "(cocc:other-help)")
           (action_tile "openlogs" "(cocc:open-folder (cutonce:log-dir))")
           (action_tile "defaults" "(cocc:press-defaults)")
           (action_tile "learn_more" "(cutonce:open-kb \"CONTROL_CENTER\")")
@@ -370,11 +332,6 @@
     (if (= (car g) "Cmd")
       (progn
         (princ (strcat "\n    Frequency: " (if (= (cutonce:warn-mode) "once") "once per command per session" "every time")))
-        (princ "\n    Warn before (interception): ")
-        (if (not (coimpact:intercept-allowed-p))
-          (princ "disabled by your CAD administrator")
-          (foreach cn *coimpact:native-commands*
-            (princ (strcat cn " " (if (coimpact:intercept-active-p cn) "ON" "off") "  "))))
       )
     )
   )
@@ -395,19 +352,15 @@
 ;; -CUTONCE (command line)
 ;;   Type a setting name (or enough of it to be unique) to toggle it, or:
 ;;     List  Frequency  Warnings  Defaults  eXit
-;;     Move  Copy  Stretch  Rotate  Scale  Explode   ("Warn before" on/off)
 ;;   e.g. ^C^C-CUTONCE;LogEnabled;;      toggles logging
 ;;        ^C^C-CUTONCE;WarnEXPLODE;;     toggles the EXPLODE warning
-;;        ^C^C-CUTONCE;Explode;;         toggles "Warn before" for EXPLODE
 ;; ---------------------------------------------------------------------------
 
-(setq *cocc:keywords* '("LIST" "FREQUENCY" "MOVE" "COPY" "STRETCH" "ROTATE" "SCALE" "EXPLODE" "WARNINGS" "DEFAULTS" "EXIT"))
+(setq *cocc:keywords* '("LIST" "FREQUENCY" "WARNINGS" "DEFAULTS" "EXIT"))
 
 ;; Resolves typed input to a keyword or setting key; nil if unknown/ambiguous.
 (setq *cocc:abbrev*
-  '(("X" . "EXIT") ("L" . "LIST") ("F" . "FREQUENCY") ("M" . "MOVE") ("CO" . "COPY")
-    ("ST" . "STRETCH") ("R" . "ROTATE") ("SC" . "SCALE") ("E" . "EXPLODE")
-    ("W" . "WARNINGS") ("D" . "DEFAULTS")))
+  '(("X" . "EXIT") ("L" . "LIST") ("F" . "FREQUENCY") ("W" . "WARNINGS") ("D" . "DEFAULTS")))
 
 (defun cocc:resolve (in / up names exact pre)
   (setq up (strcase in))
@@ -441,17 +394,16 @@
   (setq vals
     (append
       (mapcar (function (lambda (k) (cons k (if (cutonce:setting-default k) "1" "0")))) (cutonce:setting-keys))
-      (list (cons "freq" (cocc:default-freq)))
-      (mapcar (function (lambda (cn) (cons cn (if (cocc:intercept-default-p cn) "1" "0")))) *coimpact:native-commands*)))
+      (list (cons "freq" (cocc:default-freq)))))
   (cocc:apply vals T)
   (cocc:log "All settings restored to the defaults.")
 )
 
-(defun cocc:command-line ( / in kw cn on)
+(defun cocc:command-line ( / in kw)
   (cocc:print-summary)
   (while
     (progn
-      (setq in (getstring "\nSetting to toggle, or [List/Frequency/Warnings/Defaults/eXit], or Warn before [Move/COpy/STretch/Rotate/SCale/Explode] <eXit>: "))
+      (setq in (getstring "\nSetting to toggle, or [List/Frequency/Warnings/Defaults/eXit] <eXit>: "))
       (and in (/= in "") (/= (setq kw (cocc:resolve in)) "EXIT"))
     )
     (cond
@@ -465,21 +417,6 @@
            (cutonce:set-warn-mode (if (= (cutonce:warn-mode) "once") "every" "once"))
            (cocc:log (strcat "Command warnings: " (if (= (cutonce:warn-mode) "once") "once per command per session" "every time"))))))
       ((= kw "DEFAULTS") (cocc:reset-all))
-      ((member kw *coimpact:native-commands*)
-       (setq cn kw)
-       (cond
-         ((not (coimpact:intercept-allowed-p))
-          (cocc:log "Command interception has been disabled by your CAD administrator."))
-         ((member cn *coimpact:foreign*)
-          (cocc:log (strcat "Another add-on already defines C:" cn " - it cannot be intercepted.")))
-         (T
-          (setq on (not (coimpact:intercept-active-p cn)))
-          (if on
-            (princ (strcat "\nNote: " cn " is now UNDEFINED for this session and replaced by the CutOnce"
-                           " version; LISP or macros calling " cn " without \"_.\" get it too.")))
-          (coimpact:set-intercept cn on)
-          (cocc:log (strcat cn " warn before (interception) " (if on "ON" "OFF"))))
-       ))
       (T (cocc:toggle-key (cocc:key-from-upper kw)))
     )
   )

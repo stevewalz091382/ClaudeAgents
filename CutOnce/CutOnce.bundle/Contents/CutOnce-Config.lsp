@@ -40,9 +40,9 @@
     ("WarnXREFBIND"     . T)    ; XREF / XBIND binding an xref into the drawing
     ("WarnREFEDIT"      . T)    ; REFEDIT / REFCLOSE advisory
     ("WarnPROMOTE"      . T)    ; PROMOTEREFERENCE advisory
-    ("WarnTEXT"         . T)    ; TEXT: label style tip (once per session)
-    ("WarnDTEXT"        . T)    ; DTEXT: label style tip (once per session)
-    ("WarnMTEXT"        . T)    ; MTEXT: label style tip (once per session)
+    ("WarnTEXT"         . T)    ; TEXT: label style tip
+    ("WarnDTEXT"        . T)    ; DTEXT: label style tip
+    ("WarnMTEXT"        . T)    ; MTEXT: label style tip
     ("WarnGRIPS"        . T)    ; grip edits of alignments, profiles and surfaces
     ("WarnSURFACE"      . T)    ; surface edit commands
     ("WarnOTHER"        . T)    ; commands listed in ImpactExtraCommands
@@ -84,24 +84,14 @@
     ;; Percentage growth between checks that triggers the growth warning.
     ("GuardGrowthWarnPct" . 20)
 
-    ;; ---- Warn before (command interception) --------------------------------
-
-    ;; Whether users may tick "Warn before" for MOVE, COPY, STRETCH, ROTATE,
-    ;; SCALE and EXPLODE in the Control Center. Each intercepted command is
-    ;; UNDEFINED for the session. Set to nil to prohibit it.
-    ("InterceptAllowed" . T)
-
-    ;; "Warn before" for users who have not made their own choice:
-    ;;   nil                     none (recommended)
-    ;;   T                       all six commands
-    ;;   ("MOVE" "EXPLODE")      just the commands listed
-    ;; Leave nil unless your firm has agreed to it.
-    ("InterceptDefault" . nil)
+    ;; ---- Other watched commands ------------------------------------------
 
     ;; Extra Civil 3D command names that should show the impact warning
-    ;; (switched by "WarnOTHER"). Only add names you have confirmed: run
-    ;; CUTONCE-GUARD-LOGCOMMANDS, start the command from the ribbon, and copy the
-    ;; name printed on the command line.
+    ;; (the "Other watched commands" row, switched by "WarnOTHER"). Only add
+    ;; names you have confirmed: run CUTONCE-GUARD-LOGCOMMANDS, start the
+    ;; command from the ribbon, and copy the name printed on the command line.
+    ;; The Control Center's "How to add other watched commands..." button
+    ;; shows these steps too.
     ;; Example:  ("ImpactExtraCommands" . ("AECCSOMECOMMAND" "AECCOTHER"))
     ("ImpactExtraCommands" . nil)
 

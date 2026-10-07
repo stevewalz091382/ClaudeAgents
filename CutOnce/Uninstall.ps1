@@ -8,9 +8,6 @@
     CUTONCE_HOME, and clears the CUTONCE_HOME / CUTONCE_LOGDIR variables.
     Logs (Health.csv, Xrefs.csv, Events.csv, Opened.csv) are kept unless
     -RemoveLogs is given. Each designer's Control Center choices are removed.
-
-    MOVE/STRETCH/ROTATE/SCALE need no clean-up: UNDEFINE only lasts for the
-    Civil 3D session.
 #>
 [CmdletBinding()]
 param([switch]$RemoveLogs)

@@ -49,21 +49,19 @@ The publisher is set to Stephen Walz in `CutOnce.bundle\PackageContents.xml`. Bu
 |---|---|
 | `CUTONCE-STATUS` | Version 2.0.0, install and log folders shown. Civil 3D COM connected. |
 | `CUTONCE` | The CutOnce Control Center opens. Locked settings appear greyed out. |
-| `-CUTONCE`, then `Move`, then `X` | Warn before for MOVE toggles. |
-| Warn before off: select an alignment, then `MOVE` | The warning appears before MOVE asks for a base point. |
-| Frequency "Once per command per session": `EXPLODE` a hatch twice, `MOVE` an xref twice | Each warning shows the first time only. `Events.csv` has a row for every attempt. |
-| Warn before on for EXPLODE: `EXPLODE` an alignment, click Cancel | Nothing is exploded. With Explode anyway, it explodes and no second warning appears. |
-| Warn before on for COPY: `COPY` an xref | The xref warning appears before COPY asks for a base point. |
-| Untick Warn on the MOVE row | Its Warn before greys out; MOVE of an alignment shows nothing. |
+| `-CUTONCE`, then `WarnEXPLODE`, then `X` | The EXPLODE warning toggles. |
+| Select an alignment, then `MOVE` | The warning appears before MOVE asks for a base point. |
+| Frequency "Every time": run `TEXT`, `MTEXT`, then `TEXT` again | The label style tip shows each time. |
+| Frequency "Once per command per session": `EXPLODE` a hatch twice, `MOVE` an xref twice, `TEXT` twice | Each warning shows the first time only. `Events.csv` has a row for every attempt. |
+| Untick MOVE in the Control Center | MOVE of an alignment shows nothing. |
+| Control Center: How to add other watched commands... | Instructions open, with the config path and the commands added so far. |
 | On any warning, click Learn More..., then OK | The browser opens the matching section of Civil 3D Warnings Explained. |
 | `EXPLODE` an alignment, then `U` | Guard warning, and a row in `Events.csv`. |
 | Open a drawing with a non-ByLayer object or a broken xref | The standards check reports it on open. |
 | Save | A row in `Health.csv`. |
-| `CUTONCE-IMPACT-RESTORE` | MOVE, COPY, STRETCH, ROTATE, SCALE and EXPLODE all work normally. |
 
 ## 6. Before listing publicly
 
 - [ ] **Legal review of the Health logging.** The trial version described itself as recreating an existing Power BI dashboard, built around specific project drawings. If that dashboard, its metric set or its column names belong to HDR (or any other employer or client), counsel needs to clear C3DAudit before it is listed. Removing that wording from the comments does not settle the question. Also confirm who owns the code in all four tools, given the employment and IP-assignment terms in force while it was written.
 - [ ] Support contact and privacy statement for the store listing. The tools write drawing paths and names to local CSV files. They make no network calls.
-- [ ] Disclose the optional Warn before interception of MOVE/COPY/STRETCH/ROTATE/SCALE/EXPLODE in the listing text (see README).
 - [ ] Smoke test passed on every Civil 3D release named in the listing.

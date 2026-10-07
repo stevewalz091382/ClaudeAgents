@@ -195,10 +195,6 @@
     "Shown every time. To change, type CUTONCE (Control Center).")
 )
 
-;; Set by an intercepted command just before it hands over to the real
-;; command, so the after-the-fact check for that command does not warn twice.
-(setq *cutonce:prewarned* nil)
-
 ;; ---------------------------------------------------------------------------
 ;; Folders
 ;; ---------------------------------------------------------------------------
@@ -732,7 +728,7 @@
 
 ;; DCL with the buttons baked in; written fresh for each notice because the
 ;; number and labels of the buttons vary. Returns the temp file path.
-(defun cutonce:write-notice-dcl (links oklabel / path f i)
+(defun cutonce:write-notice-dcl (links / path f i)
   (setq path (vl-filename-mktemp "cutonce" nil ".dcl"))
   (if (setq f (open path "w"))
     (progn
@@ -743,10 +739,7 @@
                 "  : list_box { key = \"notice_text\"; height = 16; width = 80; }"
                 "  : row {"
                 "    alignment = centered; fixed_width = true;"
-                (if oklabel
-                  (strcat "    : button { key = \"accept\"; label = \"" oklabel "\"; is_default = true; width = 16; }\n"
-                          "    : button { key = \"cancel\"; label = \"Cancel\"; is_cancel = true; width = 12; }")
-                  "    : button { key = \"accept\"; label = \"OK\"; is_default = true; is_cancel = true; width = 12; }"))
+                "    : button { key = \"accept\"; label = \"OK\"; is_default = true; is_cancel = true; width = 12; }")
           (progn
             (setq i 0)
             (mapcar (function (lambda (lk)
@@ -771,11 +764,9 @@
   (reverse (cons s out))
 )
 
-;; With oklabel, the dialog has that button plus Cancel and returns T only
-;; when the first is pressed; without it, a single OK and the result is T.
-(defun cutonce:notice-dialog (text links oklabel / path dcl_id shown i result)
+(defun cutonce:notice-links (text links / path dcl_id shown i)
   (setq links (vl-remove-if-not (function (lambda (lk) (cdr lk))) links))
-  (setq path (cutonce:write-notice-dcl links oklabel) shown nil result 1)
+  (setq path (cutonce:write-notice-dcl links) shown nil)
   (if (and path (> (setq dcl_id (load_dialog path)) 0))
     (progn
       (if (new_dialog "co_notice" dcl_id)
@@ -784,14 +775,13 @@
           (foreach ln (cutonce:split-lines text) (add_list ln))
           (end_list)
           (action_tile "accept" "(done_dialog 1)")
-          (if oklabel (action_tile "cancel" "(done_dialog 0)"))
           (setq i 0)
           (foreach lk links
             (setq i (1+ i))
             (action_tile (strcat "learn_" (itoa i))
                          (strcat "(cutonce:open-kb " (vl-prin1-to-string (cdr lk)) ")"))
           )
-          (setq result (start_dialog))
+          (start_dialog)
           (setq shown T)
         )
       )
@@ -805,11 +795,6 @@
                      (mapcar (function (lambda (lk) (strcat "\n" (car lk) " " (cutonce:kb-url (cdr lk)))))
                              links))))
   )
-  (= result 1)
-)
-
-(defun cutonce:notice-links (text links)
-  (cutonce:notice-dialog text links nil)
   (princ)
 )
 
@@ -827,12 +812,6 @@
     )
   )
   (princ)
-)
-
-;; Warning with a real choice, for intercepted commands that would otherwise
-;; run straight away (EXPLODE). Returns T to go ahead.
-(defun cutonce:confirm (text topic oklabel)
-  (cutonce:notice-dialog text (list (cons "Learn More..." topic)) oklabel)
 )
 
 (defun c:CUTONCE-STATUS ( / app)

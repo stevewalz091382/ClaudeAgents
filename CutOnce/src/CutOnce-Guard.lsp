@@ -16,14 +16,12 @@
 ;;;   3. MOVE / COPY shifting an attached xref's insertion point.
 ;;;      [WarnMOVE] [WarnCOPY]
 ;;;   4. Advisories for REFEDIT / REFCLOSE [WarnREFEDIT], PROMOTEREFERENCE
-;;;      [WarnPROMOTE], and a once-per-session label style tip on TEXT, DTEXT
-;;;      and MTEXT [WarnTEXT] [WarnDTEXT] [WarnMTEXT]. Every TEXT / DTEXT /
-;;;      MTEXT start is logged to Events.csv: TEXT-TIP when the tip shows,
-;;;      TEXT-USED after that.
+;;;      [WarnPROMOTE], and a label style tip on TEXT, DTEXT and MTEXT
+;;;      [WarnTEXT] [WarnDTEXT] [WarnMTEXT]. Every TEXT / DTEXT / MTEXT start
+;;;      is logged to Events.csv: TEXT-TIP when the tip shows, TEXT-USED when
+;;;      the frequency choice hides it.
 ;;;
-;;; Warnings 1 and 3 normally appear after the command (type U to undo). With
-;;; "Warn before" ticked for MOVE, COPY or EXPLODE, the intercepted command
-;;; (CutOnce-Impact.lsp) calls the prewarn functions below first instead.
+;;; Warnings 1 and 3 appear after the command (type U to undo).
 ;;;
 ;;; The save-time checks (unusual growth, xrefs off 0,0,0) and Health.csv are
 ;;; in CutOnce-Health.lsp.
@@ -390,16 +388,17 @@
 )
 
 
-(defun coguard:advise-text-once (cmd)
-  ;; Shown once per Civil 3D session, across every open drawing (blackboard),
-  ;; but every use is logged so plain-text habits can be measured.
-  (if (not (vl-bb-ref '*coguard:bb-text-tip-shown*))
+;; Follows the frequency choice like every other warning ("once" counts
+;; TEXT, DTEXT and MTEXT separately); every start is logged so plain-text
+;; habits can be measured.
+(defun coguard:advise-text (cmd / key)
+  (setq key (strcat "GUARD_TEXT:" cmd))
+  (if (cutonce:warn-due-p key)
     (progn
-      (vl-bb-set '*coguard:bb-text-tip-shown* T)
       (coguard:log-event "TEXT-TIP" (strcat cmd " started, tip shown"))
-      (cutonce:notice
+      (cutonce:notice-once key
         (strcat
-          "CutOnce Guard tip (shown once per session):\n\n"
+          "CutOnce Guard tip:\n\n"
           "Plain TEXT/MTEXT for stations, elevations or offsets won't update if\n"
           "the design changes, and won't feed label-based schedules or QA/QC.\n\n"
           "If a Civil 3D label style covers what you're about to type, it stays\n"
@@ -409,110 +408,6 @@
       )
     )
     (coguard:log-event "TEXT-USED" (strcat cmd " started (tip already shown this session)"))
-  )
-)
-
-;; ---------------------------------------------------------------------------
-;; "Warn before": called by an intercepted MOVE / COPY / EXPLODE (see
-;; coimpact:native-override) with the selection, before the real command runs.
-;; ---------------------------------------------------------------------------
-
-(defun coguard:xref-move-due-p (cmd)
-  (and (cutonce:cmd-warn-p (strcat "Warn" cmd)) (cutonce:warn-due-p "GUARD_XREF_MOVED"))
-)
-
-;; Names of the xrefs among ents (Model Space or paper space inserts).
-(defun coguard:ents-xref-names (ents doc / xrefnames out obj nm)
-  (setq xrefnames (coguard:xref-names doc) out nil)
-  (foreach e ents
-    (setq obj (vl-catch-all-apply 'vlax-ename->vla-object (list e)))
-    (if (and (not (vl-catch-all-error-p obj))
-             (= (cutonce:object-name obj) "AcDbBlockReference")
-             (member (setq nm (cutonce:str-prop obj 'Name)) xrefnames)
-             (not (member nm out)))
-      (setq out (cons nm out))
-    )
-  )
-  (reverse out)
-)
-
-(defun coguard:prewarn-xref-move (cmd ents / names)
-  (if (and ents (coguard:xref-move-due-p cmd)
-           (setq names (coguard:ents-xref-names ents (cutonce:active-doc))))
-    (progn
-      (coguard:log-event "XREF-MOVE-BEFORE" (strcat cmd ": " (cutonce:join names ", ")))
-      (cutonce:notice-once "GUARD_XREF_MOVED"
-        (strcat
-          "CutOnce Guard: you are about to " cmd " an xref:\n\n"
-          (apply 'strcat (mapcar (function (lambda (n) (strcat "  " n "\n"))) names))
-          "\n" (if (= cmd "COPY") "Copying" "Moving") " an xref shifts everything in it out of alignment\n"
-          "with shared coordinates and data shortcuts.\n\n"
-          "Click OK, then press ESC at the next prompt to stop."
-        )
-        "GUARD_XREF_MOVED"
-      )
-    )
-  )
-)
-
-(defun coguard:explode-due-p ( )
-  (and (cutonce:cmd-warn-p "WarnEXPLODE")
-       (or (cutonce:warn-due-p "GUARD_EXPLODE") (cutonce:warn-due-p "GUARD_ATTRIB")))
-)
-
-;; What exploding ents would convert: (((ObjectName . n) ...) attributed-blocks)
-(defun coguard:explode-risk (ents / counts nattr obj on pair)
-  (setq counts nil nattr 0)
-  (foreach e ents
-    (setq obj (vl-catch-all-apply 'vlax-ename->vla-object (list e)))
-    (if (not (vl-catch-all-error-p obj))
-      (progn
-        (setq on (cutonce:object-name obj))
-        (if (or (= on "AcDbBlockReference") (= on "AcDbHatch") (wcmatch (strcase on) "AECC*"))
-          (setq pair (assoc on counts)
-                counts (if pair (subst (cons on (1+ (cdr pair))) pair counts) (cons (cons on 1) counts)))
-        )
-        (if (and (= on "AcDbBlockReference") (eq (cutonce:prop obj 'HasAttributes) :vlax-true))
-          (setq nattr (1+ nattr))
-        )
-      )
-    )
-  )
-  (list (reverse counts) nattr)
-)
-
-;; Returns T to go ahead with the EXPLODE, nil if the designer cancels.
-(defun coguard:prewarn-explode (ents / risk counts nattr)
-  (setq risk (coguard:explode-risk ents) counts (car risk) nattr (cadr risk))
-  (if (and counts (coguard:explode-due-p))
-    (progn
-      (coguard:log-event "EXPLODE-BEFORE"
-        (apply 'strcat
-          (mapcar (function (lambda (x) (strcat (coguard:friendly-name (car x)) " " (itoa (cdr x)) "  "))) counts)))
-      (cutonce:mark-warned "GUARD_EXPLODE")
-      (if (> nattr 0) (cutonce:mark-warned "GUARD_ATTRIB"))
-      (cutonce:confirm
-        (strcat
-          "CutOnce Guard: you are about to EXPLODE:\n\n"
-          (apply 'strcat
-            (mapcar (function (lambda (x) (strcat "  " (coguard:friendly-name (car x)) ": " (itoa (cdr x)) "\n")))
-                    counts))
-          (if (> nattr 0)
-            (strcat "\n" (itoa nattr) " of the blocks have attributes; their attribute data (tags,\n"
-                    "schedules, data extraction) will be lost.\n")
-            "")
-          "\nExploded objects become plain geometry and lose their design intent.\n"
-          (if (assoc "AcDbHatch" counts)
-            "An exploded hatch becomes many separate lines and loses its boundary\nassociation and area.\n"
-            "")
-          "\nExplode anyway, or Cancel to keep them.\n\n"
-          (cutonce:freq-note)
-        )
-        (if (and (> nattr 0) (= (length counts) 1)) "GUARD_ATTRIB" "GUARD_EXPLODE")
-        "Explode anyway"
-      )
-    )
-    T
   )
 )
 
@@ -531,9 +426,8 @@
   (if *coguard:logall* (princ (strcat "\n[CutOnce Guard] command: " cmd)))
   (setq doc (cutonce:active-doc))
   (cond
-    ;; an intercepted run that has already been warned about is skipped
     ((= cmd "EXPLODE")
-     (if (and (cutonce:cmd-warn-p "WarnEXPLODE") (/= *cutonce:prewarned* cmd))
+     (if (cutonce:cmd-warn-p "WarnEXPLODE")
        (setq *coguard:explode-snapshot* (coguard:object-snapshot doc)
              *coguard:explode-attrib-snapshot* (coguard:attrib-block-count doc)))
     )
@@ -542,7 +436,7 @@
        (setq *coguard:xref-snapshot* (coguard:xref-names doc)))
     )
     ((member cmd '("MOVE" "COPY"))
-     (if (and (cutonce:cmd-warn-p (strcat "Warn" cmd)) (/= *cutonce:prewarned* cmd))
+     (if (cutonce:cmd-warn-p (strcat "Warn" cmd))
        (progn
          ;; MOVE/COPY are frequent: check only the pickfirst selection when
          ;; there is one, and fall back to a full scan only when there is not.
@@ -562,7 +456,7 @@
      (if (cutonce:cmd-warn-p "WarnPROMOTE")
        (progn (coguard:log-event "ADVISORY-PROMOTE" "PROMOTEREFERENCE run") (coguard:advise-promote))))
     ((member cmd '("TEXT" "DTEXT" "MTEXT"))
-     (if (cutonce:cmd-warn-p (strcat "Warn" cmd)) (coguard:advise-text-once cmd)))
+     (if (cutonce:cmd-warn-p (strcat "Warn" cmd)) (coguard:advise-text cmd)))
   )
 )
 
@@ -593,7 +487,6 @@
      (setq *coguard:xrefpts-snapshot* nil *coguard:check-xref-move* nil)
     )
   )
-  (if (= *cutonce:prewarned* cmd) (setq *cutonce:prewarned* nil))
 )
 
 (defun coguard:cmd-clear (reactor arglist)
@@ -601,8 +494,7 @@
         *coguard:explode-attrib-snapshot* nil
         *coguard:xref-snapshot* nil
         *coguard:xrefpts-snapshot* nil
-        *coguard:check-xref-move* nil
-        *cutonce:prewarned* nil)
+        *coguard:check-xref-move* nil)
   (princ)
 )
 

@@ -10,7 +10,7 @@
 ;;;
 ;;; WARNINGS (on by default)
 ;;;   Shown when a grip edit (GRIP_*) or one of the Civil 3D surface-edit
-;;;   commands below starts, and by any intercepted command (next section).
+;;;   commands below starts, and for MOVE / STRETCH / ROTATE / SCALE.
 ;;;   Each designer chooses in CUTONCE (Command warnings):
 ;;;     - command warnings on or off altogether        [CommandWarnings]
 ;;;     - each command on or off: [WarnMOVE] [WarnSTRETCH] [WarnROTATE]
@@ -24,15 +24,6 @@
 ;;;   Warned about through the command reactor, with nothing undefined: before
 ;;;   the command when the objects were pre-selected, otherwise when it ends
 ;;;   (with "type U to undo").
-;;;
-;;; WARN BEFORE: COMMAND INTERCEPTION (OFF by default, per user, per command)
-;;;   Optional, for a warning BEFORE the edit even without a pre-selection.
-;;;   MOVE, COPY, STRETCH, ROTATE, SCALE and EXPLODE can each be intercepted.
-;;;   An intercepted command is UNDEFINED for the session and replaced by a
-;;;   version that asks for the selection, shows the warning (change impact,
-;;;   and for MOVE/COPY/EXPLODE the Guard warning too), then runs the real
-;;;   command. EXPLODE asks to confirm, since it has no later prompt to ESC.
-;;;   CAD managers can disable or pre-enable it in CutOnce-Config.lsp.
 ;;;
 ;;; WATCHED CIVIL 3D COMMANDS
 ;;;   Only command names observed in a live Civil 3D session are watched.
@@ -50,8 +41,6 @@
 ;;;
 ;;; Commands (settings are in CutOnce-ControlCenter.lsp: CUTONCE):
 ;;;   CUTONCE-IMPACT-ON / -OFF   turn the warnings on or off
-;;;   CUTONCE-IMPACT-RESTORE     turn all interception off and restore MOVE,
-;;;                          COPY, STRETCH, ROTATE, SCALE and EXPLODE
 ;;;   CUTONCE-IMPACT-STATUS      current state
 ;;;   CUTONCE-IMPACT-DEBUG       toggle diagnostic tracing (off by default)
 ;;;
@@ -67,14 +56,9 @@
 
 (if (not (boundp '*coimpact:debug*))             (setq *coimpact:debug* nil))
 (if (not (boundp '*coimpact:cmd-reactor*))       (setq *coimpact:cmd-reactor* nil))
-(if (not (boundp '*coimpact:intercepting*))      (setq *coimpact:intercepting* nil))
-(if (not (boundp '*coimpact:wrapped*))           (setq *coimpact:wrapped* nil))
-(if (not (boundp '*coimpact:foreign*))           (setq *coimpact:foreign* nil))
 (if (not (boundp '*coimpact:dcl-path*))          (setq *coimpact:dcl-path* nil))
 
-;; Commands that can be intercepted ("Warn before"), and the subset whose
-;; Civil 3D objects get the change-impact analysis.
-(setq *coimpact:native-commands* '("MOVE" "COPY" "STRETCH" "ROTATE" "SCALE" "EXPLODE"))
+;; Commands whose Civil 3D objects get the change-impact analysis.
 (setq *coimpact:transform-commands* '("MOVE" "STRETCH" "ROTATE" "SCALE"))
 
 ;; Civil 3D command names observed firing :vlr-commandWillStart in a live
@@ -431,28 +415,6 @@
 
 (defun coimpact:warnings-wanted-p ( ) (cutonce:on-p "CommandWarnings"))
 
-(defun coimpact:intercept-allowed-p ( ) (cutonce:cfg "InterceptAllowed" T))
-
-;; Per-command choice ("Intercept.MOVE" etc.); without one, the
-;; administrator's InterceptDefault applies.
-(defun coimpact:intercept-wanted-p (cn / p def)
-  (if (coimpact:intercept-allowed-p)
-    (progn
-      (setq p (cutonce:pref-get (strcat "Intercept." cn)))
-      (cond
-        ((= p "1") T)
-        ((= p "0") nil)
-        (T
-         (setq def (cutonce:cfg "InterceptDefault" nil))
-         (cond
-           ((null def) nil)
-           ((listp def) (if (member cn (mapcar 'strcase (vl-remove-if-not 'cutonce:nonblank def))) T))
-           (T T)))
-      )
-    )
-  )
-)
-
 ;; ---------------------------------------------------------------------------
 ;; Frequency ("once per command per session") is tracked in CutOnce-Core.lsp.
 ;; All grip edits (GRIP_STRETCH, GRIP_MOVE, ...) count as one command, "GRIP".
@@ -470,25 +432,6 @@
 ;; ---------------------------------------------------------------------------
 ;; Dialogs (DCL written to a temp file on first use)
 ;; ---------------------------------------------------------------------------
-
-(setq *coimpact:intercept-text*
-  '("Without \"Warn before\", MOVE, STRETCH, ROTATE and SCALE of Civil 3D"
-    "objects warn as the command starts if the objects were selected first,"
-    "otherwise right after it (type U to undo). EXPLODE and MOVE / COPY of an"
-    "xref warn right after the command."
-    ""
-    "\"Warn before\" is optional and OFF by default. It moves the warning BEFORE"
-    "the edit in every case: each ticked command is UNDEFINED for the session"
-    "and replaced by a version that asks for the selection, shows the warning,"
-    "then runs the original command. Press ESC at the command's next prompt to"
-    "stop it; EXPLODE asks you to confirm instead, since it has no next prompt."
-    ""
-    "Side effects while a command is ticked:"
-    " - Other LISP routines, scripts or macros that call it WITHOUT the"
-    "   \"_.\" prefix will run the CutOnce version instead."
-    " - Menu macros that use \"_.MOVE\" etc. bypass interception."
-    " - Unticking restores the original command immediately. UNDEFINE never"
-    "   lasts beyond the Civil 3D session."))
 
 (defun coimpact:ensure-dcl ( / path f)
   (if (not (and *coimpact:dcl-path* (findfile *coimpact:dcl-path*)))
@@ -595,208 +538,6 @@
 )
 
 ;; ---------------------------------------------------------------------------
-;; Command interception ("Warn before"; opt-in, per command)
-;; ---------------------------------------------------------------------------
-
-;; Runs the real command. A pre-selection is cleared first: the real command
-;; would otherwise take the implied selection on its own and the selection
-;; passed here would land on its next prompt ("Specify base point").
-;; EXPLODE called from LISP explodes one object per call, so it is run once
-;; per object, each run flagged as already warned for the Guard's own check.
-(defun coimpact:run-native (cmdname ents / ss)
-  (cond
-    ((and ents (= cmdname "EXPLODE"))
-     (sssetfirst nil nil)
-     (foreach e ents
-       (if (entget e)
-         (progn
-           (setq *cutonce:prewarned* cmdname)
-           (command "_.EXPLODE" e)
-         )
-       )
-     )
-     (setq *cutonce:prewarned* nil)
-    )
-    (ents
-     (setq ss (ssadd))
-     (foreach e ents (ssadd e ss))
-     (sssetfirst nil nil)
-     (command (strcat "_." cmdname) ss "")
-    )
-    (T (command (strcat "_." cmdname)))
-  )
-)
-
-(defun coimpact:pickfirst-ents ( / ss)
-  (if (setq ss (ssget "_I")) (cdr (coimpact:analyze-ss-ents ss)))
-)
-
-(defun coimpact:ents->ss (ents / ss)
-  (setq ss (ssadd))
-  (foreach e ents (ssadd e ss))
-  ss
-)
-
-;; Is any warning due for this intercepted command? If not, it is handed
-;; straight to the real command with no extra selection prompt.
-(defun coimpact:intercept-due-p (cmdname)
-  (or (and (member cmdname *coimpact:transform-commands*) (coimpact:should-warn-p cmdname))
-      (and (member cmdname '("MOVE" "COPY")) (coguard:xref-move-due-p cmdname))
-      (and (= cmdname "EXPLODE") (coguard:explode-due-p)))
-)
-
-(defun coimpact:native-override (cmdname / ents scanresult go)
-  (coimpact:dbg (strcat "intercepted " cmdname))
-  (if (coimpact:intercept-due-p cmdname)
-    (progn
-      ;; the selection: pre-selected, or asked for now as the command would
-      (if (not (setq ents (coimpact:pickfirst-ents)))
-        (setq ents (cdr (coimpact:analyze-ss-ents-safe (ssget)))))
-      (setq go T)
-      (if (and (member cmdname *coimpact:transform-commands*) (coimpact:should-warn-p cmdname) ents)
-        (progn
-          (coimpact:begin-analysis)
-          (setq scanresult (coimpact:analyze-ss (coimpact:ents->ss ents)))
-          (if (car scanresult) (coimpact:warn cmdname cmdname (car scanresult) nil))
-        )
-      )
-      (if (member cmdname '("MOVE" "COPY")) (coguard:prewarn-xref-move cmdname ents))
-      (if (= cmdname "EXPLODE") (setq go (coguard:prewarn-explode ents)))
-      (if go
-        (progn
-          ;; tell the reactors this run has already been warned about
-          (setq *coimpact:handled* cmdname *cutonce:prewarned* cmdname)
-          (coimpact:run-native cmdname ents)
-        )
-        (princ (strcat "\n" cmdname " cancelled."))
-      )
-    )
-    ;; no warning due: hand straight over to the real command
-    (coimpact:run-native cmdname (coimpact:pickfirst-ents))
-  )
-  (princ)
-)
-
-;; Entities of a selection set, without any analysis.
-(defun coimpact:analyze-ss-ents (ss / n out)
-  (setq n 0 out nil)
-  (repeat (sslength ss) (setq out (cons (ssname ss n) out) n (1+ n)))
-  (cons nil (reverse out))
-)
-
-(defun coimpact:analyze-ss-ents-safe (ss) (if ss (coimpact:analyze-ss-ents ss)))
-
-;; ---------------------------------------------------------------------------
-;; Command wrappers
-;;
-;; UNDEFINE applies to every open drawing, but LISP functions belong to one
-;; drawing. So C:MOVE, C:COPY, C:STRETCH, C:ROTATE, C:SCALE and C:EXPLODE are defined in EVERY
-;; drawing when this file loads, whether or not interception is on. They are
-;; inert while the AutoCAD command is defined (AutoCAD always prefers its own
-;; command), and once a command is undefined - from any drawing - they make
-;; sure it still works everywhere: intercepted if the user wants it, plain
-;; pass-through otherwise.
-;;
-;; A C:<cmd> that another add-on already defined is left alone, and that
-;; command cannot be intercepted in that drawing.
-;; ---------------------------------------------------------------------------
-
-(defun coimpact:dispatch (cmdname)
-  (if (coimpact:intercept-wanted-p cmdname)
-    (coimpact:native-override cmdname)
-    (progn
-      (setq *coimpact:handled* nil *cutonce:prewarned* nil)
-      (coimpact:run-native cmdname (coimpact:pickfirst-ents))
-    )
-  )
-  (princ)
-)
-
-(defun coimpact:install-wrappers ( / sym)
-  (foreach cn *coimpact:native-commands*
-    (setq sym (read (strcat "C:" cn)))
-    (cond
-      ;; already ours (file reloaded into this drawing) or free: define it
-      ((or (member cn *coimpact:wrapped*) (not (boundp sym)) (null (eval sym)))
-       (eval (list 'defun sym nil (list 'coimpact:dispatch cn)))
-       (if (not (member cn *coimpact:wrapped*))
-         (setq *coimpact:wrapped* (cons cn *coimpact:wrapped*)))
-      )
-      (T
-       (if (not (member cn *coimpact:foreign*))
-         (setq *coimpact:foreign* (cons cn *coimpact:foreign*)))
-      )
-    )
-  )
-)
-
-;; command-s with command echo and messages off, so restoring a command that
-;; is already defined at drawing open prints nothing.
-(defun coimpact:quiet-command (verb cn / echo mutt r)
-  (setq echo (getvar "CMDECHO") mutt (getvar "NOMUTT"))
-  (setvar "CMDECHO" 0)
-  (setvar "NOMUTT" 1)
-  (setq r (vl-catch-all-apply 'command-s (list verb cn)))
-  (setvar "NOMUTT" mutt)
-  (setvar "CMDECHO" echo)
-  (not (vl-catch-all-error-p r))
-)
-
-;; Returns T if cn is intercepted afterwards.
-(defun coimpact:intercept-on (cn)
-  (cond
-    ((member cn *coimpact:foreign*)
-     (coimpact:log (strcat "Another add-on already defines C:" cn " - " cn " is not intercepted."))
-     nil)
-    ((not (member cn *coimpact:wrapped*))
-     (coimpact:log (strcat "Could not set up " cn " in this drawing - " cn " is not intercepted."))
-     nil)
-    ((coimpact:quiet-command "_.UNDEFINE" cn)
-     (if (not (member cn *coimpact:intercepting*))
-       (setq *coimpact:intercepting* (cons cn *coimpact:intercepting*)))
-     T)
-    (T
-     (coimpact:log (strcat "Could not intercept " cn " in this drawing. Type CUTONCE to retry."))
-     nil)
-  )
-)
-
-;; Always REDEFINEs, even if this drawing did not undefine it: another
-;; drawing (or an earlier session state) may have.
-(defun coimpact:intercept-off (cn)
-  (coimpact:quiet-command "_.REDEFINE" cn)
-  (setq *coimpact:intercepting* (vl-remove cn *coimpact:intercepting*))
-)
-
-;; Brings every command in line with the stored preferences. Commands that
-;; another add-on overrides are left exactly as that add-on set them.
-(defun coimpact:apply-intercept-prefs ( )
-  (foreach cn *coimpact:native-commands*
-    (cond
-      ((member cn *coimpact:foreign*) nil)
-      ((coimpact:intercept-wanted-p cn) (coimpact:intercept-on cn))
-      (T (coimpact:intercept-off cn))
-    )
-  )
-)
-
-;; Shown state: the user's choice, which applies across every drawing.
-(defun coimpact:intercept-active-p (cn)
-  (and (coimpact:intercept-wanted-p cn) (not (member cn *coimpact:foreign*)))
-)
-
-;; Emergency reset: turns interception off for every command, saves that
-;; choice, and restores the AutoCAD commands.
-(defun c:CUTONCE-IMPACT-RESTORE ( )
-  (foreach cn *coimpact:native-commands*
-    (cutonce:pref-set (strcat "Intercept." cn) "0")
-    (coimpact:intercept-off cn)
-  )
-  (coimpact:log "MOVE, COPY, STRETCH, ROTATE, SCALE and EXPLODE restored to the standard AutoCAD commands; interception is off.")
-  (princ)
-)
-
-;; ---------------------------------------------------------------------------
 ;; Settings changes (shared by the dialog and the command-line version)
 ;; ---------------------------------------------------------------------------
 
@@ -806,22 +547,11 @@
     (coimpact:log "Command warnings are set by your CAD administrator."))
 )
 
-(defun coimpact:set-intercept (cn on)
-  (cutonce:pref-set (strcat "Intercept." cn) (if on "1" "0"))
-  (if on (coimpact:intercept-on cn) (coimpact:intercept-off cn))
-)
-
 (defun coimpact:on-off (flag) (if flag "ON" "OFF"))
 
 (defun coimpact:print-settings ( )
   (coimpact:log (strcat "Warnings: " (coimpact:on-off (coimpact:warnings-wanted-p))
                          (if (= (cutonce:warn-mode) "once") " (once per command per session)" " (every time)")))
-  (princ "\n  Interception: ")
-  (if (not (coimpact:intercept-allowed-p))
-    (princ "disabled by your CAD administrator")
-    (foreach cn *coimpact:native-commands*
-      (princ (strcat cn " " (coimpact:on-off (coimpact:intercept-active-p cn)) "  ")))
-  )
   (foreach k '("WarnMOVE" "WarnSTRETCH" "WarnROTATE" "WarnSCALE" "WarnGRIPS" "WarnSURFACE" "WarnOTHER")
     (princ (strcat "\n  " (cutonce:setting-label k) ": " (coimpact:on-off (cutonce:on-p k))
                    (if (cutonce:locked-p k) "  (set by CAD admin)" "")))
@@ -851,24 +581,19 @@
 )
 
 ;; ---------------------------------------------------------------------------
-;; MOVE / STRETCH / ROTATE / SCALE without interception
+;; MOVE / STRETCH / ROTATE / SCALE
 ;;
-;; The command reactor warns about these too, so moving Civil 3D objects is
-;; covered without undefining anything:
+;; The command reactor warns about these, with nothing undefined:
 ;;   - objects pre-selected: the warning appears as the command starts
 ;;     (press ESC after OK to stop it);
 ;;   - picked after the command started: the warning appears when the command
 ;;     ends, from the command's own selection, and says to type U to undo.
-;; A run started by the interception wrapper has already been warned about
-;; and is skipped (*coimpact:handled*).
 ;; ---------------------------------------------------------------------------
 
-(if (not (boundp '*coimpact:handled*)) (setq *coimpact:handled* nil))
 (if (not (boundp '*coimpact:pending*)) (setq *coimpact:pending* nil))
 
 (defun coimpact:transform-will-start (cmdname / scanresult)
   (cond
-    ((= *coimpact:handled* cmdname) (setq *coimpact:handled* nil))
     ((coimpact:should-warn-p cmdname)
      (coimpact:begin-analysis)
      (setq scanresult (coimpact:scan-pickfirst))
@@ -902,7 +627,7 @@
 )
 
 (defun coimpact:cmd-abandoned (reactor args)
-  (setq *coimpact:pending* nil *coimpact:handled* nil)
+  (setq *coimpact:pending* nil)
   (princ)
 )
 
@@ -994,8 +719,6 @@
 (defun coimpact:init ( )
   ;; always on: each warning checks the designer's switches when it fires
   (coimpact:init-reactor)
-  (coimpact:install-wrappers)
-  (vl-catch-all-apply 'coimpact:apply-intercept-prefs nil)
 )
 
 (coimpact:init)

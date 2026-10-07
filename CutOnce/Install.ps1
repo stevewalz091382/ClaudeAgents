@@ -136,4 +136,3 @@ if ($LogDir) {
 Write-Host ''
 Write-Host 'Done. Start Civil 3D and type CUTONCE-STATUS to confirm.'
 Write-Host 'Each designer chooses what runs for them with CUTONCE (CutOnce Control Center).'
-Write-Host '"Warn before" (command interception) is OFF until a designer ticks it there.'

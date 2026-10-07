@@ -37,32 +37,33 @@ Type `CUTONCE`.
 
 ### Command warnings
 
-Every command CutOnce watches has its own row. **Warn** switches that command's warning on or off. **Warn before** (where offered, off by default) intercepts the command so the warning appears before anything changes; see [Warn before](#warn-before-opt-in).
+Every command CutOnce watches has its own tick box, switching that command's warning on or off.
 
-| Row | Warns about | Warn before |
+| Row | Warns about | When |
 |---|---|---|
-| MOVE | Civil 3D objects with dependents, and xrefs | Yes |
-| COPY | Xrefs (copied off their insertion point) | Yes |
-| STRETCH, ROTATE, SCALE | Civil 3D objects with dependents | Yes |
-| EXPLODE | EXPLODE / BURST of Civil 3D objects, blocks, hatches, attributed blocks | Yes, with **Cancel** |
-| XREF / XBIND bind | Binding an xref into the drawing | No (only detectable afterwards) |
-| REFEDIT | REFEDIT / REFCLOSE advisory | No (already warns at start) |
-| PROMOTEREFERENCE | Promote advisory | No (already warns at start) |
-| TEXT, DTEXT, MTEXT | Label style tip | No (already warns at start) |
-| Grip edits | Alignments, profiles and surfaces | No |
-| Surface edits | Surface-edit commands | No |
-| Other commands | Commands in `ImpactExtraCommands` | No |
+| MOVE | Civil 3D objects with dependents, and xrefs | Civil 3D objects: at the start if pre-selected, otherwise after (type U). Xrefs: after |
+| COPY | Xrefs copied off their insertion point | After the command (type U) |
+| STRETCH, ROTATE, SCALE | Civil 3D objects with dependents | At the start if pre-selected, otherwise after (type U) |
+| EXPLODE | EXPLODE / BURST of Civil 3D objects, blocks, hatches, attributed blocks | After the command (type U) |
+| XREF / XBIND bind | Binding an xref into the drawing | After the command |
+| REFEDIT | REFEDIT / REFCLOSE advisory | At the start |
+| PROMOTEREFERENCE | Promote advisory | At the start |
+| TEXT, DTEXT, MTEXT | Label style tip | At the start |
+| Grip edits | Alignments, profiles and surfaces | At the start |
+| Surface edits | Surface-edit commands | At the start |
+| Other watched commands (added by CAD admin) | Commands in `ImpactExtraCommands` | At the start |
 
-**Frequency.** *Every time* or *Once per command per session* applies to every command warning above and to the save checks (growth and xref origin, once per drawing). The TEXT/DTEXT/MTEXT tip always shows once per session. A suppressed warning is still written to `Events.csv`. `CUTONCE-CHECK` and `CUTONCE-GUARD-CHECKNOW` always show their result.
+The **How to add other watched commands...** button under the list opens step-by-step instructions for the CAD administrator (find the command name with `CUTONCE-GUARD-LOGCOMMANDS`, add it to `ImpactExtraCommands` in `CutOnce-Config.lsp`, restart). It also shows the config file's location and the commands currently added.
 
-Command-line version, for scripts and toolbar buttons: `-CUTONCE`. Type a setting name (or enough of it to be unique) to toggle it, or `List`, `Frequency`, `Warnings` (master switch), `Defaults`, `eXit`, or `Move`, `COpy`, `STretch`, `Rotate`, `SCale`, `Explode` to toggle that command's **Warn before**.
+**Frequency.** *Every time* or *Once per command per session* applies to every command warning above and to the save checks (growth and xref origin, once per drawing). A suppressed warning is still written to `Events.csv`. `CUTONCE-CHECK` and `CUTONCE-GUARD-CHECKNOW` always show their result.
+
+Command-line version, for scripts and toolbar buttons: `-CUTONCE`. Type a setting name (or enough of it to be unique) to toggle it, or `List`, `Frequency`, `Warnings` (master switch), `Defaults`, `eXit`.
 
 | Button macro | Effect |
 |---|---|
 | `^C^C-CUTONCE;LogEnabled;;` | Toggle all logging |
 | `^C^C-CUTONCE;StdCheckOnOpen;;` | Toggle the standards check on open |
 | `^C^C-CUTONCE;WarnEXPLODE;;` | Toggle the EXPLODE warning |
-| `^C^C-CUTONCE;Move;;` | Toggle Warn before for MOVE |
 
 Setting names: `CommandWarnings`, `WarnMOVE`, `WarnCOPY`, `WarnSTRETCH`, `WarnROTATE`, `WarnSCALE`, `WarnEXPLODE`, `WarnXREFBIND`, `WarnREFEDIT`, `WarnPROMOTE`, `WarnTEXT`, `WarnDTEXT`, `WarnMTEXT`, `WarnGRIPS`, `WarnSURFACE`, `WarnOTHER`, `GuardGrowth`, `GuardXrefOrigin`, `StdCheckOnOpen`, `StdByLayer`, `StdXrefStatus`, `StdXrefOrigin`, `StdAlwaysShow`, `StdScanBlocks`, `LogEnabled`, `LogHealthOnSave`, `LogHealthOnOpen`, `LogXrefs`, `LogEvents`, `LogOpened`.
 
@@ -77,7 +78,7 @@ All files go to the log folder (see `CUTONCE-STATUS`), none to the drawing's fol
 | `Events.csv` | warning raised (also when frequency hides it) | Who, when, drawing, event type, detail. Includes every impact warning (`IMPACT`), guard warning and advisory, standards issues on open, and every TEXT / DTEXT / MTEXT start (`TEXT-TIP` the first time in a session, `TEXT-USED` after that) |
 | `Opened.csv` | drawing opened | Who, when, drawing |
 
-**Event codes:** `IMPACT`, `STANDARDS-OPEN`, `EXPLODE-BEFORE`, `EXPLODE-LOSS`, `ATTRIB-LOSS`, `XREF-BIND`, `XREF-MOVE-BEFORE`, `XREF-MOVED`, `XREF-BASEPOINT`, `SAVE-FLAG`, `ADVISORY-REFEDIT`, `ADVISORY-REFCLOSE`, `ADVISORY-PROMOTE`, `TEXT-TIP`, `TEXT-USED`.
+**Event codes:** `IMPACT`, `STANDARDS-OPEN`, `EXPLODE-LOSS`, `ATTRIB-LOSS`, `XREF-BIND`, `XREF-MOVED`, `XREF-BASEPOINT`, `SAVE-FLAG`, `ADVISORY-REFEDIT`, `ADVISORY-REFCLOSE`, `ADVISORY-PROMOTE`, `TEXT-TIP`, `TEXT-USED`.
 
 **Health.csv columns**
 
@@ -120,24 +121,10 @@ The warning lists the dependent objects and has two buttons:
 
 ### MOVE, STRETCH, ROTATE and SCALE
 
-Using any of these on an alignment, profile or surface shows the impact warning, with nothing undefined:
+Using any of these on an alignment, profile or surface shows the impact warning:
 
 - **Objects selected first:** the warning appears as the command starts. Click OK, then press ESC to stop.
 - **Command first, then select:** the warning appears when the command finishes and says to type **U** to undo.
-
-### Warn before (opt-in)
-
-To get the warning before the edit in the second case as well, tick **Warn before** on the command's row. It is offered for MOVE, COPY, STRETCH, ROTATE, SCALE and EXPLODE, and all six are off by default. For each ticked command, CutOnce runs `UNDEFINE` for the session and replaces it with a version that asks for the selection, shows any warning first (impact, xref moved or copied, objects EXPLODE would destroy), then runs the original command on that selection. Unticking restores it immediately.
-
-EXPLODE has no later prompt to ESC from, so its Warn before dialog has **Explode anyway** and **Cancel**. Cancel leaves the selection untouched.
-
-Side effects while a command is ticked:
-
-- Other LISP routines, scripts or macros that call it **without** the `_.` prefix get the CutOnce version.
-- Macros that use `_.MOVE` and similar bypass interception.
-- Warn before only shows a warning when **Command warnings** and that command's **Warn** are both on; otherwise the Control Center greys it out.
-
-CutOnce defines its own MOVE, COPY, STRETCH, ROTATE, SCALE and EXPLODE in every drawing so an undefined command keeps working everywhere. If one ever stops responding, type `CUTONCE-IMPACT-RESTORE`. Nothing persists outside the session.
 
 ## Learn More links
 
@@ -187,7 +174,7 @@ This installs to `%APPDATA%\Autodesk\ApplicationPlugins\CutOnce.bundle`, which C
 
 With a custom install folder, the installer prints a `(load ...)` line for acaddoc.lsp. Also add that folder to **Options > Files > Trusted Locations**.
 
-Reinstalling keeps an existing `CutOnce-Config.lsp` and writes the current version next to it as `CutOnce-Config.sample.lsp`. Keys missing from your config use the built-in defaults (everything on, Warn before off), so a reinstall works without editing it.
+Reinstalling keeps an existing `CutOnce-Config.lsp` and writes the current version next to it as `CutOnce-Config.sample.lsp`. Keys missing from your config use the built-in defaults (everything on), so a reinstall works without editing it.
 
 ## Configure (CAD administrators)
 
@@ -196,8 +183,7 @@ Reinstalling keeps an existing `CutOnce-Config.lsp` and writes the current versi
 - **Control Center defaults.** Every Control Center setting name can be given a firm default, for example `("StdAlwaysShow" . T)`. Designers get that value until they choose their own.
 - **LockedSettings.** List setting names to enforce them for everyone. For example, to require logging: `("LockedSettings" . ("LogEnabled" "LogHealthOnSave" "LogXrefs"))`. `WarnFrequency` can be locked too.
 - `WarnFrequency`: `"every"` or `"once"` (once per command per session).
-- `InterceptAllowed` (`nil` prohibits Warn before) and `InterceptDefault` (`nil`, `T` for all six commands, or a list such as `("MOVE" "EXPLODE")`).
-- `ImpactExtraCommands`: more Civil 3D command names to watch. Confirm a name with `CUTONCE-GUARD-LOGCOMMANDS` first.
+- `ImpactExtraCommands`: more Civil 3D command names to watch (the Control Center's **Other watched commands** row). Confirm a name with `CUTONCE-GUARD-LOGCOMMANDS` first, for example `("ImpactExtraCommands" . ("AECCSOMECOMMAND" "AECCOTHER"))`. The Control Center's **How to add other watched commands...** button walks through it.
 - `GuardGrowthWarnPct` (default 20), `LogDir`, `LearnMoreUrl`, `LearnMoreAnchors`.
 
 Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. Log folder: `CUTONCE_LOGDIR`, then `LogDir`, then `%LOCALAPPDATA%\CutOnce\Logs\`.
@@ -217,7 +203,6 @@ Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. L
 | `CUTONCE-GUARD-DUMPOBJECTS` | Raw object counts, for checking a number against Toolspace |
 | `CUTONCE-GUARD-LOGCOMMANDS` | Prints every command name as it runs |
 | `CUTONCE-IMPACT-ON` / `-OFF` | Command warnings (master switch) on or off |
-| `CUTONCE-IMPACT-RESTORE` | Turns every Warn before off and restores MOVE, COPY, STRETCH, ROTATE, SCALE and EXPLODE |
 | `CUTONCE-IMPACT-STATUS` / `-DEBUG` | Impact status, and diagnostic tracing |
 
 ## Performance
@@ -230,8 +215,7 @@ Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. L
 
 ## Known limitations
 
-- AutoLISP cannot cancel a command from a dialog, so warnings only inform (except EXPLODE with Warn before, which offers Cancel). Stop the edit with ESC after clicking OK.
-- With STRETCH intercepted and nothing pre-selected, CutOnce asks for the selection and passes it to STRETCH, which then moves whole objects. Pre-select with a crossing window, or leave STRETCH unticked.
+- AutoLISP cannot cancel a command from a dialog, so warnings only inform. Stop the edit with ESC after clicking OK.
 - Surface edits started from Toolspace's right-click menu do not raise a command event, so they are not seen.
 - Only these Civil 3D commands are watched: `AECCRAISELOWERSURFACE`, `AECCADDSURFACELINE`, `AECCDELETESURFACELINE`, `AECCADDSURFACEPOINT`, `AECCDELETESURFACEPOINT`, `AECCEDITSURFACEPOINT`, `AECCMOVESURFACEPOINT`, `AECCEDITSURFACESWAPEDGE`. Grip edits of alignments and profiles are watched.
 - Data shortcut references (DREFs) are not checked for broken sources. Use Prospector > Data Shortcuts.
