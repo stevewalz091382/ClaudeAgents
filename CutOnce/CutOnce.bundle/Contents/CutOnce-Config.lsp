@@ -104,7 +104,7 @@
     ;; ---- Learn More links --------------------------------------------------
 
     ;; Page opened by the Learn More buttons: "Civil 3D Warnings Explained".
-    ("LearnMoreUrl" . "https://designtovisualization.com/kb-c3d-and-modelwise-assistant/")
+    ("LearnMoreUrl" . "https://designtovisualization.com/kb-c3d-and-cutonce-assistant/")
 
     ;; Section of that page for each warning (the part after "#"), matching
     ;; the page's "Linking warnings to articles" table (#link-map). Set an

@@ -602,7 +602,7 @@
 ;; ---------------------------------------------------------------------------
 
 (setq *cutonce:kb-default-url*
-  "https://designtovisualization.com/kb-c3d-and-modelwise-assistant/")
+  "https://designtovisualization.com/kb-c3d-and-cutonce-assistant/")
 
 (setq *cutonce:kb-default-anchors*
   '(;; change-impact warnings

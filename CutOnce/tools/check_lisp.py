@@ -26,8 +26,8 @@ BANNED = [
     r"confirmed live", r"onedrive", r"(?-i:\bHDR\b)", r"power ?bi", r"dashboard",
     r"civil3dtools", r"c:\\\\civil3dtools", r"tell me", r"chat messages",
     r"dropgeom",
-    # earlier product names (the knowledge-base page address is the one exception)
-    r"model ?wise(?!-assistant)", r"c3dtools", r"bylayercheck",
+    # earlier product names
+    r"model ?wise", r"c3dtools", r"bylayercheck",
 ]
 
 

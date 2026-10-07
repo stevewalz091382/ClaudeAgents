@@ -97,7 +97,7 @@ Notes:
 The warning lists the dependent objects and has two buttons:
 
 - **OK** closes the warning. It is information only, because AutoLISP cannot cancel a command from a dialog. To stop the edit, click OK and then press **ESC** at the command's next prompt.
-- **Learn More...** opens the matching section of [Civil 3D Warnings Explained](https://designtovisualization.com/kb-c3d-and-modelwise-assistant/).
+- **Learn More...** opens the matching section of [Civil 3D Warnings Explained](https://designtovisualization.com/kb-c3d-and-cutonce-assistant/).
 
 ### MOVE, STRETCH, ROTATE and SCALE
 
@@ -120,7 +120,7 @@ CutOnce defines its own MOVE, STRETCH, ROTATE and SCALE in every drawing so an u
 
 ## Learn More links
 
-Every CutOnce warning has a **Learn More** button that opens its own section of [Civil 3D Warnings Explained](https://designtovisualization.com/kb-c3d-and-modelwise-assistant/). The warning stays open, and the link is also printed on the command line.
+Every CutOnce warning has a **Learn More** button that opens its own section of [Civil 3D Warnings Explained](https://designtovisualization.com/kb-c3d-and-cutonce-assistant/). The warning stays open, and the link is also printed on the command line.
 
 | Warning | Topic | Section |
 |---|---|---|
