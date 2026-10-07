@@ -4,11 +4,11 @@
     AutodeskProduct="AutoCAD"
     ProductType="Application"
     Name="CutOnce"
-    AppVersion="1.0.0"
-    Description="Civil 3D data-loss guard, drawing audit report and change-impact warnings."
+    AppVersion="2.0.0"
+    Description="CutOnce for Civil 3D (formerly ModelWise): data-loss guards, change-impact warnings, ByLayer and xref standards checks, and drawing health logs, controlled per designer."
     Author="Stephen Walz"
-    ProductCode="{710F60CF-5957-424F-8879-F3B370EA8CF3}"
-    UpgradeCode="{F70EFADA-E036-4C9F-98C6-96AD095DE0D6}">
+    ProductCode="{BA953C42-1FDA-4A0D-8371-4C37CE1477B7}"
+    UpgradeCode="{FD9441FE-9603-4169-8EFD-D9FDD76DD7B1}">
 
   <CompanyDetails Name="Stephen Walz" Url="" Email="" />
 
@@ -18,7 +18,7 @@
     <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R24.0" />
     <ComponentEntry
         AppName="CutOnce"
-        Version="1.0.0"
+        Version="2.0.0"
         ModuleName="./Contents/CutOnce-Loader.lsp"
         AppDescription="Loads CutOnce-Config.lsp and CutOnce.vlx into every drawing."
         LoadOnAutoCADStartup="True"

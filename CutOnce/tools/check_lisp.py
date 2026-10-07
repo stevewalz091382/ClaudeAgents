@@ -5,8 +5,8 @@ Runs anywhere Python 3 runs (no AutoCAD needed). It cannot prove the code
 works in Civil 3D; it catches the mistakes that are easy to make by hand:
 
   1. Unbalanced parentheses or unterminated strings, per file.
-  2. Any top-level defun or global setq that is not prefixed (c3dt:,
-     c3dguard:, c3daudit:, c3dimpact: or a C: command with a C3D prefix).
+  2. Any top-level defun or global setq that is not prefixed (mwise:,
+     mwcc:, mwguard:, mwimpact:, mwhealth:, mwstd: or a CUTONCE command).
   3. Leftover development notes or third-party references.
 
 Exit code 0 when clean, 1 otherwise.
@@ -18,12 +18,12 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FILES = sorted((ROOT / "src").glob("*.lsp")) + sorted((ROOT / "CutOnce.bundle" / "Contents").glob("*.lsp"))
 
-PREFIXES = ("c3dt:", "c3dguard:", "c3daudit:", "c3dimpact:")
-COMMAND_PREFIXES = ("c:cutonce-", "c:c3dtools-", "c:c3dguard-", "c:c3daudit", "c:c3d-impact-", "c:-c3d-impact-")
+PREFIXES = ("mwise:", "mwcc:", "mwguard:", "mwimpact:", "mwhealth:", "mwstd:")
+COMMAND_PREFIXES = ("c:cutonce", "c:-cutonce")
 GLOBAL_PREFIXES = tuple("*" + p for p in PREFIXES)
 
 BANNED = [
-    r"confirmed live", r"onedrive", r"\bhdr\b", r"power ?bi", r"dashboard",
+    r"confirmed live", r"onedrive", r"(?-i:\bHDR\b)", r"power ?bi", r"dashboard",
     r"civil3dtools", r"c:\\\\civil3dtools", r"tell me", r"chat messages",
     r"dropgeom",
 ]

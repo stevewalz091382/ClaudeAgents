@@ -1,6 +1,6 @@
 # Building and releasing CutOnce
 
-The four source files in `src/` are compiled into a single `CutOnce.vlx`. The VLX needs AutoCAD or Civil 3D on Windows, because only the AutoLISP compiler inside the product can build one.
+The six source files in `src/` are compiled into a single `CutOnce.vlx`. The VLX needs AutoCAD or Civil 3D on Windows, because only the AutoLISP compiler inside the product can build one.
 
 ## 1. Check the sources (any machine)
 
@@ -13,7 +13,7 @@ The script checks parenthesis balance, unterminated strings, unprefixed function
 ## 2. Test from source (Civil 3D)
 
 1. Run `Install.cmd -AllowSource` from this folder. This installs the bundle with the `.lsp` sources instead of a VLX.
-2. Start Civil 3D and open a drawing. The command line should show `CutOnce 1.0.0 loaded` and the note `loading development sources`.
+2. Start Civil 3D and open a drawing. The command line should show `CutOnce 2.0.0 loaded` and the note `loading development sources`.
 3. Work through the smoke test in section 5.
 
 ## 3. Compile the VLX (Civil 3D)
@@ -23,9 +23,11 @@ The script checks parenthesis balance, unterminated strings, unprefixed function
 3. **Application options:** leave **Separate Namespace** unchecked. The tools use per-drawing reactors and globals and are written for the document namespace. Check **ActiveX Support**.
 4. **LISP files to include**, in this order:
    1. `src\CutOnce-Core.lsp`
-   2. `src\C3DGuard.lsp`
-   3. `src\C3DAudit.lsp`
-   4. `src\C3DImpact.lsp`
+   2. `src\CutOnce-Standards.lsp`
+   3. `src\CutOnce-Health.lsp`
+   4. `src\CutOnce-Guard.lsp`
+   5. `src\CutOnce-Impact.lsp`
+   6. `src\CutOnce-ControlCenter.lsp` (must be last: it runs the open-time check once everything else is loaded)
 5. **Resource files:** none. The dialog DCL is generated at run time.
 6. **Compilation options:** Standard.
 7. Finish. The wizard writes `CutOnce.vlx` and a `CutOnce.prv` make file. Commit the `.prv` so later builds can use *Rebuild from make file*. Do not commit the `.vlx`.
@@ -39,36 +41,27 @@ powershell -ExecutionPolicy Bypass -File build\Make-Release.ps1
 
 This produces `dist\CutOnce-<version>.zip` with the bundle (loader, config, VLX, manifest), the installers and `README.md`. The sources are left out.
 
-The publisher is set to Stephen Walz in `CutOnce.bundle\PackageContents.xml`. Bump `AppVersion` there, and `*c3dt:version*` in `src\CutOnce-Core.lsp`, for each release. Keep `UpgradeCode` the same across all releases.
+The publisher is set to Stephen Walz in `CutOnce.bundle\PackageContents.xml`. Bump `AppVersion` there, and `*mwise:version*` in `src\CutOnce-Core.lsp`, for each release. Keep `UpgradeCode` the same across all releases.
 
 ## 5. Smoke test (each Civil 3D release you support)
 
 | Check | Expected |
 |---|---|
-| `CUTONCE-STATUS` | Install and log folders shown. Civil 3D COM connected. |
+| `CUTONCE-STATUS` | Version 2.0.0, install and log folders shown. Civil 3D COM connected. |
+| `CUTONCE` | The CutOnce Control Center opens. Locked settings appear greyed out. |
+| `-CUTONCE`, then `Move`, then `X` | MOVE interception toggles. |
 | Interception off: select an alignment, then `MOVE` | The warning appears before MOVE asks for a base point. |
-| Interception off: `MOVE`, pick an alignment, finish the move | The warning appears after the move and says "Type U to undo it." |
-| Interception off: `MOVE` a plain line | No warning. |
-| `C3D-IMPACT-SETTINGS`, tick MOVE only, OK, then `MOVE` on an alignment | The warning appears with a single OK button, then MOVE continues and ESC cancels it. `ROTATE` is not intercepted. |
-| On any warning, click Learn More..., then OK | The browser opens at that command's section of the knowledge-base page (check MOVE, STRETCH, ROTATE, SCALE, grip edits on an alignment and on a profile, and a surface edit). The warning stays open until OK. |
-| Untick MOVE in `C3D-IMPACT-SETTINGS`, then `MOVE` | The normal MOVE runs. |
-| Tick MOVE, select objects first, then `MOVE` | MOVE goes straight to "Specify base point" with the pre-selection. |
-| Tick MOVE in drawing A, switch to drawing B (opened earlier), `MOVE` | MOVE works in B, with the warning. Untick in B: MOVE works normally in both. |
-| `C3D-IMPACT-RESTORE` | All four commands work normally; all ticks cleared. |
-| `TEXT` once in a session; `MOVE` an xref | Each notice has OK and Learn More; Learn More opens `#text-instead-of-labels` and `#xref-moved`. |
-| Set the frequency to Once, then grip-drag an alignment twice | The warning appears the first time only. It appears again after restarting Civil 3D. |
-| `-C3D-IMPACT-SETTINGS`, then Rotate, then X | ROTATE interception toggles. |
-| Close and reopen Civil 3D, then `C3D-IMPACT-STATUS` | Every setting is as you left it. |
-| Grip-drag an alignment | The impact dialog appears. |
-| Run each surface edit command from the ribbon (Add Point, Delete Line, Swap Edge, and so on) | The impact dialog appears. |
-| `EXPLODE` an alignment, then `U` | Guard alert appears and a row is added to `Events.csv`. |
-| Save twice | `Health.csv` and `Civil3D_Audit_Report.csv` each have one current row for the drawing. The second save is not slower than the first. |
-| Set `CUTONCE_LOGDIR`, restart | Logs go to the new folder. |
-| `C3DGUARD-DUMPOBJECTS` against Toolspace | Counts match. |
+| On any warning, click Learn More..., then OK | The browser opens the matching section of Civil 3D Warnings Explained. |
+| `EXPLODE` an alignment, then `U` | Guard warning, and a row in `Events.csv`. |
+| Open a drawing with a non-ByLayer object or a broken xref | The standards check reports it on open. |
+| Save | A row in `Health.csv`. |
+| `MW`, `MW-STATUS`, `MODELWISE`, `C3DTOOLS-STATUS` | Each runs the matching `CUTONCE` command. |
+| Install over an existing ModelWise | `ModelWise.bundle` is removed; its config, log folder, logs and each designer's choices carry over. |
+| `CUTONCE-IMPACT-RESTORE` | MOVE, STRETCH, ROTATE and SCALE all work normally. |
 
 ## 6. Before listing publicly
 
-- [ ] **Legal review of C3DAudit.** The trial version described itself as recreating an existing Power BI dashboard, built around specific project drawings. If that dashboard, its metric set or its column names belong to HDR (or any other employer or client), counsel needs to clear C3DAudit before it is listed. Removing that wording from the comments does not settle the question. Also confirm who owns the code in all four tools, given the employment and IP-assignment terms in force while it was written.
+- [ ] **Legal review of the audit/health logging (formerly C3DAudit).** The trial version described itself as recreating an existing Power BI dashboard, built around specific project drawings. If that dashboard, its metric set or its column names belong to HDR (or any other employer or client), counsel needs to clear C3DAudit before it is listed. Removing that wording from the comments does not settle the question. Also confirm who owns the code in all four tools, given the employment and IP-assignment terms in force while it was written.
 - [ ] Support contact and privacy statement for the store listing. The tools write drawing paths and names to local CSV files. They make no network calls.
 - [ ] Disclose MOVE/STRETCH/ROTATE/SCALE interception in the listing text (see README).
 - [ ] Smoke test passed on every Civil 3D release named in the listing.
