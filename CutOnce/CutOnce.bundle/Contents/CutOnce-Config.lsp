@@ -29,25 +29,29 @@
     ("LogDir" . nil)
 
     ;; ---- Control Center defaults -------------------------------------------
-    ;; Change-impact warnings
-    ("ImpactWarnings"   . T)    ; master switch for all impact warnings
-    ("ImpactGrips"      . T)    ; grip edits of alignments and profiles
-    ("ImpactSurface"    . T)    ; surface edit commands
-    ("ImpactTransform"  . T)    ; MOVE / STRETCH / ROTATE / SCALE of Civil 3D objects
-    ("ImpactOther"      . T)    ; commands listed in ImpactExtraCommands
+    ;; Command warnings: master switch, then one switch per command
+    ("CommandWarnings"  . T)    ; master switch for every command warning below
+    ("WarnMOVE"         . T)    ; MOVE of Civil 3D objects and xrefs
+    ("WarnCOPY"         . T)    ; COPY of xrefs
+    ("WarnSTRETCH"      . T)    ; STRETCH of Civil 3D objects
+    ("WarnROTATE"       . T)    ; ROTATE of Civil 3D objects
+    ("WarnSCALE"        . T)    ; SCALE of Civil 3D objects
+    ("WarnEXPLODE"      . T)    ; EXPLODE / BURST of Civil 3D objects, blocks, hatches, attributes
+    ("WarnXREFBIND"     . T)    ; XREF / XBIND binding an xref into the drawing
+    ("WarnREFEDIT"      . T)    ; REFEDIT / REFCLOSE advisory
+    ("WarnPROMOTE"      . T)    ; PROMOTEREFERENCE advisory
+    ("WarnTEXT"         . T)    ; TEXT: label style tip (once per session)
+    ("WarnDTEXT"        . T)    ; DTEXT: label style tip (once per session)
+    ("WarnMTEXT"        . T)    ; MTEXT: label style tip (once per session)
+    ("WarnGRIPS"        . T)    ; grip edits of alignments, profiles and surfaces
+    ("WarnSURFACE"      . T)    ; surface edit commands
+    ("WarnOTHER"        . T)    ; commands listed in ImpactExtraCommands
 
-    ;; How often an impact warning appears:
-    ;;   "every"  every time the command runs
-    ;;   "once"   the first time each command runs in a Civil 3D session
-    ("ImpactWarnFrequency" . "every")
-
-    ;; Data-loss guards
-    ("GuardExplode"     . T)    ; EXPLODE / BURST of Civil 3D objects, blocks, hatches and attributed blocks
-    ("GuardXrefBind"    . T)    ; xref bound into the drawing
-    ("GuardXrefMove"    . T)    ; xref moved or copied
-    ("GuardRefEdit"     . T)    ; REFEDIT / REFCLOSE advisory
-    ("GuardPromote"     . T)    ; PROMOTEREFERENCE advisory
-    ("GuardTextTip"     . T)    ; TEXT / MTEXT tip, once per session
+    ;; How often a command or save-check warning appears:
+    ;;   "every"  every time
+    ;;   "once"   the first time each command warns in a Civil 3D session
+    ;; Events.csv is written every time either way.
+    ("WarnFrequency" . "every")
 
     ;; Checks on save
     ("GuardGrowth"      . T)    ; unusual growth since the last check
@@ -71,7 +75,7 @@
 
     ;; Keys designers may NOT change; the value above always applies.
     ;; Any key from the section above can be listed, plus
-    ;; "ImpactWarnFrequency". Example, to require logging firm-wide:
+    ;; "WarnFrequency". Example, to require logging firm-wide:
     ;;   ("LockedSettings" . ("LogEnabled" "LogHealthOnSave" "LogXrefs"))
     ("LockedSettings" . nil)
 
@@ -80,22 +84,22 @@
     ;; Percentage growth between checks that triggers the growth warning.
     ("GuardGrowthWarnPct" . 20)
 
-    ;; ---- Command interception ----------------------------------------------
+    ;; ---- Warn before (command interception) --------------------------------
 
-    ;; Whether users may turn on interception of MOVE, STRETCH, ROTATE and
-    ;; SCALE in the Control Center. Each intercepted command is UNDEFINED for
-    ;; the session. Set to nil to prohibit it.
-    ("ImpactInterceptAllowed" . T)
+    ;; Whether users may tick "Warn before" for MOVE, COPY, STRETCH, ROTATE,
+    ;; SCALE and EXPLODE in the Control Center. Each intercepted command is
+    ;; UNDEFINED for the session. Set to nil to prohibit it.
+    ("InterceptAllowed" . T)
 
-    ;; Interception for users who have not made their own choice:
+    ;; "Warn before" for users who have not made their own choice:
     ;;   nil                     none (recommended)
-    ;;   T                       all four commands
-    ;;   ("MOVE" "ROTATE")       just the commands listed
+    ;;   T                       all six commands
+    ;;   ("MOVE" "EXPLODE")      just the commands listed
     ;; Leave nil unless your firm has agreed to it.
-    ("ImpactInterceptDefault" . nil)
+    ("InterceptDefault" . nil)
 
     ;; Extra Civil 3D command names that should show the impact warning
-    ;; (switched by "ImpactOther"). Only add names you have confirmed: run
+    ;; (switched by "WarnOTHER"). Only add names you have confirmed: run
     ;; CUTONCE-GUARD-LOGCOMMANDS, start the command from the ribbon, and copy the
     ;; name printed on the command line.
     ;; Example:  ("ImpactExtraCommands" . ("AECCSOMECOMMAND" "AECCOTHER"))

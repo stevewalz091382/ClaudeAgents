@@ -298,10 +298,16 @@
   (reverse flags)
 )
 
-(defun cohealth:alert-growth (drawname flags)
+;; Save-check warnings follow the designer's frequency choice, counted per
+;; check per drawing; a manual check (CUTONCE-GUARD-CHECKNOW) always shows.
+(defun cohealth:show (key text topic manual)
+  (if manual (cutonce:notice text topic) (cutonce:notice-once key text topic))
+)
+
+(defun cohealth:alert-growth (drawname flags manual)
   (cutonce:log-event "SAVE-FLAG"
     (apply 'strcat (mapcar (function (lambda (x) (strcat (car x) " " (itoa (cadr x)) "->" (itoa (caddr x)) "  "))) flags)))
-  (cutonce:notice
+  (cohealth:show (strcat "GUARD_GROWTH|" drawname)
     (strcat
       "CutOnce Guard: unusual growth since the last check of\n" drawname ":\n\n"
       (apply 'strcat
@@ -312,12 +318,13 @@
       "\nTurn this check off in the CutOnce Control Center (type CUTONCE)."
     )
     "GUARD_GROWTH"
+    manual
   )
 )
 
-(defun cohealth:alert-origin (badpts)
+(defun cohealth:alert-origin (drawname badpts manual)
   (cutonce:log-event "XREF-BASEPOINT" (apply 'strcat (mapcar (function (lambda (p) (strcat (car p) "  "))) badpts)))
-  (cutonce:notice
+  (cohealth:show (strcat "GUARD_XREF_ORIGIN|" drawname)
     (strcat
       "CutOnce Guard: xref insertion point(s) are not at 0,0,0:\n\n"
       (apply 'strcat
@@ -328,6 +335,7 @@
       "\nTurn this check off in the CutOnce Control Center (type CUTONCE)."
     )
     "GUARD_XREF_ORIGIN"
+    manual
   )
 )
 
@@ -356,9 +364,9 @@
      (if wantLog (vl-catch-all-apply 'cohealth:write (list doc facts trigger manual)))
      (cohealth:remember drawpath facts)
      (if (and wantGrowth (setq flags (cohealth:growth-flags prev facts)))
-       (cohealth:alert-growth drawname flags))
+       (cohealth:alert-growth drawname flags manual))
      (if (and wantOrigin (setq badpts (costd:fact facts "offorigin")))
-       (cohealth:alert-origin badpts))
+       (cohealth:alert-origin drawname badpts manual))
     )
   )
 )

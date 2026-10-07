@@ -50,7 +50,7 @@
 ;; ---------------------------------------------------------------------------
 ;; Settings registry
 ;;
-;; Every on/off choice a designer can make in the Model Manager Control
+;; Every on/off choice a designer can make in the CutOnce Control
 ;; Center (CUTONCE). For each key, the effective value is:
 ;;   1. the administrator's value, if the key is listed in "LockedSettings"
 ;;   2. otherwise the user's own choice (AutoCAD profile, CutOnce.<key>)
@@ -62,19 +62,23 @@
 
 (setq *cutonce:settings*
   '(
-    ;; Change-impact warnings
-    ("ImpactWarnings"   "Impact"   "Show change-impact warnings"                          T)
-    ("ImpactGrips"      "Impact"   "Grip edits of alignments and profiles"                T)
-    ("ImpactSurface"    "Impact"   "Surface edit commands"                                T)
-    ("ImpactTransform"  "Impact"   "MOVE / STRETCH / ROTATE / SCALE of Civil 3D objects" T)
-    ("ImpactOther"      "Impact"   "Other watched commands (added by CAD admin)"          T)
-    ;; Data-loss guards
-    ("GuardExplode"     "Guard"    "EXPLODE / BURST of Civil 3D objects, blocks, hatches"   T)
-    ("GuardXrefBind"    "Guard"    "Xref bound into the drawing (XREF / XBIND)"           T)
-    ("GuardXrefMove"    "Guard"    "Xref moved or copied"                                 T)
-    ("GuardRefEdit"     "Guard"    "REFEDIT / REFCLOSE advisory"                          T)
-    ("GuardPromote"     "Guard"    "PROMOTEREFERENCE advisory"                            T)
-    ("GuardTextTip"     "Guard"    "TEXT / MTEXT tip (once per session)"                  T)
+    ;; Command warnings: a master switch, then one row per command
+    ("CommandWarnings"  "Cmd"      "Show command warnings"                                 T)
+    ("WarnMOVE"         "Cmd"      "MOVE - Civil 3D objects and xrefs"                     T)
+    ("WarnCOPY"         "Cmd"      "COPY - xrefs"                                          T)
+    ("WarnSTRETCH"      "Cmd"      "STRETCH - Civil 3D objects"                            T)
+    ("WarnROTATE"       "Cmd"      "ROTATE - Civil 3D objects"                             T)
+    ("WarnSCALE"        "Cmd"      "SCALE - Civil 3D objects"                              T)
+    ("WarnEXPLODE"      "Cmd"      "EXPLODE / BURST - Civil 3D objects, blocks, hatches"   T)
+    ("WarnXREFBIND"     "Cmd"      "XREF / XBIND - binding an xref"                        T)
+    ("WarnREFEDIT"      "Cmd"      "REFEDIT / REFCLOSE"                                    T)
+    ("WarnPROMOTE"      "Cmd"      "PROMOTEREFERENCE"                                      T)
+    ("WarnTEXT"         "Cmd"      "TEXT - label style tip"                                T)
+    ("WarnDTEXT"        "Cmd"      "DTEXT - label style tip"                               T)
+    ("WarnMTEXT"        "Cmd"      "MTEXT - label style tip"                               T)
+    ("WarnGRIPS"        "Cmd"      "Grip edits of alignments, profiles, surfaces"          T)
+    ("WarnSURFACE"      "Cmd"      "Surface edit commands"                                 T)
+    ("WarnOTHER"        "Cmd"      "Other watched commands (added by CAD admin)"           T)
     ;; Save checks
     ("GuardGrowth"      "Save"     "Unusual growth since the last check"                  T)
     ("GuardXrefOrigin"  "Save"     "Xref not inserted at 0,0,0"                           T)
@@ -143,6 +147,57 @@
 (defun cutonce:log-on-p (key)
   (and (cutonce:on-p "LogEnabled") (cutonce:on-p key))
 )
+
+;; A command warning shows only when the master switch and its own row are on.
+(defun cutonce:cmd-warn-p (key)
+  (and (cutonce:on-p "CommandWarnings") (cutonce:on-p key))
+)
+
+;; ---------------------------------------------------------------------------
+;; Warning frequency: "every" time, or "once" per command per Civil 3D session.
+;; Applies to every command warning and save check. What has been shown is
+;; kept on the Visual LISP blackboard, so it is shared by every open drawing
+;; and forgotten when Civil 3D closes. Events.csv is written either way.
+;; ---------------------------------------------------------------------------
+
+(defun cutonce:default-warn-mode ( )
+  (if (= (cutonce:cfg "WarnFrequency" "every") "once") "once" "every")
+)
+
+(defun cutonce:warn-mode ( / p)
+  (setq p (if (not (cutonce:locked-p "WarnFrequency")) (cutonce:pref-get "WarnFrequency")))
+  (if (member p '("every" "once")) p (cutonce:default-warn-mode))
+)
+
+(defun cutonce:reset-warned ( ) (vl-bb-set '*cutonce:bb-warned* nil))
+
+(defun cutonce:set-warn-mode (mode)
+  (if (/= mode (cutonce:warn-mode)) (cutonce:reset-warned))
+  (if (= mode (cutonce:default-warn-mode))
+    (if (cutonce:pref-get "WarnFrequency") (cutonce:pref-set "WarnFrequency" ""))
+    (cutonce:pref-set "WarnFrequency" mode))
+)
+
+;; key identifies one warning, e.g. "IMPACT:MOVE" or "GUARD_EXPLODE".
+(defun cutonce:warn-due-p (key)
+  (or (= (cutonce:warn-mode) "every")
+      (not (member key (vl-bb-ref '*cutonce:bb-warned*))))
+)
+
+(defun cutonce:mark-warned (key / seen)
+  (setq seen (vl-bb-ref '*cutonce:bb-warned*))
+  (if (not (member key seen)) (vl-bb-set '*cutonce:bb-warned* (cons key seen)))
+)
+
+(defun cutonce:freq-note ( )
+  (if (= (cutonce:warn-mode) "once")
+    "Shown once per command each session. To change, type CUTONCE."
+    "Shown every time. To change, type CUTONCE (Control Center).")
+)
+
+;; Set by an intercepted command just before it hands over to the real
+;; command, so the after-the-fact check for that command does not warn twice.
+(setq *cutonce:prewarned* nil)
 
 ;; ---------------------------------------------------------------------------
 ;; Folders
@@ -677,7 +732,7 @@
 
 ;; DCL with the buttons baked in; written fresh for each notice because the
 ;; number and labels of the buttons vary. Returns the temp file path.
-(defun cutonce:write-notice-dcl (links / path f i)
+(defun cutonce:write-notice-dcl (links oklabel / path f i)
   (setq path (vl-filename-mktemp "cutonce" nil ".dcl"))
   (if (setq f (open path "w"))
     (progn
@@ -688,7 +743,10 @@
                 "  : list_box { key = \"notice_text\"; height = 16; width = 80; }"
                 "  : row {"
                 "    alignment = centered; fixed_width = true;"
-                "    : button { key = \"accept\"; label = \"OK\"; is_default = true; is_cancel = true; width = 12; }")
+                (if oklabel
+                  (strcat "    : button { key = \"accept\"; label = \"" oklabel "\"; is_default = true; width = 16; }\n"
+                          "    : button { key = \"cancel\"; label = \"Cancel\"; is_cancel = true; width = 12; }")
+                  "    : button { key = \"accept\"; label = \"OK\"; is_default = true; is_cancel = true; width = 12; }"))
           (progn
             (setq i 0)
             (mapcar (function (lambda (lk)
@@ -713,9 +771,11 @@
   (reverse (cons s out))
 )
 
-(defun cutonce:notice-links (text links / path dcl_id shown i)
+;; With oklabel, the dialog has that button plus Cancel and returns T only
+;; when the first is pressed; without it, a single OK and the result is T.
+(defun cutonce:notice-dialog (text links oklabel / path dcl_id shown i result)
   (setq links (vl-remove-if-not (function (lambda (lk) (cdr lk))) links))
-  (setq path (cutonce:write-notice-dcl links) shown nil)
+  (setq path (cutonce:write-notice-dcl links oklabel) shown nil result 1)
   (if (and path (> (setq dcl_id (load_dialog path)) 0))
     (progn
       (if (new_dialog "co_notice" dcl_id)
@@ -724,13 +784,14 @@
           (foreach ln (cutonce:split-lines text) (add_list ln))
           (end_list)
           (action_tile "accept" "(done_dialog 1)")
+          (if oklabel (action_tile "cancel" "(done_dialog 0)"))
           (setq i 0)
           (foreach lk links
             (setq i (1+ i))
             (action_tile (strcat "learn_" (itoa i))
                          (strcat "(cutonce:open-kb " (vl-prin1-to-string (cdr lk)) ")"))
           )
-          (start_dialog)
+          (setq result (start_dialog))
           (setq shown T)
         )
       )
@@ -744,11 +805,34 @@
                      (mapcar (function (lambda (lk) (strcat "\n" (car lk) " " (cutonce:kb-url (cdr lk)))))
                              links))))
   )
+  (= result 1)
+)
+
+(defun cutonce:notice-links (text links)
+  (cutonce:notice-dialog text links nil)
   (princ)
 )
 
 (defun cutonce:notice (text topic)
   (cutonce:notice-links text (list (cons "Learn More..." topic)))
+)
+
+;; A command or save-check warning: shown only when due under the designer's
+;; frequency choice (see cutonce:warn-due-p), then remembered.
+(defun cutonce:notice-once (key text topic)
+  (if (cutonce:warn-due-p key)
+    (progn
+      (cutonce:notice (strcat text "\n\n" (cutonce:freq-note)) topic)
+      (cutonce:mark-warned key)
+    )
+  )
+  (princ)
+)
+
+;; Warning with a real choice, for intercepted commands that would otherwise
+;; run straight away (EXPLODE). Returns T to go ahead.
+(defun cutonce:confirm (text topic oklabel)
+  (cutonce:notice-dialog text (list (cons "Learn More..." topic)) oklabel)
 )
 
 (defun c:CUTONCE-STATUS ( / app)
