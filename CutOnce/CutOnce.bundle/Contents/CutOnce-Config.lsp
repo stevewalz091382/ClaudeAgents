@@ -39,7 +39,7 @@
     ("WarnEXPLODE"      . T)    ; EXPLODE / BURST of Civil 3D objects, blocks, hatches, attributes
     ("WarnXREFBIND"     . T)    ; XREF / XBIND binding an xref into the drawing
     ("WarnREFEDIT"      . T)    ; REFEDIT / REFCLOSE advisory
-    ("WarnPROMOTE"      . T)    ; PROMOTEREFERENCE advisory
+    ("WarnPROMOTE"      . T)    ; promoting a data shortcut reference (any *PROMOTE* command)
     ("WarnTEXT"         . T)    ; TEXT: label style tip
     ("WarnDTEXT"        . T)    ; DTEXT: label style tip
     ("WarnMTEXT"        . T)    ; MTEXT: label style tip

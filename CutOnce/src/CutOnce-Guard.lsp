@@ -15,8 +15,9 @@
 ;;;      [WarnXREFBIND]
 ;;;   3. MOVE / COPY shifting an attached xref's insertion point.
 ;;;      [WarnMOVE] [WarnCOPY]
-;;;   4. Advisories for REFEDIT / REFCLOSE [WarnREFEDIT], PROMOTEREFERENCE
-;;;      [WarnPROMOTE], and a label style tip on TEXT, DTEXT and MTEXT
+;;;   4. Advisories for REFEDIT / REFCLOSE [WarnREFEDIT], promoting a data
+;;;      shortcut reference (any command whose name contains PROMOTE, since
+;;;      Civil 3D releases name it differently) [WarnPROMOTE], and a label style tip on TEXT, DTEXT and MTEXT
 ;;;      [WarnTEXT] [WarnDTEXT] [WarnMTEXT]. Every TEXT / DTEXT / MTEXT start
 ;;;      is logged to Events.csv: TEXT-TIP when the tip shows, TEXT-USED when
 ;;;      the frequency choice hides it.
@@ -378,7 +379,7 @@
 (defun coguard:advise-promote ( )
   (cutonce:notice-once "GUARD_PROMOTE"
     (strcat
-      "CutOnce Guard: PROMOTEREFERENCE was just run.\n\n"
+      "CutOnce Guard: you are promoting a data shortcut reference.\n\n"
       "Promoting a data-shortcut reference makes an independent copy in this\n"
       "drawing and breaks its link to the source; later changes to the source\n"
       "will no longer reach this copy."
@@ -452,9 +453,9 @@
     ((member cmd '("REFCLOSE" "-REFCLOSE"))
      (if (cutonce:cmd-warn-p "WarnREFEDIT")
        (progn (coguard:log-event "ADVISORY-REFCLOSE" "REFCLOSE started") (coguard:advise-refclose))))
-    ((= cmd "PROMOTEREFERENCE")
+    ((wcmatch cmd "*PROMOTE*")
      (if (cutonce:cmd-warn-p "WarnPROMOTE")
-       (progn (coguard:log-event "ADVISORY-PROMOTE" "PROMOTEREFERENCE run") (coguard:advise-promote))))
+       (progn (coguard:log-event "ADVISORY-PROMOTE" (strcat cmd " started")) (coguard:advise-promote))))
     ((member cmd '("TEXT" "DTEXT" "MTEXT"))
      (if (cutonce:cmd-warn-p (strcat "Warn" cmd)) (coguard:advise-text cmd)))
   )

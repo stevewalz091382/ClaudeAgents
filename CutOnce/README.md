@@ -47,7 +47,7 @@ Every command CutOnce watches has its own tick box, switching that command's war
 | EXPLODE | EXPLODE / BURST of Civil 3D objects, blocks, hatches, attributed blocks | After the command (type U) |
 | XREF / XBIND bind | Binding an xref into the drawing | After the command |
 | REFEDIT | REFEDIT / REFCLOSE advisory | At the start |
-| PROMOTEREFERENCE | Promote advisory | At the start |
+| Promote reference | Promoting a data shortcut reference (any command whose name contains PROMOTE) | At the start |
 | TEXT, DTEXT, MTEXT | Label style tip | At the start |
 | Grip edits | Alignments, profiles and surfaces | At the start |
 | Surface edits | Surface-edit commands | At the start |
@@ -147,7 +147,7 @@ Every CutOnce warning has a **Learn More** button that opens its own section of 
 | Guard: xref moved or copied | `GUARD_XREF_MOVED` | `#xref-moved` |
 | Guard (on save): xref not at 0,0,0 | `GUARD_XREF_ORIGIN` | `#xref-not-at-origin` |
 | Guard: REFEDIT / REFCLOSE | `GUARD_REFEDIT` | `#refedit` |
-| Guard: PROMOTEREFERENCE | `GUARD_PROMOTE` | `#promote-reference` |
+| Guard: promoting a data shortcut reference | `GUARD_PROMOTE` | `#promote-reference` |
 | Guard: TEXT / DTEXT / MTEXT tip | `GUARD_TEXT` | `#text-instead-of-labels` |
 | Guard (on save): unusual growth | `GUARD_GROWTH` | `#drawing-growth` |
 | Control Center | `CONTROL_CENTER` | `#control-center` |

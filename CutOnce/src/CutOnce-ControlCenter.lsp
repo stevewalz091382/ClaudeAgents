@@ -10,7 +10,7 @@
 ;;;   Command warnings         master on/off, every time or once per command
 ;;;                            per session, then one row per command:
 ;;;                            MOVE, COPY, STRETCH, ROTATE, SCALE, EXPLODE,
-;;;                            XREF/XBIND, REFEDIT/REFCLOSE, PROMOTEREFERENCE,
+;;;                            XREF/XBIND, REFEDIT/REFCLOSE, promote reference,
 ;;;                            TEXT, DTEXT, MTEXT, grip edits, surface edits,
 ;;;                            other watched commands (with instructions
 ;;;                            for the CAD administrator on adding them)

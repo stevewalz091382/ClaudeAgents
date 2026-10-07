@@ -72,7 +72,7 @@
     ("WarnEXPLODE"      "Cmd"      "EXPLODE / BURST - Civil 3D objects, blocks, hatches"   T)
     ("WarnXREFBIND"     "Cmd"      "XREF / XBIND - binding an xref"                        T)
     ("WarnREFEDIT"      "Cmd"      "REFEDIT / REFCLOSE"                                    T)
-    ("WarnPROMOTE"      "Cmd"      "PROMOTEREFERENCE"                                      T)
+    ("WarnPROMOTE"      "Cmd"      "Promoting a data shortcut reference"                   T)
     ("WarnTEXT"         "Cmd"      "TEXT - label style tip"                                T)
     ("WarnDTEXT"        "Cmd"      "DTEXT - label style tip"                               T)
     ("WarnMTEXT"        "Cmd"      "MTEXT - label style tip"                               T)
