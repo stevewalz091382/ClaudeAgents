@@ -103,40 +103,45 @@
 
     ;; ---- Learn More links --------------------------------------------------
 
-    ;; Page opened by the Learn More buttons: "Civil 3D Warnings Explained".
-    ("LearnMoreUrl" . "https://designtovisualization.com/kb-c3d-and-cutonce-assistant/")
-
+    ;; The Learn More buttons open "Civil 3D Warnings Explained"
+    ;; (https://designtovisualization.com/kb-c3d-and-cutonce-assistant/) at the
+    ;; section for each warning. That address and its sections are built in, so
+    ;; they stay current with each CutOnce update. Only uncomment the lines
+    ;; below to send designers to your own copy of the page instead.
+    ;;
+    ;; ("LearnMoreUrl" . "https://designtovisualization.com/kb-c3d-and-cutonce-assistant/")
+    ;;
     ;; Section of that page for each warning (the part after "#"), matching
     ;; the page's "Linking warnings to articles" table (#link-map). Set an
     ;; entry to "" to open the top of the page. A topic left out uses the
     ;; built-in section.
-    ("LearnMoreAnchors"
-      . (;; Change-impact warnings
-         ("MOVE"              . "move-civil-objects")
-         ("STRETCH"           . "stretch-civil-objects")
-         ("ROTATE"            . "rotate-civil-objects")
-         ("SCALE"             . "scale-civil-objects")
-         ("GRIP_ALIGNMENT"    . "grip-edit-alignment")       ; grip edit, alignment selected
-         ("GRIP_PROFILE"      . "grip-edit-profile")         ; grip edit, profile selected
-         ("SURFACE"           . "surface-edits")             ; any surface-edit command
-         ("GENERAL"           . "dynamic-model")             ; anything else
-         ;; Standards check (on open, or CUTONCE-CHECK)
-         ("STANDARDS_OPEN"    . "standards-check")           ; reading the check
-         ("STD_BYLAYER"       . "objects-not-bylayer")
-         ("STD_XREF_STATUS"   . "xrefs-broken-unloaded")
-         ("STD_XREF_ORIGIN"   . "xref-not-at-origin")
-         ;; Guard
-         ("GUARD_EXPLODE"     . "explode-civil-objects")
-         ("GUARD_ATTRIB"      . "explode-attributed-blocks")
-         ("GUARD_XREF_BIND"   . "xref-bind")
-         ("GUARD_XREF_MOVED"  . "xref-moved")
-         ("GUARD_XREF_ORIGIN" . "xref-not-at-origin")        ; save check
-         ("GUARD_REFEDIT"     . "refedit")                   ; REFEDIT and REFCLOSE
-         ("GUARD_PROMOTE"     . "promote-reference")
-         ("GUARD_TEXT"        . "text-instead-of-labels")
-         ("GUARD_GROWTH"      . "drawing-growth")
-         ;; Control Center
-         ("CONTROL_CENTER"    . "control-center")))
+    ;; ("LearnMoreAnchors"
+    ;;   . (;; Change-impact warnings
+    ;;      ("MOVE"              . "move-civil-objects")
+    ;;      ("STRETCH"           . "stretch-civil-objects")
+    ;;      ("ROTATE"            . "rotate-civil-objects")
+    ;;      ("SCALE"             . "scale-civil-objects")
+    ;;      ("GRIP_ALIGNMENT"    . "grip-edit-alignment")       ; grip edit, alignment selected
+    ;;      ("GRIP_PROFILE"      . "grip-edit-profile")         ; grip edit, profile selected
+    ;;      ("SURFACE"           . "surface-edits")             ; any surface-edit command
+    ;;      ("GENERAL"           . "dynamic-model")             ; anything else
+    ;;      ;; Standards check (on open, or CUTONCE-CHECK)
+    ;;      ("STANDARDS_OPEN"    . "standards-check")           ; reading the check
+    ;;      ("STD_BYLAYER"       . "objects-not-bylayer")
+    ;;      ("STD_XREF_STATUS"   . "xrefs-broken-unloaded")
+    ;;      ("STD_XREF_ORIGIN"   . "xref-not-at-origin")
+    ;;      ;; Guard
+    ;;      ("GUARD_EXPLODE"     . "explode-civil-objects")
+    ;;      ("GUARD_ATTRIB"      . "explode-attributed-blocks")
+    ;;      ("GUARD_XREF_BIND"   . "xref-bind")
+    ;;      ("GUARD_XREF_MOVED"  . "xref-moved")
+    ;;      ("GUARD_XREF_ORIGIN" . "xref-not-at-origin")        ; save check
+    ;;      ("GUARD_REFEDIT"     . "refedit")                   ; REFEDIT and REFCLOSE
+    ;;      ("GUARD_PROMOTE"     . "promote-reference")
+    ;;      ("GUARD_TEXT"        . "text-instead-of-labels")
+    ;;      ("GUARD_GROWTH"      . "drawing-growth")
+    ;;      ;; Control Center
+    ;;      ("CONTROL_CENTER"    . "control-center")))
   )
 )
 

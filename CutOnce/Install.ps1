@@ -47,6 +47,7 @@ $contents   = Join-Path $bundleSrc 'Contents'
 $vlx        = Join-Path $contents 'CutOnce.vlx'
 $sourceDir  = Join-Path $here 'src'
 $envTarget  = if ($Scope -eq 'AllUsers') { 'Machine' } else { 'User' }
+$kbUrl      = 'https://designtovisualization.com/kb-c3d-and-cutonce-assistant/'
 
 function Test-Admin {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -81,6 +82,14 @@ function Copy-Contents([string]$from, [string]$to) {
         $dest = Join-Path $to $_.Name
         if ($_.Name -eq 'CutOnce-Config.lsp' -and (Test-Path $dest)) {
             Write-Host "Keeping existing $dest"
+            # A config written by an earlier build may still name an older
+            # knowledge-base page; point it at the current one.
+            $text = Get-Content $dest -Raw
+            $fixed = $text -replace 'https://designtovisualization\.com/kb-[A-Za-z0-9-]+/?', $kbUrl
+            if ($fixed -ne $text) {
+                Set-Content -Path $dest -Value $fixed -Encoding Default -NoNewline
+                Write-Host "  Learn More links updated to $kbUrl"
+            }
             $sample = Join-Path $to 'CutOnce-Config.sample.lsp'
             Copy-Item $_.FullName $sample -Force
             Write-Host "  The full settings list (Control Center defaults, LockedSettings) is in $sample."
