@@ -42,7 +42,7 @@
     ("ImpactWarnFrequency" . "every")
 
     ;; Data-loss guards
-    ("GuardExplode"     . T)    ; EXPLODE / BURST of Civil 3D objects and attributed blocks
+    ("GuardExplode"     . T)    ; EXPLODE / BURST of Civil 3D objects, blocks, hatches and attributed blocks
     ("GuardXrefBind"    . T)    ; xref bound into the drawing
     ("GuardXrefMove"    . T)    ; xref moved or copied
     ("GuardRefEdit"     . T)    ; REFEDIT / REFCLOSE advisory

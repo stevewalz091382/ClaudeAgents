@@ -6,8 +6,8 @@
 ;;; command or blocks a save. Each guard can be switched on or off by the
 ;;; designer in CUTONCE.
 ;;;
-;;;   1. EXPLODE converting any Civil 3D object (any AECC* type) or block
-;;;      reference into plain geometry. Also catches attributed blocks being
+;;;   1. EXPLODE converting any Civil 3D object (any AECC* type), block
+;;;      reference or hatch into plain geometry. Also catches attributed blocks being
 ;;;      converted to text, which covers BURST (BURST runs EXPLODE internally).
 ;;;      [GuardExplode]
 ;;;   2. XREF / XBIND binding an external reference into the drawing.
@@ -58,13 +58,14 @@
 
 
 ;; ---------------------------------------------------------------------------
-;; Object snapshots: count every AECC* object and block reference in Model
-;; Space and every paper-space layout, keyed by ObjectName.
+;; Object snapshots: count every AECC* object, block reference and hatch in
+;; Model Space and every paper-space layout, keyed by ObjectName.
 ;; ---------------------------------------------------------------------------
 
 (defun coguard:friendly-name (raw)
   (cond
     ((= raw "AcDbBlockReference") "Block")
+    ((= raw "AcDbHatch") "Hatch")
     ((= raw "AeccDbAlignment") "Alignment")
     ((= raw "AeccDbVAlignment") "Profile")
     ((= raw "AeccDbGraphProfile") "Profile View")
@@ -94,7 +95,7 @@
     (function (lambda ()
       (vlax-for ent spaceBlk
         (setq oname (cutonce:object-name ent))
-        (if (or (= oname "AcDbBlockReference") (wcmatch (strcase oname) "AECC*"))
+        (if (or (= oname "AcDbBlockReference") (= oname "AcDbHatch") (wcmatch (strcase oname) "AECC*"))
           (progn
             (setq pair (assoc oname counts))
             (setq counts (if pair
@@ -166,6 +167,11 @@
                                  (itoa (caddr x)) " (down " (itoa (- (cadr x) (caddr x))) ")\n")))
                        lost))
              "\nThe exploded object is now plain geometry and has lost its design intent.\n\n"
+             (if (assoc "AcDbHatch" lost)
+               (strcat "An exploded hatch becomes many separate lines: it loses its boundary\n"
+                       "association and area, can no longer be edited as a pattern, and\n"
+                       "adds to file size.\n\n")
+               "")
              "If this wasn't intentional, type U now to undo."
            )
            "GUARD_EXPLODE"
@@ -549,7 +555,7 @@
 (defun c:CUTONCE-GUARD-DUMPOBJECTS ( / counts)
   (setq counts (coguard:object-snapshot (cutonce:active-doc)))
   (if (not counts)
-    (coguard:log "No AECC* or block objects in Model Space or any layout.")
+    (coguard:log "No AECC*, block or hatch objects in Model Space or any layout.")
     (progn
       (coguard:log "Raw ObjectName counts (Model Space + all layouts):")
       (foreach pair (vl-sort counts (function (lambda (a b) (< (car a) (car b)))))

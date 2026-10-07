@@ -69,7 +69,7 @@
     ("ImpactTransform"  "Impact"   "MOVE / STRETCH / ROTATE / SCALE of Civil 3D objects" T)
     ("ImpactOther"      "Impact"   "Other watched commands (added by CAD admin)"          T)
     ;; Data-loss guards
-    ("GuardExplode"     "Guard"    "EXPLODE / BURST of Civil 3D objects and attributes"   T)
+    ("GuardExplode"     "Guard"    "EXPLODE / BURST of Civil 3D objects, blocks, hatches"   T)
     ("GuardXrefBind"    "Guard"    "Xref bound into the drawing (XREF / XBIND)"           T)
     ("GuardXrefMove"    "Guard"    "Xref moved or copied"                                 T)
     ("GuardRefEdit"     "Guard"    "REFEDIT / REFCLOSE advisory"                          T)

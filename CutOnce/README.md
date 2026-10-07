@@ -14,7 +14,7 @@ CutOnce is one AutoLISP package that loads into every drawing. Each designer dec
 |---|---|---|
 | **Standards check** | When a drawing opens: objects not ByLayer, xrefs broken or unloaded, xrefs not at 0,0,0 | Only when something is wrong (or always, if the designer chooses) |
 | **Health log** | Writes a Health.csv row (and Xrefs.csv detail) on every save and open: counts, styles, ByLayer, xrefs, drawing settings | Never |
-| **Guard** | Warns when EXPLODE, BURST, XREF bind, or moving an xref destroys data. Flags unusual growth and xrefs off 0,0,0 on save | Only when something risky happens |
+| **Guard** | Warns when EXPLODE (of Civil 3D objects, blocks or hatches), BURST, XREF bind, or moving an xref destroys data. Flags unusual growth and xrefs off 0,0,0 on save | Only when something risky happens |
 | **Impact** | Before an alignment, surface or profile is edited, lists what depends on it | On grip edits, surface edits and MOVE/STRETCH/ROTATE/SCALE of those objects |
 | **CutOnce Control Center** | One dialog to switch every item above on or off, per designer, including logging | Only when opened |
 
@@ -26,7 +26,7 @@ Type `CUTONCE`.
 |---|---|
 | Change-impact warnings | Master on/off, then grip edits, surface edits, MOVE/STRETCH/ROTATE/SCALE, other watched commands. Every time or once per command per session |
 | Command interception | MOVE, STRETCH, ROTATE, SCALE, each separately (off by default) |
-| Data-loss guards | EXPLODE/BURST, xref bind, xref moved or copied, REFEDIT/REFCLOSE, PROMOTEREFERENCE, TEXT/MTEXT tip |
+| Data-loss guards | EXPLODE/BURST (Civil 3D objects, blocks, hatches), xref bind, xref moved or copied, REFEDIT/REFCLOSE, PROMOTEREFERENCE, TEXT/MTEXT tip |
 | Checks on save | Unusual growth, xref not at 0,0,0 |
 | Standards check on open | Run on open, ByLayer, xref status (broken/unloaded), xref not at 0,0,0, always show result, include block definitions |
 | Logging | Master on/off, then Health.csv on save, Health.csv on open, Xrefs.csv, Events.csv, Opened.csv |
