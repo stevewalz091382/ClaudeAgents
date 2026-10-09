@@ -73,7 +73,7 @@ All files go to the log folder (see `CUTONCE-STATUS`), none to the drawing's fol
 
 | File | One row per | Contents |
 |---|---|---|
-| `Health.csv` | check (Save, Open, Audit, Manual) | Who, when, trigger, drawing, then the columns below |
+| `Health.csv` | check (Save, Open, Audit, Manual) | Who, when, trigger, drawing, then the columns below, plus any `HealthExtraCounts` columns |
 | `Xrefs.csv` | xref, per Health.csv row | Name, path, Attach/Overlay, Loaded/Unloaded/Not Found, nested, instances, insertion point, rotation, scale, at 0,0,0 |
 | `Events.csv` | warning raised (also when frequency hides it) | Who, when, drawing, event type, detail. Includes every impact warning (`IMPACT`), guard warning and advisory, standards issues on open, and every TEXT / DTEXT / MTEXT start (`TEXT-TIP` the first time in a session, `TEXT-USED` after that) |
 | `Opened.csv` | drawing opened | Who, when, drawing |
@@ -170,6 +170,8 @@ This installs to `%APPDATA%\Autodesk\ApplicationPlugins\CutOnce.bundle`, which C
 |---|---|
 | All users on the machine (run as administrator) | `Install.cmd -Scope AllUsers` |
 | Choose the log folder | `Install.cmd -LogDir "D:\CAD\CutOnce\Logs"` |
+| Shared team log folder, one subfolder per person | `Install.cmd -LogDir "\\server\cad\CutOnce\Logs" -LogSubfolder user-computer` |
+| Change the log folder after installing | Double-click **Set-LogFolder.cmd** and follow the steps |
 | Custom install folder, such as a network share | `Install.cmd -InstallDir "\\server\cad\CutOnce"` |
 
 With a custom install folder, the installer prints a `(load ...)` line for acaddoc.lsp. Also add that folder to **Options > Files > Trusted Locations**.
@@ -178,15 +180,19 @@ Reinstalling keeps an existing `CutOnce-Config.lsp` and writes the current versi
 
 ## Configure (CAD administrators)
 
+**Step-by-step instructions are in `CAD-Admin-Guide.html` in the install package:** adding watched commands, adding data points to Health.csv, and sending logs to a shared team folder across offices.
+
 `CutOnce-Config.lsp`, in the install folder's `Contents`, is plain text with a comment for every setting.
 
 - **Control Center defaults.** Every Control Center setting name can be given a firm default, for example `("StdAlwaysShow" . T)`. Designers get that value until they choose their own.
 - **LockedSettings.** List setting names to enforce them for everyone. For example, to require logging: `("LockedSettings" . ("LogEnabled" "LogHealthOnSave" "LogXrefs"))`. `WarnFrequency` can be locked too.
 - `WarnFrequency`: `"every"` or `"once"` (once per command per session).
 - `ImpactExtraCommands`: more Civil 3D command names to watch (the Control Center's **Other watched commands** row). Confirm a name with `CUTONCE-GUARD-LOGCOMMANDS` first, for example `("ImpactExtraCommands" . ("AECCSOMECOMMAND" "AECCOTHER"))`. The Control Center's **How to add other watched commands...** button walks through it.
-- `GuardGrowthWarnPct` (default 20), `LogDir`, `LearnMoreUrl`, `LearnMoreAnchors`.
+- `HealthExtraCounts`: extra Health.csv columns, each counting one or more object types, for example `("HealthExtraCounts" . (("FeatureLines" . "AeccDbFeatureLine") ("Dimensions" . "AcDb*Dimension")))`. Find the type names with `CUTONCE-GUARD-DUMPOBJECTS`. The new columns are also checked for unusual growth on save.
+- `LogDir` and `LogSubfolder` (`"user"`, `"computer"` or `"user-computer"`): a shared log folder, with each person writing to their own subfolder so files never collide or make sync conflicts.
+- `GuardGrowthWarnPct` (default 20), `LearnMoreUrl`, `LearnMoreAnchors`.
 
-Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. Log folder: `CUTONCE_LOGDIR`, then `LogDir`, then `%LOCALAPPDATA%\CutOnce\Logs\`.
+Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. Log folder: `CUTONCE_LOGDIR`, then `LogDir`, then `%LOCALAPPDATA%\CutOnce\Logs\`, plus the subfolder from `CUTONCE_LOGSUBFOLDER`, then `LogSubfolder`.
 
 ## Commands
 
@@ -200,7 +206,7 @@ Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. L
 | `CUTONCE-AUDIT` | Records every open drawing in Health.csv and opens it in Excel |
 | `CUTONCE-AUDIT-FOLDER` | Records every .dwg in a folder |
 | `CUTONCE-GUARD-STATUS` / `-CHECKNOW` / `-SUMMARY` / `-LOG` | Guard switches, health check now, history rollup, log paths |
-| `CUTONCE-GUARD-DUMPOBJECTS` | Raw object counts, for checking a number against Toolspace |
+| `CUTONCE-GUARD-DUMPOBJECTS` | Counts of every object type by name, for checking a number against Toolspace or naming a `HealthExtraCounts` column |
 | `CUTONCE-GUARD-LOGCOMMANDS` | Prints every command name as it runs |
 | `CUTONCE-IMPACT-ON` / `-OFF` | Command warnings (master switch) on or off |
 | `CUTONCE-IMPACT-STATUS` / `-DEBUG` | Impact status, and diagnostic tracing |

@@ -5,7 +5,10 @@
 .DESCRIPTION
     Deletes the CutOnce.bundle from the user and (when elevated) all-users
     ApplicationPlugins folders, removes the custom install folder named by
-    CUTONCE_HOME, and clears the CUTONCE_HOME / CUTONCE_LOGDIR variables.
+    CUTONCE_HOME, and clears the CUTONCE_HOME / CUTONCE_LOGDIR /
+    CUTONCE_LOGSUBFOLDER variables. -RemoveLogs never deletes a network,
+    mapped-drive or per-person-subfolder log folder, which may hold the
+    whole team's logs.
     Logs (Health.csv, Xrefs.csv, Events.csv, Opened.csv) are kept unless
     -RemoveLogs is given. Each designer's Control Center choices are removed.
 #>
@@ -30,6 +33,17 @@ foreach ($b in $bundles) {
     }
 }
 
+# A log folder on a network path or mapped drive, or one split into
+# per-person subfolders, holds other people's logs too.
+function Test-SharedFolder([string]$path, [string]$target) {
+    if ($path.StartsWith('\\')) { return $true }
+    if ([Environment]::GetEnvironmentVariable('CUTONCE_LOGSUBFOLDER', $target)) { return $true }
+    try {
+        $drive = New-Object IO.DriveInfo ([IO.Path]::GetPathRoot([IO.Path]::GetFullPath($path)))
+        return $drive.DriveType -eq [IO.DriveType]::Network
+    } catch { return $true }
+}
+
 foreach ($target in 'User', 'Machine') {
     $instDir = [Environment]::GetEnvironmentVariable('CUTONCE_HOME', $target)
     if ($instDir -and (Test-Path (Join-Path $instDir 'CutOnce-Loader.lsp'))) {
@@ -41,11 +55,13 @@ foreach ($target in 'User', 'Machine') {
         Write-Host '  Remember to delete its (load ...) line from acaddoc.lsp.'
     }
     $logs = [Environment]::GetEnvironmentVariable('CUTONCE_LOGDIR', $target)
-    if ($RemoveLogs -and $logs -and (Test-Path $logs)) {
+    if ($RemoveLogs -and $logs -and (Test-SharedFolder $logs $target)) {
+        Write-Host "Kept the shared log folder $logs (team and network folders are never deleted)."
+    } elseif ($RemoveLogs -and $logs -and (Test-Path $logs)) {
         Remove-Item $logs -Recurse -Force -ErrorAction SilentlyContinue
         Write-Host "Removed $logs"
     }
-    foreach ($name in 'CUTONCE_HOME', 'CUTONCE_LOGDIR') {
+    foreach ($name in 'CUTONCE_HOME', 'CUTONCE_LOGDIR', 'CUTONCE_LOGSUBFOLDER') {
         try { [Environment]::SetEnvironmentVariable($name, $null, $target) } catch { }
     }
 }

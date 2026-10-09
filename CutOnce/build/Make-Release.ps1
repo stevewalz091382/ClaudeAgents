@@ -5,7 +5,8 @@
 .DESCRIPTION
     Refuses to package unless CutOnce.vlx has been built (see BUILD.md) and
     the static checks pass. The zip contains the bundle (loader, config, VLX
-    and manifest), the install/uninstall scripts and README.md. The .lsp
+    and manifest), the install/uninstall/log-folder scripts, README.md and
+    CAD-Admin-Guide.html. The .lsp
     sources are NOT included.
 
     -SourceBuild packages the .lsp sources instead of a VLX, for testing
@@ -46,7 +47,7 @@ if (-not $SourceBuild) { $bundleFiles += 'CutOnce.vlx' }
 foreach ($f in $bundleFiles) {
     Copy-Item (Join-Path $contents $f) (Join-Path $stage 'CutOnce.bundle\Contents')
 }
-foreach ($f in 'Install.cmd', 'Install.ps1', 'Uninstall.cmd', 'Uninstall.ps1', 'README.md') {
+foreach ($f in 'Install.cmd', 'Install.ps1', 'Uninstall.cmd', 'Uninstall.ps1', 'Set-LogFolder.cmd', 'Set-LogFolder.ps1', 'README.md', 'CAD-Admin-Guide.html') {
     Copy-Item (Join-Path $root $f) $stage
 }
 if ($SourceBuild) {

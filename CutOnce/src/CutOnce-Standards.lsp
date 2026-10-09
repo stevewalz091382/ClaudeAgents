@@ -177,7 +177,7 @@
 ;; local counters (AutoLISP variables are dynamically scoped).
 (defun costd:tally (obj ismodel / oname ed flags bname)
   (setq oname (cutonce:object-name obj))
-  (if (or (= oname "AcDbBlockReference") (wcmatch (strcase oname) "AECC*"))
+  (if (or countall (= oname "AcDbBlockReference") (wcmatch (strcase oname) "AECC*"))
     (setq objcounts (costd:bump objcounts oname))
   )
   (setq ed (costd:ent-data obj))
@@ -200,12 +200,14 @@
 
 ;; Returns an association list:
 ;;   ("objcounts" . ((ObjectName . n) ...))  AECC* objects and block references
+;;                                            (every type when HealthExtraCounts is set)
 ;;   ("Hatches" . n) ("TextObjects" . n)      Model Space only
 ;;   ("ColorNotByLayer" . n) ("LinetypeNotByLayer" . n) ("ObjectsNotByLayer" . n)
 ;;   ("inserts" . ((name point rotation scale) ...))   xref inserts, Model Space
-(defun costd:scan-spaces (doc / xrefnames spaces blk objcounts hatchN textN colN ltN eitherN inserts)
+(defun costd:scan-spaces (doc / xrefnames spaces blk objcounts hatchN textN colN ltN eitherN inserts countall)
   (setq xrefnames (costd:xref-block-names doc)
-        objcounts nil hatchN 0 textN 0 colN 0 ltN 0 eitherN 0 inserts nil)
+        objcounts nil hatchN 0 textN 0 colN 0 ltN 0 eitherN 0 inserts nil
+        countall (if (cutonce:health-extra-counts) T))
   (setq spaces (list (cons (vla-get-ModelSpace doc) T)))
   ;; the Layouts collection includes "Model"; skip it so Model Space is read once
   (vl-catch-all-apply

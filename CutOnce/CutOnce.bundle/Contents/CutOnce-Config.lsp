@@ -26,7 +26,20 @@
     ;; Use forward slashes, e.g. "D:/CAD/CutOnce/Logs" or a shared
     ;; folder "//server/cad/CutOnce/Logs".
     ;; The CUTONCE_LOGDIR environment variable, if set, overrides this.
+    ;; For a team: point this at one shared folder every office can reach
+    ;; (a network share, or a folder each PC syncs), e.g.
+    ;;   ("LogDir" . "//server/cad/CutOnce/Logs")
     ("LogDir" . nil)
+
+    ;; With a shared LogDir, give each person (or PC) its own subfolder so
+    ;; nobody writes to someone else's file and synced folders never make
+    ;; conflict copies. Excel (Data > Get Data > From Folder) combines them.
+    ;;   nil              no subfolder: everyone writes the same files
+    ;;   "user"           <LogDir>/<Windows user name>/
+    ;;   "computer"       <LogDir>/<computer name>/
+    ;;   "user-computer"  <LogDir>/<user>-<computer>/   (recommended for teams)
+    ;; The CUTONCE_LOGSUBFOLDER environment variable, if set, overrides this.
+    ("LogSubfolder" . nil)
 
     ;; ---- Control Center defaults -------------------------------------------
     ;; Command warnings: master switch, then one switch per command
@@ -94,6 +107,22 @@
     ;; shows these steps too.
     ;; Example:  ("ImpactExtraCommands" . ("AECCSOMECOMMAND" "AECCOTHER"))
     ("ImpactExtraCommands" . nil)
+
+    ;; ---- Extra Health.csv data points --------------------------------------
+
+    ;; More object counts to record in Health.csv (one column each) and to
+    ;; include in the save-time growth check. Each entry is
+    ;;   ("ColumnName" . "ObjectName")
+    ;; where ObjectName may use wildcards (* ?) and commas for several types.
+    ;; Counts cover Model Space and every layout. To find an object's exact
+    ;; name, open a drawing that has one and run CUTONCE-GUARD-DUMPOBJECTS.
+    ;; Example:
+    ;;   ("HealthExtraCounts" . (("FeatureLines" . "AeccDbFeatureLine")
+    ;;                           ("Polylines"    . "AcDbPolyline,AcDb2dPolyline,AcDb3dPolyline")
+    ;;                           ("Dimensions"   . "AcDb*Dimension")))
+    ;; Changing this list changes the Health.csv columns; the old file is kept
+    ;; as Health-archived-<date>.csv and a new one is started.
+    ("HealthExtraCounts" . nil)
 
     ;; ---- Learn More links --------------------------------------------------
 

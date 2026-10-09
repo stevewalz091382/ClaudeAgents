@@ -59,6 +59,9 @@ The publisher is set to Stephen Walz in `CutOnce.bundle\PackageContents.xml`. Bu
 | `EXPLODE` an alignment, then `U` | Guard warning, and a row in `Events.csv`. |
 | Open a drawing with a non-ByLayer object or a broken xref | The standards check reports it on open. |
 | Save | A row in `Health.csv`. |
+| `HealthExtraCounts` set to `(("Dimensions" . "AcDb*Dimension"))`, restart, save | Old Health.csv archived; new file has a `Dimensions` column matching `CUTONCE-GUARD-DUMPOBJECTS`. |
+| `Set-LogFolder.cmd` to a network share, option 1, restart | `CUTONCE-STATUS` shows `<share>\<user>-<computer>\`; a save writes Health.csv there. |
+| `Uninstall.cmd -RemoveLogs` with that share set | The share is kept. |
 
 ## 6. Before listing publicly
 

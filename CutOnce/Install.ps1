@@ -20,6 +20,11 @@
     Folder for CutOnce logs and reports. Sets the CUTONCE_LOGDIR
     environment variable. Default: %LOCALAPPDATA%\CutOnce\Logs.
 
+.PARAMETER LogSubfolder
+    With a shared -LogDir, write each person's logs to their own subfolder:
+    user, computer or user-computer (recommended for teams). Sets the
+    CUTONCE_LOGSUBFOLDER environment variable.
+
 .PARAMETER AllowSource
     Development builds only: install even though CutOnce.vlx has not been
     built, loading the .lsp sources instead.
@@ -29,6 +34,8 @@
 .EXAMPLE
     .\Install.ps1 -Scope AllUsers -LogDir "\\server\cad\CutOnce\Logs"
 .EXAMPLE
+    .\Install.ps1 -LogDir "\\server\cad\CutOnce\Logs" -LogSubfolder user-computer
+.EXAMPLE
     .\Install.ps1 -InstallDir "D:\CAD\CutOnce"
 #>
 [CmdletBinding()]
@@ -37,6 +44,8 @@ param(
     [string]$Scope = 'User',
     [string]$InstallDir,
     [string]$LogDir,
+    [ValidateSet('user', 'computer', 'user-computer')]
+    [string]$LogSubfolder,
     [switch]$AllowSource
 )
 
@@ -132,7 +141,12 @@ if ($LogDir) {
     New-Item -ItemType Directory -Force -Path $LogDir -ErrorAction SilentlyContinue | Out-Null
     Write-Host "Log folder set to $LogDir"
 }
+if ($LogSubfolder) {
+    [Environment]::SetEnvironmentVariable('CUTONCE_LOGSUBFOLDER', $LogSubfolder, $envTarget)
+    Write-Host "Each person's logs go to a $LogSubfolder subfolder of the log folder"
+}
 
 Write-Host ''
 Write-Host 'Done. Start Civil 3D and type CUTONCE-STATUS to confirm.'
 Write-Host 'Each designer chooses what runs for them with CUTONCE (CutOnce Control Center).'
+Write-Host 'CAD administrators: see CAD-Admin-Guide.html for watched commands, extra data points and team logs.'

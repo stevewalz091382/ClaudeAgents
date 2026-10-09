@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CutOnce CAD Admin Guide</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1f2328; --muted: #57606a; --line: #d0d7de;
+    --panel: #f6f8fa; --accent: #0b6bcb; --note: #fff8e6; --note-line: #e3b341;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117; --fg: #e6edf3; --muted: #9da7b3; --line: #30363d;
+      --panel: #161b22; --accent: #4493f8; --note: #2a2312; --note-line: #9e6a03;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.55 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  main { max-width: 820px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  h2 { font-size: 21px; margin: 40px 0 8px; padding-top: 16px; border-top: 1px solid var(--line); }
+  h3 { font-size: 17px; margin: 24px 0 6px; }
+  p.lead { color: var(--muted); margin: 0 0 16px; }
+  a { color: var(--accent); }
+  code, pre { font-family: Consolas, "Cascadia Mono", monospace; font-size: 14px; }
+  code { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+  pre { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+        padding: 12px 14px; overflow-x: auto; white-space: pre; }
+  pre code { background: none; border: 0; padding: 0; }
+  ol.steps { padding-left: 0; list-style: none; counter-reset: step; }
+  ol.steps > li { counter-increment: step; position: relative; padding: 0 0 14px 40px; }
+  ol.steps > li::before { content: counter(step); position: absolute; left: 0; top: 0;
+        width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff;
+        font-weight: 600; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+  .note { background: var(--note); border-left: 4px solid var(--note-line); border-radius: 4px;
+          padding: 10px 14px; margin: 14px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 15px; }
+  th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--panel); }
+  nav ul { padding-left: 20px; margin: 8px 0 0; }
+  td, th, li, p { overflow-wrap: anywhere; }
+  pre { max-width: 100%; }
+</style>
+</head>
+<body>
+<main>
+<h1>CutOnce CAD Admin Guide</h1>
+<p class="lead">Step-by-step setup for CAD administrators: watched commands, extra data points in Health.csv, and one shared log folder for a team or several offices.</p>
+
+<nav>
+  <ul>
+    <li><a href="#config">Before you start: the configuration file</a></li>
+    <li><a href="#commands">1. Add commands to watch</a></li>
+    <li><a href="#datapoints">2. Report more data points in Health.csv</a></li>
+    <li><a href="#logs">3. Send logs to a shared team folder</a></li>
+    <li><a href="#trouble">Troubleshooting</a></li>
+  </ul>
+</nav>
+
+<h2 id="config">Before you start: the configuration file</h2>
+<p>Tasks 1 and 2, and option A of task 3, are done in <code>CutOnce-Config.lsp</code>, a plain text file. It is in the <code>Contents</code> folder of the install:</p>
+<table>
+  <tr><th>Installed for</th><th>Configuration file</th></tr>
+  <tr><td>One user (default)</td><td><code>%APPDATA%\Autodesk\ApplicationPlugins\CutOnce.bundle\Contents\CutOnce-Config.lsp</code></td></tr>
+  <tr><td>All users (<code>-Scope AllUsers</code>)</td><td><code>%ProgramData%\Autodesk\ApplicationPlugins\CutOnce.bundle\Contents\CutOnce-Config.lsp</code></td></tr>
+  <tr><td>Custom folder (<code>-InstallDir</code>)</td><td><code>&lt;that folder&gt;\CutOnce-Config.lsp</code></td></tr>
+</table>
+<p>Type <code>CUTONCE-STATUS</code> in Civil 3D to see the install folder in use.</p>
+<ul>
+  <li>Edit it with Notepad. Keep every quote mark and bracket; each setting looks like <code>("Key" . value)</code>.</li>
+  <li>Changes take effect when Civil 3D restarts (or in the next drawing you open).</li>
+  <li>To roll out one setup firm-wide, edit <code>CutOnce.bundle\Contents\CutOnce-Config.lsp</code> in the install package <em>before</em> handing it out. Reinstalling never overwrites a configuration file that is already there.</li>
+</ul>
+
+<h2 id="commands">1. Add commands to watch</h2>
+<p>CutOnce shows its change-impact warning when certain Civil 3D commands start. You can add more commands to the <strong>Other watched commands (added by CAD admin)</strong> row of the Control Center.</p>
+<ol class="steps">
+  <li>In Civil 3D, type <code>CUTONCE-GUARD-LOGCOMMANDS</code>. Every command name now prints on the command line as it starts.</li>
+  <li>Start the command you want to watch the way designers do: from the ribbon, a menu or the command line.</li>
+  <li>Write down the name that printed, for example <code>AECCSOMECOMMAND</code>.</li>
+  <li>Type <code>CUTONCE-GUARD-LOGCOMMANDS</code> again to turn the echo off.</li>
+  <li>Open <code>CutOnce-Config.lsp</code> and find this line:
+<pre><code>("ImpactExtraCommands" . nil)</code></pre>
+  Replace <code>nil</code> with your names in quotes, separated by spaces:
+<pre><code>("ImpactExtraCommands" . ("AECCSOMECOMMAND" "AECCOTHERCOMMAND"))</code></pre></li>
+  <li>Save the file and restart Civil 3D.</li>
+  <li>Type <code>CUTONCE</code> and make sure <strong>Other watched commands</strong> is ticked. To stop designers turning it off, add it to the locked settings:
+<pre><code>("LockedSettings" . ("WarnOTHER"))</code></pre></li>
+</ol>
+<div class="note"><strong>What the warning shows.</strong> It lists what depends on the alignment, profile or surface the designer selected before starting the command. With nothing selected, a command whose name contains SURFACE, PROFILE or ALIGNMENT reports on every object of that type. Any other command with nothing selected shows no warning, because there is nothing to analyse. The Control Center button <strong>How to add other watched commands...</strong> shows these steps too.</div>
+
+<h2 id="datapoints">2. Report more data points in Health.csv</h2>
+<p>Health.csv records a row of counts every time a drawing is saved or opened. You can add a column for any other object type. CutOnce also includes your columns in the save-time growth warning.</p>
+<ol class="steps">
+  <li>Open a drawing that contains the kind of object you want to count.</li>
+  <li>Type <code>CUTONCE-GUARD-DUMPOBJECTS</code>. It lists every object type in the drawing by its exact name, with a count, for example <code>AeccDbFeatureLine = 42</code>.</li>
+  <li>Open <code>CutOnce-Config.lsp</code> and find this line:
+<pre><code>("HealthExtraCounts" . nil)</code></pre>
+  Replace <code>nil</code> with one <code>("ColumnName" . "ObjectName")</code> pair per column:
+<pre><code>("HealthExtraCounts" . (("FeatureLines" . "AeccDbFeatureLine")
+                        ("Polylines"    . "AcDbPolyline,AcDb2dPolyline,AcDb3dPolyline")
+                        ("Dimensions"   . "AcDb*Dimension")))</code></pre></li>
+  <li>Save the file and restart Civil 3D.</li>
+  <li>Save any drawing, then open Health.csv (type <code>CUTONCE-STATUS</code> for the log folder). The new columns appear before the settings columns.</li>
+</ol>
+<table>
+  <tr><th>Part</th><th>Rules</th></tr>
+  <tr><td>ColumnName</td><td>Letters, digits and _ only (anything else is dropped). Must not repeat a built-in column such as <code>Layers</code>.</td></tr>
+  <tr><td>ObjectName</td><td>The name from <code>CUTONCE-GUARD-DUMPOBJECTS</code>. Not case-sensitive. <code>*</code> matches anything, and commas combine several types into one count.</td></tr>
+  <tr><td>What is counted</td><td>Objects in Model Space and every layout. Objects inside block definitions are not counted.</td></tr>
+  <tr><td>Growth warning</td><td>Your columns use the same rule as the built-in ones: up by <code>GuardGrowthWarnPct</code> (default 20%) or more, or new since the last check.</td></tr>
+</table>
+<div class="note"><strong>Changing the list changes the columns.</strong> The first save afterwards renames the old file to <code>Health-archived-&lt;date&gt;.csv</code> and starts a new Health.csv, so no rows are lost and no file mixes two layouts. Close Health.csv in Excel first, or the rename waits until the next save.</div>
+
+<h2 id="logs">3. Send logs to a shared team folder</h2>
+<p>By default each person's logs stay on their own PC in <code>%LOCALAPPDATA%\CutOnce\Logs</code>. For team reporting, point everyone at one shared folder and give each person their own subfolder inside it.</p>
+
+<h3>Pick the folder</h3>
+<table>
+  <tr><th>Your setup</th><th>Use</th></tr>
+  <tr><td>One office, file server</td><td>A network share, e.g. <code>\\server\cad\CutOnce\Logs</code>. Use the <code>\\server</code> path, not a mapped drive letter, so it works for everyone.</td></tr>
+  <tr><td>Several offices on a WAN or VPN</td><td>One network share every office can reach.</td></tr>
+  <tr><td>Offices without a shared server</td><td>A cloud-synced folder that every PC syncs locally (for example a SharePoint document library synced to each PC). Each PC writes to its local copy, and the sync service moves the files.</td></tr>
+</table>
+<p>Everyone needs permission to create folders and files there (Modify). Nobody needs to delete anything.</p>
+
+<h3>Turn on per-person subfolders</h3>
+<p>With a shared folder, always use subfolders. Each person then writes only to their own files: two people never append to the same file at once, and synced folders never create "conflict" copies.</p>
+<table>
+  <tr><th>Setting</th><th>Logs go to</th><th>When</th></tr>
+  <tr><td><code>user-computer</code></td><td><code>Logs\jsmith-CAD-PC12\</code></td><td>Recommended. Safe even when one person uses two PCs.</td></tr>
+  <tr><td><code>user</code></td><td><code>Logs\jsmith\</code></td><td>Each person uses one PC.</td></tr>
+  <tr><td><code>computer</code></td><td><code>Logs\CAD-PC12\</code></td><td>Shared workstations.</td></tr>
+  <tr><td>none</td><td><code>Logs\</code></td><td>Only for a local or single-user folder.</td></tr>
+</table>
+
+<h3>Option A: whole firm, before rollout (recommended)</h3>
+<ol class="steps">
+  <li>In the install package, open <code>CutOnce.bundle\Contents\CutOnce-Config.lsp</code>.</li>
+  <li>Set the two log lines (use forward slashes):
+<pre><code>("LogDir"       . "//server/cad/CutOnce/Logs")
+("LogSubfolder" . "user-computer")</code></pre></li>
+  <li>Save, then hand out the package. Everyone who installs it logs to the shared folder.</li>
+</ol>
+
+<h3>Option B: at install time</h3>
+<ol class="steps">
+  <li>Run the installer with the folder and subfolder options:
+<pre><code>Install.cmd -LogDir "\\server\cad\CutOnce\Logs" -LogSubfolder user-computer</code></pre></li>
+  <li>Add <code>-Scope AllUsers</code> (from an administrator prompt) to set it for every user of the PC.</li>
+</ol>
+
+<h3>Option C: an existing install, step by step</h3>
+<ol class="steps">
+  <li>Close Civil 3D.</li>
+  <li>Double-click <code>Set-LogFolder.cmd</code> in the install package.</li>
+  <li>Pick the shared folder in the folder window. The script checks that you can write to it.</li>
+  <li>Choose <strong>1</strong> for one subfolder per person per computer.</li>
+  <li>Start Civil 3D and type <code>CUTONCE-STATUS</code>. The log folder line shows your subfolder.</li>
+</ol>
+<p>To undo it, run <code>Set-LogFolder.cmd -Clear</code>. If the configuration file and Option B or C both set a folder, B or C (an environment variable) wins.</p>
+
+<h3>Combine everyone's logs in Excel</h3>
+<ol class="steps">
+  <li>In Excel: <strong>Data &gt; Get Data &gt; From File &gt; From Folder</strong>, and pick the shared log folder.</li>
+  <li>Choose <strong>Transform Data</strong>. Filter the <code>Name</code> column to <code>Health.csv</code> (or <code>Events.csv</code>, and so on).</li>
+  <li>Click the <strong>Combine Files</strong> button on the <code>Content</code> column, then <strong>Close &amp; Load</strong>.</li>
+  <li>Next time, click <strong>Data &gt; Refresh All</strong> to pick up new rows and new people.</li>
+</ol>
+
+<h3>Good to know</h3>
+<ul>
+  <li><strong>Growth warning history.</strong> The growth check compares a save with the last check of the same drawing in that person's own Health.csv, not other people's.</li>
+  <li><strong>Built-in rollups.</strong> <code>CUTONCE-GUARD-SUMMARY</code> and <code>CUTONCE-AUDIT</code> read the current person's subfolder. Use Excel (above) for the team view.</li>
+  <li><strong>Offline.</strong> If the shared folder cannot be reached, that log row is skipped; the warnings still work. A synced folder avoids this, because writes go to the local copy.</li>
+  <li><strong>Uninstall.</strong> <code>Uninstall.cmd -RemoveLogs</code> never deletes a network, mapped-drive or per-person log folder.</li>
+  <li><strong>Privacy.</strong> Logs contain Windows user names and drawing paths. Limit access to the shared folder to the people who need it.</li>
+</ul>
+
+<h2 id="trouble">Troubleshooting</h2>
+<table>
+  <tr><th>Problem</th><th>Check</th></tr>
+  <tr><td>A change to the configuration file did nothing</td><td>Restart Civil 3D. Make sure you edited the file in the folder <code>CUTONCE-STATUS</code> shows, and that every quote and bracket is still in place.</td></tr>
+  <tr><td>A watched command never warns</td><td>Run <code>CUTONCE-GUARD-LOGCOMMANDS</code> and compare the printed name with your list. Commands started from Toolspace's right-click menu may print nothing, which means CutOnce cannot see them.</td></tr>
+  <tr><td>An extra column is always 0</td><td>Run <code>CUTONCE-GUARD-DUMPOBJECTS</code> in a drawing that has the object and copy the name exactly.</td></tr>
+  <tr><td>Rows are missing</td><td>A log that is open in Excel cannot be written to; rows saved while it was open are skipped. Open the logs read-only, or use the Excel combine steps above, which do not lock them.</td></tr>
+  <tr><td>"Could not archive Health.csv"</td><td>The file is open in Excel. Close it; the next save starts the new file.</td></tr>
+  <tr><td>Logs still go to the old folder</td><td>An environment variable from the installer or <code>Set-LogFolder.cmd</code> wins over the configuration file. Run <code>Set-LogFolder.cmd -Clear</code>, then restart Civil 3D.</td></tr>
+</table>
+</main>
+</body>
+</html>

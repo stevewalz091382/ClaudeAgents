@@ -64,8 +64,17 @@
     "PipeNetworks" "PressurePipeNetworks" "SectionViews" "Sections"
     "Hatches" "TextObjects"))
 
+;; Administrator-defined count columns ("HealthExtraCounts"), minus any
+;; that would repeat a built-in column: ((Column . wildcard) ...)
+(defun cohealth:extra ( / builtin)
+  (setq builtin (mapcar 'strcase (append *cohealth:id-columns* *cohealth:metric-columns* *cohealth:setting-columns*)))
+  (vl-remove-if (function (lambda (e) (member (strcase (car e)) builtin))) (cutonce:health-extra-counts))
+)
+
+(defun cohealth:extra-columns ( ) (mapcar 'car (cohealth:extra)))
+
 (defun cohealth:columns ( )
-  (append *cohealth:id-columns* *cohealth:metric-columns* *cohealth:setting-columns*)
+  (append *cohealth:id-columns* *cohealth:metric-columns* (cohealth:extra-columns) *cohealth:setting-columns*)
 )
 
 (defun cohealth:header ( ) (cutonce:join (cohealth:columns) ","))
@@ -199,6 +208,8 @@
       (cons "InsUnits"                   (cohealth:getvar doc "INSUNITS"))
       (cons "DrawingScale"               (cohealth:getvar doc "DIMSCALE"))
     )
+    ;; administrator-defined columns (Model Space and every layout)
+    (mapcar (function (lambda (e) (cons (car e) (cohealth:sum oc (cdr e))))) (cohealth:extra))
   )
 )
 
@@ -213,7 +224,8 @@
 (defun cohealth:remember (drawpath facts)
   (setq *cohealth:last*
     (cons drawpath
-          (mapcar (function (lambda (c) (cons c (cdr (assoc c facts))))) *cohealth:metric-columns*)))
+          (mapcar (function (lambda (c) (cons c (cdr (assoc c facts)))))
+                  (append *cohealth:metric-columns* (cohealth:extra-columns)))))
 )
 
 (defun cohealth:previous (drawpath / lines pidx lastrow fields)
@@ -242,7 +254,7 @@
     (cutonce:csv-row (list (cutonce:timestamp) trigger (cutonce:user) drawpath drawname))
     ","
     (cutonce:csv-row (mapcar (function (lambda (c) (cdr (assoc c facts))))
-                          (append *cohealth:metric-columns* *cohealth:setting-columns*))))
+                          (append *cohealth:metric-columns* (cohealth:extra-columns) *cohealth:setting-columns*))))
 )
 
 (defun cohealth:xref-rows (trigger drawpath drawname facts / ts user pt)
@@ -279,7 +291,7 @@
 (defun cohealth:growth-flags (prev facts / flags oldv newv)
   (setq flags nil)
   (if prev
-    (foreach metric *cohealth:growth-watch*
+    (foreach metric (append *cohealth:growth-watch* (cohealth:extra-columns))
       (setq oldv (cdr (assoc metric prev)) newv (cdr (assoc metric facts)))
       (if (and (numberp oldv) (numberp newv))
         (cond

@@ -231,10 +231,43 @@
 ;;   2. "LogDir" in CutOnce-Config.lsp
 ;;   3. %LOCALAPPDATA%\CutOnce\Logs\
 ;;   4. AutoCAD's TEMPPREFIX folder + CutOnce\Logs\
-;; Resolved once per drawing session and cached.
+;; then, for a shared team folder, a per-person subfolder (see
+;; cutonce:log-subfolder). Resolved once per drawing session and cached.
 (setq *cutonce:log-dir* nil)
 
-(defun cutonce:log-dir ( / d la)
+;; Folder name with the characters Windows does not allow removed; nil if
+;; nothing is left.
+(defun cutonce:safe-folder (s)
+  (if (= (type s) 'STR)
+    (cutonce:nonblank
+      (vl-string-trim " ."
+        (vl-list->string
+          (vl-remove-if (function (lambda (c) (member c '(92 47 58 42 63 34 60 62 124))))
+                        (vl-string->list s))))))
+)
+
+;; "LogSubfolder" (or the CUTONCE_LOGSUBFOLDER variable): each person, or
+;; each computer, writes to its own subfolder of a shared log folder, so two
+;; people never append to the same file at once and synced folders
+;; (cloud-synced across offices) never make conflict copies.
+;;   nil / ""         no subfolder (everyone writes the same files)
+;;   "user"           <LogDir>\<Windows user name>\
+;;   "computer"       <LogDir>\<computer name>\
+;;   "user-computer"  <LogDir>\<user>-<computer>\
+(defun cutonce:log-subfolder ( / mode user pc)
+  (setq mode (strcase (cond ((cutonce:nonblank (getenv "CUTONCE_LOGSUBFOLDER")))
+                            ((cutonce:nonblank (cutonce:cfg "LogSubfolder" nil)))
+                            (""))))
+  (setq user (cutonce:safe-folder (cutonce:user))
+        pc   (cutonce:safe-folder (getenv "COMPUTERNAME")))
+  (cond
+    ((= mode "USER") user)
+    ((= mode "COMPUTER") pc)
+    ((= mode "USER-COMPUTER") (if (and user pc) (strcat user "-" pc) (cond (user) (pc))))
+  )
+)
+
+(defun cutonce:log-dir ( / d la sub)
   (if (not *cutonce:log-dir*)
     (progn
       (setq d
@@ -246,6 +279,8 @@
           (T (strcat (getvar "TEMPPREFIX") "CutOnce\\Logs"))
         )
       )
+      (if (setq sub (cutonce:log-subfolder))
+        (setq d (strcat (cutonce:dir-slash d) sub)))
       (setq d (cutonce:dir-slash d))
       (vl-catch-all-apply 'cutonce:mkdir-p (list d))
       (setq *cutonce:log-dir* d)
@@ -402,6 +437,37 @@
 
 (defun cutonce:timestamp ( )
   (menucmd "M=$(edtime,$(getvar,date),YYYY-MO-DD HH:MM:SS)")
+)
+
+;; ---------------------------------------------------------------------------
+;; Extra Health.csv columns set by the CAD administrator:
+;;   ("HealthExtraCounts" . (("Column" . "ObjectName wildcard") ...))
+;; e.g. ("FeatureLines" . "AeccDbFeatureLine") or
+;;      ("Dimensions" . "AcDb*Dimension"). Column names keep only letters,
+;; digits and _. Returns the usable entries, in order.
+;; ---------------------------------------------------------------------------
+
+(defun cutonce:column-name (s)
+  (vl-list->string
+    (vl-remove-if-not
+      (function (lambda (c) (or (<= 48 c 57) (<= 65 c 90) (<= 97 c 122) (= c 95))))
+      (vl-string->list s)))
+)
+
+(defun cutonce:health-extra-counts ( / v out name)
+  (setq v (cutonce:cfg "HealthExtraCounts" nil) out nil)
+  (if (and v (listp v))
+    (foreach e v
+      (if (and (listp e) (cutonce:nonblank (car e)) (cutonce:nonblank (cdr e)))
+        (progn
+          (setq name (cutonce:column-name (car e)))
+          (if (and (/= name "") (not (assoc name out)))
+            (setq out (cons (cons name (strcase (cdr e))) out)))
+        )
+      )
+    )
+  )
+  (reverse out)
 )
 
 ;; ---------------------------------------------------------------------------

@@ -37,7 +37,8 @@
 ;;; Commands:
 ;;;   CUTONCE-GUARD-STATUS       which guards are on, reactor status
 ;;;   CUTONCE-GUARD-CHECKNOW     run the save-time health check now
-;;;   CUTONCE-GUARD-DUMPOBJECTS  raw ObjectName counts behind the Health.csv columns
+;;;   CUTONCE-GUARD-DUMPOBJECTS  ObjectName counts of every object type (names for
+;;;                         Health.csv columns and HealthExtraCounts)
 ;;;   CUTONCE-GUARD-LOG          print the log file paths
 ;;;   CUTONCE-GUARD-SUMMARY      roll up every drawing ever tracked
 ;;;   CUTONCE-GUARD-LOGCOMMANDS  echo every command name as it starts (use this to
@@ -96,12 +97,12 @@
   )
 )
 
-(defun coguard:scan-space-into (spaceBlk counts / oname pair)
+(defun coguard:scan-space-into (spaceBlk counts all / oname pair)
   (vl-catch-all-apply
     (function (lambda ()
       (vlax-for ent spaceBlk
         (setq oname (cutonce:object-name ent))
-        (if (or (= oname "AcDbBlockReference") (= oname "AcDbHatch") (wcmatch (strcase oname) "AECC*"))
+        (if (or all (= oname "AcDbBlockReference") (= oname "AcDbHatch") (wcmatch (strcase oname) "AECC*"))
           (progn
             (setq pair (assoc oname counts))
             (setq counts (if pair
@@ -117,14 +118,15 @@
 
 ;; The Layouts collection includes "Model", whose block is Model Space;
 ;; skip it so Model Space is not counted twice.
-(defun coguard:object-snapshot (doc / counts blk)
-  (setq counts (coguard:scan-space-into (vla-get-ModelSpace doc) nil))
+;; all = T counts every ObjectName (CUTONCE-GUARD-DUMPOBJECTS).
+(defun coguard:space-counts (doc all / counts blk)
+  (setq counts (coguard:scan-space-into (vla-get-ModelSpace doc) nil all))
   (vl-catch-all-apply
     (function (lambda ()
       (vlax-for lay (vla-get-Layouts doc)
         (if (eq (cutonce:prop lay 'ModelType) :vlax-false)
           (if (setq blk (cutonce:prop lay 'Block))
-            (setq counts (coguard:scan-space-into blk counts))
+            (setq counts (coguard:scan-space-into blk counts all))
           )
         )
       )
@@ -132,6 +134,8 @@
   )
   counts
 )
+
+(defun coguard:object-snapshot (doc) (coguard:space-counts doc nil))
 
 (defun coguard:sum-counts (counts wildcard / total)
   (setq total 0)
@@ -561,11 +565,11 @@
 )
 
 (defun c:CUTONCE-GUARD-DUMPOBJECTS ( / counts)
-  (setq counts (coguard:object-snapshot (cutonce:active-doc)))
+  (setq counts (coguard:space-counts (cutonce:active-doc) T))
   (if (not counts)
-    (coguard:log "No AECC*, block or hatch objects in Model Space or any layout.")
+    (coguard:log "No objects in Model Space or any layout.")
     (progn
-      (coguard:log "Raw ObjectName counts (Model Space + all layouts):")
+      (coguard:log "ObjectName counts (Model Space + all layouts). Use these names in HealthExtraCounts:")
       (foreach pair (vl-sort counts (function (lambda (a b) (< (car a) (car b)))))
         (princ (strcat "\n  " (car pair) " = " (itoa (cdr pair))))
       )
