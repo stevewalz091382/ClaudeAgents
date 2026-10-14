@@ -19,8 +19,8 @@
     at the end to acaddoc.lsp and add the folder to Trusted Locations.
 
 .PARAMETER AllowSource
-    Install the .lsp sources when CutOnce.vlx has not been built.
-    Install.cmd passes this.
+    Development builds only: install even though CutOnce.vlx has not been
+    built, loading the .lsp sources instead.
 
 .EXAMPLE
     .\Install.ps1
@@ -57,9 +57,9 @@ $useSource = $false
 if (-not (Test-Path $vlx)) {
     if ($AllowSource -and (Test-Path (Join-Path $sourceDir 'CutOnce-Core.lsp'))) {
         $useSource = $true
-        Write-Host 'Installing the CutOnce Trial from its .lsp sources.'
+        Write-Warning 'CutOnce.vlx not found - installing development sources (-AllowSource).'
     } else {
-        throw 'CutOnce.vlx is missing from CutOnce.bundle\Contents. Build it first, or run Install.cmd (which installs the .lsp sources).'
+        throw 'CutOnce.vlx is missing from CutOnce.bundle\Contents. Re-download the CutOnce Trial package.'
     }
 }
 
