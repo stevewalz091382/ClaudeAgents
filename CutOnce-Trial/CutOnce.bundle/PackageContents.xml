@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copyright (c) 2026 Stephen Walz. All rights reserved. -->
+<ApplicationPackage
+    SchemaVersion="1.0"
+    AutodeskProduct="AutoCAD"
+    ProductType="Application"
+    Name="CutOnce"
+    AppVersion="2.0.0"
+    Description="CutOnce Trial for Civil 3D: warns when EXPLODE or BURST destroys Civil 3D objects, blocks, hatches or attributes. To unlock the full version, reach out to stevewalz@hotmail.com"
+    Author="Stephen Walz"
+    ProductCode="{BA953C42-1FDA-4A0D-8371-4C37CE1477B7}"
+    UpgradeCode="{FD9441FE-9603-4169-8EFD-D9FDD76DD7B1}">
+
+  <CompanyDetails Name="Stephen Walz" Url="" Email="stevewalz@hotmail.com" />
+
+  <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R24.0" />
+
+  <Components Description="CutOnce Trial AutoLISP application">
+    <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R24.0" />
+    <ComponentEntry
+        AppName="CutOnce"
+        Version="2.0.0"
+        ModuleName="./Contents/CutOnce-Loader.lsp"
+        AppDescription="Loads CutOnce-Config.lsp and CutOnce.vlx into every drawing."
+        LoadOnAutoCADStartup="True"
+        PerDocument="True" />
+  </Components>
+</ApplicationPackage>
