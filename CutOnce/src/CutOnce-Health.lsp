@@ -345,19 +345,21 @@
 ;; Save-check warnings follow the designer's frequency choice, counted per
 ;; check per drawing; a manual check (CUTONCE-GUARD-CHECKNOW) always shows.
 (defun cohealth:show (key text topic manual)
-  (if manual (cutonce:notice text topic) (cutonce:notice-once key text topic))
+  (if manual
+    (cutonce:warning-dialog text (list (cons "Learn More..." topic)) nil
+                            (strcat "Before going ahead: " (cutonce:warning-name key)))
+    (cutonce:notice-once key text topic))
 )
 
 ;; The same with action buttons; returns the button pressed (nil if hidden).
 (defun cohealth:show-actions (key text links actions manual)
   (if manual
-    (cutonce:notice-dialog text links actions nil)
+    (cutonce:warning-dialog text links actions (strcat "Before going ahead: " (cutonce:warning-name key)))
     (cutonce:notice-once-actions key text links actions))
 )
 
-;; Cleanup and the backup copy are queued to run after the save, so they are
-;; not offered while the drawing is being closed (the queued command would
-;; land in another drawing).
+;; Cleanup is queued to run after the save, so it is not offered while the
+;; drawing is being closed (the queued command would land in another drawing).
 (defun cohealth:closing-p ( )
   (wcmatch (strcase (cond ((cutonce:nonblank (getvar "CMDNAMES"))) ("")))
            "*CLOSE*,*QUIT*,*EXIT*")
@@ -367,12 +369,11 @@
   (and (cutonce:on-p "GuardCleanup") (not (cohealth:closing-p)))
 )
 
-(defun cohealth:alert-growth (drawname flags manual / offer copy actions r)
+(defun cohealth:alert-growth (drawname flags manual / offer actions r)
   (cutonce:log-event "SAVE-FLAG"
     (apply 'strcat (mapcar (function (lambda (x) (strcat (car x) " " (itoa (cadr x)) "->" (itoa (caddr x)) "  "))) flags)))
   (setq offer (cohealth:cleanup-offer-p)
-        copy  (not (cohealth:closing-p))
-        actions (append (if offer (list "Clean up now...")) (if copy (list "Save a copy"))))
+        actions (if offer (list "Clean up now...")))
   (setq r
     (cohealth:show-actions (strcat "GUARD_GROWTH|" drawname)
       (strcat
@@ -389,12 +390,6 @@
             "backup copy to the shared folder first. You choose what runs before anything changes.\n"
             "(If it does not start, type CUTONCE-CLEANUP.)")
           "")
-        (if copy
-          (strcat
-            "\n\nSave a copy puts a copy of this drawing, as saved now, in the shared backup\n"
-            "folder with a unique name (" (cutonce:backup-dir) ").\n"
-            "(If it does not appear there, type CUTONCE-BACKUP.)")
-          "")
         "\nTurn this check off in the CutOnce Control Center (type CUTONCE)."
       )
       (append (if offer (list (cons "About cleanup..." "GUARD_CLEANUP")))
@@ -404,8 +399,7 @@
     ))
   ;; r: 1 = OK, 2 = first action, 3 = second ...
   (setq r (if (and (numberp r) (> r 1)) (nth (- r 2) actions)))
-  (cond ((= r "Clean up now...") (coclean:queue "CUTONCE-CLEANUP"))
-        ((= r "Save a copy") (coclean:queue "CUTONCE-BACKUP")))
+  (if (= r "Clean up now...") (coclean:queue "CUTONCE-CLEANUP"))
 )
 
 (defun cohealth:alert-coord (drawname issues manual)

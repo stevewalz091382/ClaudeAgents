@@ -34,9 +34,8 @@
 ;;;
 ;;; Commands:
 ;;;   CUTONCE-CLEANUP         the cleanup dialog, any time
-;;;   CUTONCE-BACKUP          copy this drawing to the backup folder now (also
-;;;                           the "Save a copy" button on the growth warning and
-;;;                           in the Control Center)
+;;;   CUTONCE-BACKUP          copy this drawing to the backup folder now (every
+;;;                           CutOnce warning also has a "Save a copy" button)
 ;;;   CUTONCE-BACKUP-FOLDER   open the backup folder
 ;;;
 ;;; Naming: every function and global here starts with coclean: / *coclean:.
@@ -104,57 +103,6 @@
     ("audit"   "AUDIT the drawing and fix errors"                            nil)))
 
 (defun coclean:count-text (v) (if (numberp v) (itoa v) (vl-princ-to-string v)))
-
-;; ---------------------------------------------------------------------------
-;; Backup copies
-;; ---------------------------------------------------------------------------
-
-(defun coclean:backups-log ( ) (cutonce:log-file "Backups.csv"))
-
-;; A file name nobody else will produce: drawing, time to the millisecond,
-;; user and computer, and a counter if that still exists.
-(defun coclean:backup-name (dir drawpath / base ext who stamp name n)
-  (setq base  (vl-filename-base drawpath)
-        ext   (cond ((vl-filename-extension drawpath)) (".dwg"))
-        who   (cond ((cutonce:safe-folder (strcat (cutonce:user) "-" (cond ((getenv "COMPUTERNAME")) ("")))))
-                    ("unknown"))
-        stamp (strcat (menucmd "M=$(edtime,$(getvar,date),YYYYMODD-HHMMSS)")
-                      "-" (substr (itoa (+ 1000 (rem (getvar "MILLISECS") 1000))) 2)))
-  (setq name (strcat dir base "__" stamp "_" who ext) n 1)
-  (while (findfile name)
-    (setq n (1+ n)
-          name (strcat dir base "__" stamp "_" who "-" (itoa n) ext)))
-  name
-)
-
-;; Copies the drawing as last saved to the backup folder. Returns the copy's
-;; path, or nil (with the reason on the command line).
-(defun coclean:backup (doc reason / src dir dest)
-  (setq src (cutonce:nonblank (cutonce:str-prop doc 'FullName))
-        dir (cutonce:backup-dir))
-  (vl-catch-all-apply 'cutonce:mkdir-p (list dir))
-  (cond
-    ((or (not src) (not (findfile src)))
-     (coclean:log "This drawing has not been saved yet, so there is no file to copy.") nil)
-    ((not (vl-file-directory-p (vl-string-right-trim "\\" dir)))
-     (coclean:log (strcat "Backup folder not reachable: " dir)) nil)
-    ((not (setq dest (coclean:backup-name dir src))) nil)
-    ((or (not (vl-file-copy src dest))
-         (/= (vl-file-size dest) (vl-file-size src)))
-     (vl-file-delete dest)
-     (coclean:log (strcat "Could not copy " src " to " dest)) nil)
-    (T
-     (vl-catch-all-apply 'cutonce:append-line
-       (list (coclean:backups-log)
-             "Timestamp,User,Computer,DrawingPath,BackupPath,Reason,UnsavedChangesNotInCopy"
-             (cutonce:csv-row (list (cutonce:timestamp) (cutonce:user) (cond ((getenv "COMPUTERNAME")) (""))
-                                    src dest reason
-                                    (if (and (cutonce:context-doc-p doc) (/= 0 (getvar "DBMOD"))) "Yes" "No")))))
-     (cutonce:log-event "BACKUP-COPY" (strcat reason ": " dest))
-     (coclean:log (strcat "Backup copy saved: " dest))
-     dest)
-  )
-)
 
 ;; ---------------------------------------------------------------------------
 ;; Dialog
@@ -303,7 +251,7 @@
   )
   ;; 1. backup copy, when ticked
   (if (member "backup" choice)
-    (if (not (setq bk (coclean:backup doc "Before cleanup")))
+    (if (not (setq bk (cutonce:backup doc "Before cleanup")))
       (cond
         ((and (cutonce:locked-p "BackupBeforeCleanup") (cutonce:on-p "BackupBeforeCleanup"))
          (cutonce:notice (strcat "The backup copy could not be saved, and your CAD administrator\n"
@@ -425,8 +373,8 @@
        )
      )
      (if (/= kw "Cancel")
-       (if (setq bk (coclean:backup doc (if (= kw "Copy") "Manual (last saved version)" "Manual")))
-         (princ (strcat "\n  Recorded in " (coclean:backups-log)))
+       (if (setq bk (cutonce:backup doc (if (= kw "Copy") "Manual (last saved version)" "Manual")))
+         (princ (strcat "\n  Recorded in " (cutonce:backups-log)))
        )
      )
     )

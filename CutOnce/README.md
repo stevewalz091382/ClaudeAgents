@@ -8,7 +8,7 @@ CutOnce keeps Civil 3D models healthy while designers work. It does three things
 - **Learn.** Every warning explains why it matters and links to a knowledge-base article for that exact situation.
 - **Insights.** Logs model health on every open and save, so teams can see trends across drawings, projects and people.
 
-**New in 2.1:** one-click bloat cleanup offered by the growth check, backup copies to a shared folder before cleanup (`CUTONCE-BACKUP`), typed-over Civil 3D label counts (open-time check, Health.csv, Labels.csv), and a coordinate system and units guard (open and save).
+**New in 2.1:** one-click bloat cleanup offered by the growth check, a **Save a copy** button on every warning (and before cleanup) that copies the drawing to a shared backup folder, typed-over Civil 3D label counts (open-time check, Health.csv, Labels.csv), and a coordinate system and units guard (open and save).
 
 CutOnce is one AutoLISP package that loads into every drawing. Each designer decides what runs for them in the **CutOnce Control Center**.
 
@@ -28,7 +28,7 @@ Type `CUTONCE`.
 | Group | Switches |
 |---|---|
 | Command warnings | Master on/off, every time or once per command per session, then one row per command (below) |
-| Checks on save | Unusual growth, offer cleanup when growth is flagged, xref not at 0,0,0, coordinate system / units, backup copy before cleanup; **Save a copy now**, **Open backup folder** |
+| Checks on save | Unusual growth, offer cleanup when growth is flagged, xref not at 0,0,0, coordinate system / units, backup copy before cleanup; **Open backup folder** |
 | Standards check on open | Run on open, ByLayer, xref status (broken/unloaded), xref not at 0,0,0, typed-over labels, coordinate system / units, always show result, include block definitions |
 | Logging | Master on/off, then Health.csv on save, Health.csv on open, Xrefs.csv, Events.csv, Opened.csv, Labels.csv |
 
@@ -187,7 +187,7 @@ When the save-time growth check fires, its warning has a **Clean up now...** but
 - The whole cleanup is one undo step: type **U** straight afterwards to undo it. The result lists each count before and after, offers **Save now**, and is logged to Events.csv (`CLEANUP`).
 - **Backup copies.** The copy is the drawing as last saved. It goes to the shared backup folder with a name nobody else can produce: `<drawing>__<YYYYMMDD-HHMMSS-mmm>_<user>-<computer>.dwg`, plus a `-2`, `-3`... counter if that name still exists, so copies never overwrite each other. Each copy is recorded in `Backups.csv`.
 - `BackupBeforeCleanup` sets whether the backup tick box starts ticked. Lock it (`LockedSettings`) to require a backup; if the copy then fails, cleanup stops and nothing changes. Without the lock, a failed copy asks before cleaning up without one.
-- The growth warning also has a **Save a copy** button, and the Control Center a **Save a copy now** button, that copy the drawing without running cleanup.
+- **Every CutOnce warning has a Save a copy button**: command warnings (MOVE, STRETCH, ROTATE, SCALE, grip and surface edits, EXPLODE, XREF bind, REFEDIT, promote, TEXT), and the save checks (growth, xref origin, coordinate system / units). It copies the drawing at once, while the warning is still open, so the designer can keep a way back before going ahead. The copy is the drawing as last saved, so it never includes the change being warned about; the warning says when unsaved changes are left out. The button is greyed out for a drawing that has never been saved. The standards report on open has no button, because it changes nothing.
 - `CUTONCE-BACKUP` copies the drawing to the backup folder at any time (it offers to save first if there are unsaved changes). `CUTONCE-BACKUP-FOLDER` opens the folder.
 - Cleanup is not offered while a drawing is closing (the queued command would land in another drawing).
 

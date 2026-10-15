@@ -446,8 +446,10 @@
               "  : list_box { key = \"impact_list\"; height = 16; width = 72; }"
               "  : text { key = \"hint\"; width = 72; }"
               "  : text { key = \"freq_note\"; width = 72; }"
+              "  : text { key = \"copy_status\"; width = 72; }"
               "  : row {"
               "    alignment = centered; fixed_width = true;"
+              "    : button { key = \"savecopy\"; label = \"Save a copy\"; }"
               "    : button { key = \"accept\"; label = \"OK\"; is_default = true; is_cancel = true; width = 14; }"
               "    : button { key = \"learn_more\"; label = \"Learn More...\"; width = 16; }"
               "  }"
@@ -499,8 +501,9 @@
 )
 
 ;; Information only: AutoLISP cannot cancel a command from here, so the
-;; dialog has OK (close) and Learn More (open the explanation for this
-;; command; the dialog stays open).
+;; dialog has OK (close), Save a copy (copy the drawing to the backup
+;; folder before going ahead; the dialog stays open) and Learn More (open
+;; the explanation for this command; the dialog stays open).
 ;; after = T when the edit has already been applied (warning raised when the
 ;; command ended), so the hint says to undo rather than to press ESC.
 (defun coimpact:show-impact (cmdname topic lines after / path dcl_id)
@@ -517,6 +520,8 @@
               (strcat cmdname " has already been applied. Type U to undo it.")
               "Click OK, then press ESC if you want to stop this command."))
           (set_tile "freq_note" (cutonce:freq-note))
+          (setq *cutonce:copy-reason* (strcat "Before going ahead: " cmdname))
+          (cutonce:fill-copy-tiles)
           (action_tile "accept" "(done_dialog 1)")
           (action_tile "learn_more"
             (strcat "(cutonce:open-kb " (vl-prin1-to-string topic) ")"))

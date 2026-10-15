@@ -304,7 +304,7 @@
 ;;   2. "BackupDir" in CutOnce-Config.lsp
 ;;   3. Documents\CutOnce Backups (per user; set BackupDir for a team folder)
 ;; No per-person subfolder: every copy gets a unique name instead (see
-;; coclean:backup-name), so nobody overwrites anyone else's copy.
+;; cutonce:backup-name), so nobody overwrites anyone else's copy.
 (defun cutonce:backup-dir-configured ( )
   (cond ((cutonce:nonblank (getenv "CUTONCE_BACKUPDIR")))
         ((cutonce:nonblank (cutonce:cfg "BackupDir" nil))))
@@ -606,6 +606,99 @@
 )
 
 ;; ---------------------------------------------------------------------------
+;; Backup copies
+;; ---------------------------------------------------------------------------
+
+(defun cutonce:backups-log ( ) (cutonce:log-file "Backups.csv"))
+
+;; A file name nobody else will produce: drawing, time to the millisecond,
+;; user and computer, and a counter if that still exists.
+(defun cutonce:backup-name (dir drawpath / base ext who stamp name n)
+  (setq base  (vl-filename-base drawpath)
+        ext   (cond ((vl-filename-extension drawpath)) (".dwg"))
+        who   (cond ((cutonce:safe-folder (strcat (cutonce:user) "-" (cond ((getenv "COMPUTERNAME")) ("")))))
+                    ("unknown"))
+        stamp (strcat (menucmd "M=$(edtime,$(getvar,date),YYYYMODD-HHMMSS)")
+                      "-" (substr (itoa (+ 1000 (rem (getvar "MILLISECS") 1000))) 2)))
+  (setq name (strcat dir base "__" stamp "_" who ext) n 1)
+  (while (findfile name)
+    (setq n (1+ n)
+          name (strcat dir base "__" stamp "_" who "-" (itoa n) ext)))
+  name
+)
+
+;; Copies the drawing as last saved to the backup folder. Returns the copy's
+;; path, or nil (with the reason on the command line).
+(defun cutonce:backup (doc reason / src dir dest)
+  (setq src (cutonce:nonblank (cutonce:str-prop doc 'FullName))
+        dir (cutonce:backup-dir))
+  (vl-catch-all-apply 'cutonce:mkdir-p (list dir))
+  (cond
+    ((or (not src) (not (findfile src)))
+     (cutonce:msg "CutOnce" "This drawing has not been saved yet, so there is no file to copy.") nil)
+    ((not (vl-file-directory-p (vl-string-right-trim "\\" dir)))
+     (cutonce:msg "CutOnce" (strcat "Backup folder not reachable: " dir)) nil)
+    ((not (setq dest (cutonce:backup-name dir src))) nil)
+    ((or (not (vl-file-copy src dest))
+         (/= (vl-file-size dest) (vl-file-size src)))
+     (vl-file-delete dest)
+     (cutonce:msg "CutOnce" (strcat "Could not copy " src " to " dest)) nil)
+    (T
+     (vl-catch-all-apply 'cutonce:append-line
+       (list (cutonce:backups-log)
+             "Timestamp,User,Computer,DrawingPath,BackupPath,Reason,UnsavedChangesNotInCopy"
+             (cutonce:csv-row (list (cutonce:timestamp) (cutonce:user) (cond ((getenv "COMPUTERNAME")) (""))
+                                    src dest reason
+                                    (if (and (cutonce:context-doc-p doc) (/= 0 (getvar "DBMOD"))) "Yes" "No")))))
+     (cutonce:log-event "BACKUP-COPY" (strcat reason ": " dest))
+     (cutonce:msg "CutOnce" (strcat "Backup copy saved: " dest))
+     dest)
+  )
+)
+
+;; ---------------------------------------------------------------------------
+;; "Save a copy" button on every warning. The button copies the drawing as
+;; last saved (cutonce:backup) at once, while the warning is still open, so
+;; the designer can keep a way back before going ahead. It is a plain file
+;; copy, so it also works inside the save and command reactors.
+;; ---------------------------------------------------------------------------
+
+(setq *cutonce:copy-reason* nil)
+
+(defun cutonce:copy-available-p ( / src)
+  (and (= 1 (getvar "DWGTITLED"))
+       (setq src (cutonce:nonblank (cutonce:str-prop (cutonce:active-doc) 'FullName)))
+       (findfile src))
+)
+
+(defun cutonce:copy-intro ( )
+  (cond
+    ((not (cutonce:copy-available-p))
+     "Save a copy: not available until this drawing has been saved once.")
+    ((/= 0 (getvar "DBMOD"))
+     (strcat "Save a copy: puts this drawing as last saved (without unsaved changes) in " (cutonce:backup-dir)))
+    (T (strcat "Save a copy: puts this drawing, as it is now, in " (cutonce:backup-dir)))
+  )
+)
+
+;; Called with the dialog open: copy key "savecopy", status key "copy_status".
+(defun cutonce:fill-copy-tiles ( )
+  (set_tile "copy_status" (cutonce:copy-intro))
+  (if (not (cutonce:copy-available-p)) (mode_tile "savecopy" 1))
+  (action_tile "savecopy" "(cutonce:copy-now)")
+)
+
+(defun cutonce:copy-now ( / bk)
+  (setq bk (vl-catch-all-apply 'cutonce:backup
+             (list (cutonce:active-doc) (cond (*cutonce:copy-reason*) ("Before going ahead with a warning")))))
+  (if (vl-catch-all-error-p bk) (setq bk nil))
+  (if bk
+    (progn (set_tile "copy_status" (strcat "Copy saved: " bk)) (mode_tile "savecopy" 1))
+    (set_tile "copy_status" (strcat "Copy failed - is " (cutonce:backup-dir) " reachable? Details on the command line."))
+  )
+)
+
+;; ---------------------------------------------------------------------------
 ;; Civil 3D COM connection (cached)
 ;;
 ;; The Civil 3D application object is reached through
@@ -825,6 +918,9 @@
 ;;   (cutonce:notice-dialog text links '("Clean up now...") "Close")
 ;;       returns 1 for OK / Close, 2 for the first action button, 3 for the
 ;;       second, and so on (1 when only the fallback alert could be shown)
+;;   (cutonce:warning-dialog text links actions reason)
+;;       the same with the "Save a copy" button every warning carries;
+;;       reason is recorded with the copy in Backups.csv
 ;; ---------------------------------------------------------------------------
 
 ;; Text for a DCL string literal: backslashes doubled, double quotes made single.
@@ -835,7 +931,7 @@
 
 ;; DCL with the buttons baked in; written fresh for each notice because the
 ;; number and labels of the buttons vary. Returns the temp file path.
-(defun cutonce:write-notice-dcl (links actions oklabel / path f i)
+(defun cutonce:write-notice-dcl (links actions oklabel copy / path f i)
   (setq path (vl-filename-mktemp "cutonce" nil ".dcl"))
   (if (setq f (open path "w"))
     (progn
@@ -843,9 +939,11 @@
         (append
           (list "co_notice : dialog {"
                 "  label = \"CutOnce\";"
-                "  : list_box { key = \"notice_text\"; height = 16; width = 80; }"
-                "  : row {"
+                "  : list_box { key = \"notice_text\"; height = 16; width = 80; }")
+          (if copy (list "  : text { key = \"copy_status\"; width = 80; }"))
+          (list "  : row {"
                 "    alignment = centered; fixed_width = true;")
+          (if copy (list "    : button { key = \"savecopy\"; label = \"Save a copy\"; }"))
           (progn
             (setq i 0)
             (mapcar (function (lambda (lbl)
@@ -880,9 +978,18 @@
   (reverse (cons s out))
 )
 
-(defun cutonce:notice-dialog (text links actions oklabel / path dcl_id result i)
+(defun cutonce:notice-dialog (text links actions oklabel)
+  (cutonce:notice-dialog-full text links actions oklabel nil)
+)
+
+(defun cutonce:warning-dialog (text links actions reason)
+  (cutonce:notice-dialog-full text links actions nil (cond (reason) ("Before going ahead with a warning")))
+)
+
+;; copyreason non-nil adds the "Save a copy" button (see cutonce:copy-now).
+(defun cutonce:notice-dialog-full (text links actions oklabel copyreason / path dcl_id result i)
   (setq links (vl-remove-if-not (function (lambda (lk) (cdr lk))) links))
-  (setq path (cutonce:write-notice-dcl links actions oklabel) result nil)
+  (setq path (cutonce:write-notice-dcl links actions oklabel copyreason) result nil)
   (if (and path (> (setq dcl_id (load_dialog path)) 0))
     (progn
       (if (new_dialog "co_notice" dcl_id)
@@ -890,6 +997,8 @@
           (start_list "notice_text")
           (foreach ln (cutonce:split-lines text) (add_list ln))
           (end_list)
+          (if copyreason
+            (progn (setq *cutonce:copy-reason* copyreason) (cutonce:fill-copy-tiles)))
           (action_tile "accept" "(done_dialog 1)")
           (setq i 0)
           (foreach a actions
@@ -942,12 +1051,18 @@
   (princ)
 )
 
+;; "GUARD_GROWTH|C-101.dwg" -> "GUARD_GROWTH"
+(defun cutonce:warning-name (key / i)
+  (if (setq i (vl-string-search "|" key)) (substr key 1 i) key)
+)
+
 ;; The same with action buttons. Returns the button pressed (see
 ;; cutonce:notice-dialog), or nil when the frequency choice hid the warning.
 (defun cutonce:notice-once-actions (key text links actions / r)
   (if (cutonce:warn-due-p key)
     (progn
-      (setq r (cutonce:notice-dialog (strcat text "\n\n" (cutonce:freq-note)) links actions nil))
+      (setq r (cutonce:warning-dialog (strcat text "\n\n" (cutonce:freq-note)) links actions
+                                      (strcat "Before going ahead: " (cutonce:warning-name key))))
       (cutonce:mark-warned key)
       r
     )

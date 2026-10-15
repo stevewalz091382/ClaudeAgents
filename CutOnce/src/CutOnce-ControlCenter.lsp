@@ -105,10 +105,7 @@
       '("GuardGrowth" "GuardCleanup" "GuardXrefOrigin" "GuardCoordUnits" "BackupBeforeCleanup")
       (list
         "      : text { key = \"backupdir\"; width = 60; }"
-        "      : row {"
-        "        : button { key = \"savecopy\"; label = \"Save a copy now\"; fixed_width = true; }"
-        "        : button { key = \"openbackups\"; label = \"Open backup folder\"; fixed_width = true; }"
-        "      }"))
+        "      : button { key = \"openbackups\"; label = \"Open backup folder\"; fixed_width = true; }"))
     (cocc:group-lines "Standards check when a drawing opens"
       '("StdCheckOnOpen" "StdByLayer" "StdXrefStatus" "StdXrefOrigin" "StdLabelOverrides" "StdCoordUnits"
         "StdAlwaysShow" "StdScanBlocks")
@@ -249,17 +246,6 @@
 
 (defun cocc:open-folder (dir) (cutonce:open-folder dir))
 
-;; "Save a copy now": copies the drawing as last saved to the backup folder
-;; (a file copy only, so it can run while the dialog is open).
-(defun cocc:save-copy ( / bk)
-  (setq bk (if (= 1 (getvar "DWGTITLED")) (coclean:backup (cutonce:active-doc) "Manual (Control Center)")))
-  (set_tile "backupdir"
-    (cond ((not (= 1 (getvar "DWGTITLED"))) "Save the drawing first - there is no file to copy yet.")
-          ((not bk) "Copy failed - see the command line after closing this dialog.")
-          ((/= 0 (getvar "DBMOD")) (strcat "Copied (last saved version; unsaved changes not included): " bk))
-          (T (strcat "Copied: " bk))))
-)
-
 (defun cocc:any-locked-p ( )
   (or (vl-some 'cutonce:locked-p (cutonce:setting-keys))
       (cutonce:locked-p "WarnFrequency"))
@@ -301,7 +287,6 @@
             (action_tile (car grp) "(cocc:refresh-modes)"))
           (action_tile "other_help" "(cocc:other-help)")
           (action_tile "openlogs" "(cocc:open-folder (cutonce:log-dir))")
-          (action_tile "savecopy" "(cocc:save-copy)")
           (action_tile "openbackups" "(cutonce:mkdir-p (cutonce:backup-dir))(cocc:open-folder (cutonce:backup-dir))")
           (action_tile "defaults" "(cocc:press-defaults)")
           (action_tile "learn_more" "(cutonce:open-kb \"CONTROL_CENTER\")")

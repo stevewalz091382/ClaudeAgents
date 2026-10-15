@@ -183,7 +183,7 @@
 </ul>
 
 <h2 id="backups">4. Set up the shared backup folder</h2>
-<p>When the save-time growth warning fires, it offers <strong>Clean up now...</strong>. Before cleanup changes anything, CutOnce can copy the drawing (as last saved) into one shared "master" backup folder, so any earlier version can be recovered. Designers can also make a copy at any time with <code>CUTONCE-BACKUP</code>.</p>
+<p>When the save-time growth warning fires, it offers <strong>Clean up now...</strong>. Before cleanup changes anything, CutOnce can copy the drawing (as last saved) into one shared "master" backup folder, so any earlier version can be recovered. Every CutOnce warning (command warnings and save checks) also has a <strong>Save a copy</strong> button that copies the drawing there before the designer goes ahead, and <code>CUTONCE-BACKUP</code> makes a copy at any time.</p>
 <ol class="steps">
   <li>Create the folder on a share everyone can reach, e.g. <code>\\server\cad\CutOnce\Backups</code>. Everyone needs permission to create files there (Modify). Nobody needs to delete anything.</li>
   <li>Point CutOnce at it, the same three ways as the log folder:
@@ -198,7 +198,7 @@
 <table>
   <tr><th>Part</th><th>How it works</th></tr>
   <tr><td>File names</td><td><code>&lt;drawing&gt;__&lt;YYYYMMDD-HHMMSS-mmm&gt;_&lt;user&gt;-&lt;computer&gt;.dwg</code>, e.g. <code>C-Grading__20261015-143005-789_jsmith-CAD-PC12.dwg</code>. Time to the millisecond plus user and computer, and a <code>-2</code>, <code>-3</code>... counter if that name still exists, so a copy never overwrites another one.</td></tr>
-  <tr><td>What is copied</td><td>The drawing file as last saved. Cleanup offered on save runs right after that save, so the copy is the drawing before cleanup. With unsaved changes, <code>CUTONCE-BACKUP</code> asks whether to save first.</td></tr>
+  <tr><td>What is copied</td><td>The drawing file as last saved, so a copy made from a warning never includes the change being warned about. Cleanup offered on save runs right after that save, so its copy is the drawing before cleanup. With unsaved changes, <code>CUTONCE-BACKUP</code> asks whether to save first.</td></tr>
   <tr><td>Record</td><td>Every copy adds a row to <code>Backups.csv</code> in the person's log folder (original path, copy path, reason) and a <code>BACKUP-COPY</code> row to Events.csv. Backups.csv is written even with logging switched off.</td></tr>
   <tr><td>Default</td><td>Without a setting, copies go to <code>Documents\CutOnce Backups</code> on each PC, and the cleanup dialog says so.</td></tr>
   <tr><td>Housekeeping</td><td>CutOnce never deletes copies, and uninstalling never touches them. Set a retention rule on the share if it should be pruned.</td></tr>
