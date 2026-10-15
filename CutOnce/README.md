@@ -179,11 +179,11 @@ When the save-time growth check fires, its warning has a **Clean up now...** but
 | Reset the annotation scale list | `-SCALELISTEDIT` Reset, back to the default scale list |
 | Unused text, dimension, multileader, table, multiline styles | `-PURGE` for each style type |
 | Unused anonymous blocks | `-PURGE` Blocks, anonymous (`*U`, `*D`...) names only |
-| Civil 3D Purge Styles | Opens Civil 3D's Purge Styles dialog afterwards, where the designer picks unused Civil 3D styles |
+| Unused Civil 3D styles | `_PURGESTYLES`: Civil 3D's Purge Styles dialog opens during the cleanup, where the designer confirms the unused Civil 3D styles to remove |
 | AUDIT | `AUDIT`, fixing errors |
 | Save a backup copy first | Copies the drawing to the shared backup folder before anything changes |
 
-- PURGE removes only items nothing uses, and repeats (up to 3 times) while counts keep falling.
+- PURGE removes only items nothing uses, and repeats (up to 3 times) while counts keep falling. Command echo is on while cleanup runs, so each `-PURGE`, `-SCALELISTEDIT`, `_PURGESTYLES` and `AUDIT` and its own messages show on the command line (F2). The result lists every command run and, per item, how many were removed, or "nothing unused to remove" when everything of that kind is still in use.
 - The whole cleanup is one undo step: type **U** straight afterwards to undo it. The result lists each count before and after, offers **Save now**, and is logged to Events.csv (`CLEANUP`).
 - **Backup copies.** The copy is the drawing as last saved. It goes to the shared backup folder with a name nobody else can produce: `<drawing>__<YYYYMMDD-HHMMSS-mmm>_<user>-<computer>.dwg`, plus a `-2`, `-3`... counter if that name still exists, so copies never overwrite each other. Each copy is recorded in `Backups.csv`.
 - `BackupBeforeCleanup` sets whether the backup tick box starts ticked. Lock it (`LockedSettings`) to require a backup; if the copy then fails, cleanup stops and nothing changes. Without the lock, a failed copy asks before cleaning up without one.
@@ -278,7 +278,7 @@ Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. L
 - Pipe proximity uses bounding boxes, so treat it as "worth checking".
 - Typed-over label detection depends on a label property confirmed with `CUTONCE-LABEL-PROBE` (see [Typed-over labels](#typed-over-labels)). Labels that cannot be checked are reported as such.
 - An xref's coordinate system is read only when the xref is loaded and its geographic location can be read; otherwise that xref is not compared.
-- Civil 3D styles are not purged automatically: cleanup opens Civil 3D's Purge Styles dialog, where the designer chooses.
+- Civil 3D styles are purged through Civil 3D's own `_PURGESTYLES` dialog (there is no command-line version), so the designer confirms them there.
 - Cleanup offered from the growth warning is queued to start after the save; if it does not start, type `CUTONCE-CLEANUP`.
 
 ## Uninstall

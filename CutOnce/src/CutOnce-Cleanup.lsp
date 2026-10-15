@@ -14,7 +14,7 @@
 ;;;     - unused text, dimension, multileader, table and multiline styles
 ;;;                                           -PURGE (one per style type)
 ;;;     - unused anonymous blocks             -PURGE Blocks `**
-;;;     - unused Civil 3D styles              Civil 3D's Purge Styles dialog
+;;;     - unused Civil 3D styles              _PURGESTYLES (Civil 3D's dialog)
 ;;;     - AUDIT, fixing errors
 ;;;   PURGE only removes items nothing uses. Everything runs as one undo step,
 ;;;   so U straight afterwards undoes it. The result lists each count before
@@ -99,7 +99,7 @@
     ("scales"  "Reset the annotation scale list to the default"              "Scales")
     ("styles"  "Unused text, dimension, multileader, table, multiline styles" "Styles")
     ("anon"    "Unused anonymous blocks"                                     "AnonBlocks")
-    ("civil"   "Then open Civil 3D Purge Styles for unused Civil 3D styles"  "CivilStyles")
+    ("civil"   "Unused Civil 3D styles (opens Civil 3D Purge Styles)"         "CivilStyles")
     ("audit"   "AUDIT the drawing and fix errors"                            nil)))
 
 (defun coclean:count-text (v) (if (numberp v) (itoa v) (vl-princ-to-string v)))
@@ -176,10 +176,7 @@
                         (strcat "Drawing: " (cond ((cutonce:str-prop doc 'FullName)) ((cutonce:str-prop doc 'Name)) (""))))
             (add_list ln))
           (end_list)
-          (foreach st *coclean:steps*
-            (set_tile (strcat "cl_" (car st))
-                      (if (and (= (car st) "civil") (not (numberp (cdr (assoc "CivilStyles" counts))))) "0" "1")))
-          (if (not (numberp (cdr (assoc "CivilStyles" counts)))) (mode_tile "cl_civil" 1))
+          (foreach st *coclean:steps* (set_tile (strcat "cl_" (car st)) "1"))
           (set_tile "bk_dir" (strcat "Folder: " (cutonce:backup-dir)
                                      (if (cutonce:backup-dir-configured) "" "  (personal - CAD admin can set BackupDir)")))
           (cond
@@ -212,23 +209,34 @@
 ;; Running the cleanup
 ;; ---------------------------------------------------------------------------
 
-;; Cancels a command left waiting for input (an option a release lacks).
+;; Cancels a command left waiting for input (an option a release lacks),
+;; never this command itself.
 (defun coclean:cancel-active ( / n)
   (setq n 0)
-  (while (and (= 1 (logand 1 (getvar "CMDACTIVE"))) (< n 4))
+  (while (and (= 1 (logand 1 (getvar "CMDACTIVE")))
+              (cutonce:nonblank (getvar "CMDNAMES"))
+              (not (wcmatch (strcase (getvar "CMDNAMES")) "*CUTONCE*"))
+              (< n 4))
     (command)
     (setq n (1+ n))
   )
 )
 
-(defun coclean:cmd (args / r)
-  (setq r (vl-catch-all-apply 'command args))
-  (coclean:cancel-active)
-  (if (vl-catch-all-error-p r) (coclean:log (strcat (car args) ": " (vl-catch-all-error-message r))))
+;; Every command the cleanup runs, in order, for the result and the command line.
+(setq *coclean:ran* nil)
+
+(defun coclean:note (txt)
+  (setq *coclean:ran* (cons txt *coclean:ran*))
+  (princ (strcat "\n[CutOnce Cleanup] " txt))
 )
 
+;; The commands are called directly (not through vl-catch-all-apply, which
+;; Civil 3D does not reliably let drive the command line), with CMDECHO on so
+;; PURGE and AUDIT report what they did on the command line.
 (defun coclean:purge (kw names)
-  (coclean:cmd (list "_.-PURGE" kw names "_No"))
+  (coclean:note (strcat "-PURGE " (substr kw 2) " " names " No"))
+  (command "_.-PURGE" kw names "_No")
+  (coclean:cancel-active)
 )
 
 (defun coclean:purge-pass (choice)
@@ -240,11 +248,30 @@
   (if (member "regapps" choice) (coclean:purge "_Regapps" "*"))
 )
 
+(defun coclean:purge-styles-civil ( )
+  (coclean:note "_PURGESTYLES (Civil 3D Purge Styles dialog)")
+  (initdia)
+  (command "_.PURGESTYLES")
+  ;; the dialog is modal; wait for it if the command is still running
+  (while (and (= 1 (logand 1 (getvar "CMDACTIVE")))
+              (wcmatch (strcase (cond ((getvar "CMDNAMES")) (""))) "*PURGESTYLES*"))
+    (command pause))
+)
+
+(defun coclean:result-text (k before after)
+  (cond
+    ((not (and (numberp (cdr (assoc k before))) (numberp (cdr (assoc k after)))))
+     (strcat (coclean:count-text (cdr (assoc k before))) " -> " (coclean:count-text (cdr (assoc k after)))))
+    ((= (cdr (assoc k before)) (cdr (assoc k after)))
+     (strcat (itoa (cdr (assoc k after))) " -> " (itoa (cdr (assoc k after))) "  (nothing unused to remove)"))
+    (T (strcat (itoa (cdr (assoc k before))) " -> " (itoa (cdr (assoc k after)))
+               "  (" (itoa (- (cdr (assoc k before)) (cdr (assoc k after)))) " removed)")))
+)
+
 (defun coclean:run (doc choice / before after bk echo *error* pass prevsum cursum lines r)
-  (setq before (coclean:counts doc) echo (getvar "CMDECHO"))
+  (setq before (coclean:counts doc) echo (getvar "CMDECHO") *coclean:ran* nil)
   (defun *error* (msg)
-    (vl-catch-all-apply 'coclean:cancel-active nil)
-    (vl-catch-all-apply 'command (list "_.UNDO" "_End"))
+    (command-s "_.UNDO" "_End")
     (setvar "CMDECHO" echo)
     (if (not (wcmatch (strcase msg) "*CANCEL*,*QUIT*,*EXIT*")) (coclean:log (strcat "Stopped: " msg)))
     (princ)
@@ -268,22 +295,33 @@
       )
     )
   )
-  ;; 2. PURGE / scale list / AUDIT, as one undo step
-  (setvar "CMDECHO" 0)
-  (coclean:cmd (list "_.UNDO" "_Begin"))
+  ;; 2. PURGE / scale list / Purge Styles / AUDIT, as one undo step
+  (setvar "CMDECHO" 1)
+  (coclean:log "Cleaning up - each command and its result is shown below.")
+  (command "_.UNDO" "_Begin")
   ;; purging one item can free another (a style using a regapp, a block
   ;; inside a block), so repeat while counts keep falling, at most 3 times
   (setq pass 0 cursum -1)
-  (while (and (< pass 3) (/= cursum prevsum))
+  (while (and (< pass 3) (/= cursum prevsum)
+              (vl-some (function (lambda (k) (member k choice))) '("styles" "anon" "regapps")))
     (setq prevsum (if (= pass 0) -2 cursum))
     (coclean:purge-pass choice)
     (setq after (coclean:counts doc)
           cursum (+ (cdr (assoc "RegApps" after)) (cdr (assoc "Styles" after)) (cdr (assoc "AnonBlocks" after)))
           pass (1+ pass))
   )
-  (if (member "scales" choice) (coclean:cmd (list "_.-SCALELISTEDIT" "_Reset" "_Yes" "_Exit")))
-  (if (member "audit" choice) (coclean:cmd (list "_.AUDIT" "_Yes")))
-  (coclean:cmd (list "_.UNDO" "_End"))
+  (if (member "scales" choice)
+    (progn
+      (coclean:note "-SCALELISTEDIT Reset Yes Exit")
+      (command "_.-SCALELISTEDIT" "_Reset" "_Yes" "_Exit")
+      (coclean:cancel-active)))
+  (if (member "civil" choice) (coclean:purge-styles-civil))
+  (if (member "audit" choice)
+    (progn
+      (coclean:note "AUDIT Yes (fix errors)")
+      (command "_.AUDIT" "_Yes")
+      (coclean:cancel-active)))
+  (command "_.UNDO" "_End")
   (setvar "CMDECHO" echo)
   (setq after (coclean:counts doc))
   ;; 3. result
@@ -292,16 +330,14 @@
               (setq k (caddr st))
               (strcat "  " (cadr st) ": "
                       (cond ((not (member (car st) choice)) "not run")
-                            ((= (car st) "civil") "Purge Styles opens next")
-                            (k (strcat (coclean:count-text (cdr (assoc k before))) " -> "
-                                       (coclean:count-text (cdr (assoc k after)))))
+                            (k (coclean:result-text k before after))
                             (T "done (see the command line)")))))
             *coclean:steps*))
   (cutonce:log-event "CLEANUP"
     (cutonce:join
       (mapcar (function (lambda (k) (strcat k " " (coclean:count-text (cdr (assoc k before)))
                                             "->" (coclean:count-text (cdr (assoc k after))))))
-              '("RegApps" "Scales" "Styles" "AnonBlocks"))
+              '("RegApps" "Scales" "Styles" "AnonBlocks" "CivilStyles"))
       "  "))
   (setq r
     (cutonce:notice-dialog
@@ -309,22 +345,21 @@
         (append
           (list "CutOnce cleanup finished." "")
           lines
+          (list "" "Commands run:")
+          (mapcar (function (lambda (x) (strcat "  " x))) (reverse *coclean:ran*))
           (list ""
+                "PURGE only removes items nothing uses, so an unchanged count means everything"
+                "of that kind is still in use. Its messages are on the command line (F2)."
+                ""
                 (if bk (strcat "Backup copy (before cleanup): " bk) "No backup copy was made.")
                 ""
                 "Type U now to undo the whole cleanup."
-                (if (member "civil" choice)
-                  "Civil 3D Purge Styles opens next; save the drawing when you are done there."
-                  "Save the drawing to keep the result.")))
+                "Save the drawing to keep the result."))
         "\n")
       (list (cons "Learn More..." "GUARD_CLEANUP"))
-      (if (not (member "civil" choice)) (list "Save now"))
+      (list "Save now")
       "Close"))
-  (cond
-    ((member "civil" choice)
-     (vl-catch-all-apply 'vla-SendCommand (list doc "_.PURGESTYLES\n")))
-    ((= r 2) (coclean:cmd (list "_.QSAVE")))
-  )
+  (if (= r 2) (command "_.QSAVE"))
   (princ)
 )
 
@@ -369,7 +404,7 @@
          (initget "Save Copy Cancel")
          (setq kw (cond ((getkword "\nThis drawing has unsaved changes. [Save first/Copy last saved version/Cancel] <Save first>: "))
                         ("Save")))
-         (if (= kw "Save") (coclean:cmd (list "_.QSAVE")))
+         (if (= kw "Save") (command "_.QSAVE"))
        )
      )
      (if (/= kw "Cancel")
