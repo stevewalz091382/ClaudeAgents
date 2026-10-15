@@ -119,6 +119,13 @@ function Copy-Contents([string]$from, [string]$to) {
     $srcTo = Join-Path $to 'src'
     if (Test-Path $srcTo) { Remove-Item $srcTo -Recurse -Force }
     if ($useSource) {
+        # The loader prefers CutOnce.vlx, so a compiled build left by an
+        # earlier install would hide the sources being installed now.
+        $oldVlx = Join-Path $to 'CutOnce.vlx'
+        if (Test-Path $oldVlx) {
+            Remove-Item $oldVlx -Force
+            Write-Host "Removed $oldVlx from an earlier install so the new version loads."
+        }
         New-Item -ItemType Directory -Force -Path $srcTo | Out-Null
         Copy-Item (Join-Path $sourceDir '*.lsp') $srcTo -Force
     }

@@ -34,7 +34,9 @@
 ;;;
 ;;; Commands:
 ;;;   CUTONCE-CLEANUP         the cleanup dialog, any time
-;;;   CUTONCE-BACKUP          copy this drawing to the backup folder now
+;;;   CUTONCE-BACKUP          copy this drawing to the backup folder now (also
+;;;                           the "Save a copy" button on the growth warning and
+;;;                           in the Control Center)
 ;;;   CUTONCE-BACKUP-FOLDER   open the backup folder
 ;;;
 ;;; Naming: every function and global here starts with coclean: / *coclean:.
@@ -391,12 +393,13 @@
   (princ)
 )
 
-;; Called from the growth warning during a save: run the cleanup once the
-;; save has finished.
-(defun coclean:queue ( / r)
-  (setq r (vl-catch-all-apply 'vla-SendCommand (list (cutonce:active-doc) "CUTONCE-CLEANUP\n")))
+;; Called from the growth warning during a save: run CUTONCE-CLEANUP or
+;; CUTONCE-BACKUP once the save has finished, so the file on disk is the
+;; drawing as just saved.
+(defun coclean:queue (cmd / r)
+  (setq r (vl-catch-all-apply 'vla-SendCommand (list (cutonce:active-doc) (strcat cmd "\n"))))
   (if (vl-catch-all-error-p r)
-    (coclean:log "Type CUTONCE-CLEANUP to clean up this drawing.")
+    (coclean:log (strcat "Type " cmd " to continue."))
   )
   (princ)
 )

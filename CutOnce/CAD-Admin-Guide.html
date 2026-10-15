@@ -244,6 +244,7 @@ InsUnits=US Survey Feet</code></pre>
   <tr><td>An extra column is always 0</td><td>Run <code>CUTONCE-GUARD-DUMPOBJECTS</code> in a drawing that has the object and copy the name exactly.</td></tr>
   <tr><td>Rows are missing</td><td>A log that is open in Excel cannot be written to; rows saved while it was open are skipped. Open the logs read-only, or use the Excel combine steps above, which do not lock them.</td></tr>
   <tr><td>"Could not archive Health.csv"</td><td>The file is open in Excel. Close it; the next save starts the new file.</td></tr>
+  <tr><td>No "Save a copy" button, or <code>CUTONCE-STATUS</code> shows version 2.0.0</td><td>An older <code>CutOnce.vlx</code> is still in the install folder and loads instead of 2.1. Re-run <code>Install.cmd</code> from the 2.1 package (it removes the old file), or delete <code>CutOnce.vlx</code> from the folder <code>CUTONCE-STATUS</code> shows, then restart Civil 3D.</td></tr>
   <tr><td>Cleanup did not start after "Clean up now..."</td><td>Type <code>CUTONCE-CLEANUP</code>. Cleanup is not offered while a drawing is being closed.</td></tr>
   <tr><td>"Backup folder not reachable"</td><td>Check the folder <code>CUTONCE-STATUS</code> shows exists and that the person can create files in it.</td></tr>
   <tr><td>Labels "could not be checked"</td><td>Follow <a href="#labels">step 6</a> to find the property for your Civil 3D release.</td></tr>
