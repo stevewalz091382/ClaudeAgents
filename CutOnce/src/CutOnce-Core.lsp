@@ -9,6 +9,7 @@
 ;;;   - fail-safe COM property helpers
 ;;;   - CSV helpers (with automatic archiving when a log's columns change)
 ;;;   - the shared Events.csv writer
+;;;   - the shared backup folder for "save a copy" before risky changes
 ;;;   - a cached connection to the Civil 3D COM application object
 ;;;
 ;;; Naming: every function and global in this file starts with cutonce: or
@@ -17,7 +18,7 @@
 
 (vl-load-com)
 
-(setq *cutonce:version* "2.0.0")
+(setq *cutonce:version* "2.1.0")
 (setq *cutonce:publisher* "Stephen Walz")
 
 ;; ---------------------------------------------------------------------------
@@ -81,12 +82,17 @@
     ("WarnOTHER"        "Cmd"      "Other watched commands (added by CAD admin)"           T)
     ;; Save checks
     ("GuardGrowth"      "Save"     "Unusual growth since the last check"                  T)
+    ("GuardCleanup"     "Save"     "Offer one-click cleanup when growth is flagged"       T)
     ("GuardXrefOrigin"  "Save"     "Xref not inserted at 0,0,0"                           T)
+    ("GuardCoordUnits"  "Save"     "Coordinate system or insertion units mismatch"        T)
+    ("BackupBeforeCleanup" "Save"  "Save a backup copy to the shared folder before cleanup" T)
     ;; Standards check when a drawing opens
     ("StdCheckOnOpen"   "Open"     "Run the standards check when a drawing opens"         T)
     ("StdByLayer"       "Open"     "Objects whose color or linetype is not ByLayer"       T)
     ("StdXrefStatus"    "Open"     "Xrefs that are broken (not found) or unloaded"        T)
     ("StdXrefOrigin"    "Open"     "Xrefs not inserted at 0,0,0"                          T)
+    ("StdLabelOverrides" "Open"    "Civil 3D labels with typed-over (overridden) text"    T)
+    ("StdCoordUnits"    "Open"     "Coordinate system and insertion units"                T)
     ("StdAlwaysShow"    "Open"     "Show the result even when nothing is wrong"           nil)
     ("StdScanBlocks"    "Open"     "Include block definitions in ByLayer counts (slower)" T)
     ;; Logging
@@ -96,6 +102,7 @@
     ("LogXrefs"         "Log"      "Xrefs.csv detail with every Health.csv row"           T)
     ("LogEvents"        "Log"      "Events.csv row for every warning"                     T)
     ("LogOpened"        "Log"      "Opened.csv row for every drawing opened"              T)
+    ("LogLabels"        "Log"      "Labels.csv detail of typed-over label text"           T)
   )
 )
 
@@ -290,6 +297,26 @@
 )
 
 (defun cutonce:log-file (name) (strcat (cutonce:log-dir) name))
+
+;; Backup folder: the one shared "master" folder that CUTONCE-BACKUP and the
+;; cleanup write a copy of the drawing to before changing it. Resolution:
+;;   1. CUTONCE_BACKUPDIR (Windows environment variable, or setenv in AutoCAD)
+;;   2. "BackupDir" in CutOnce-Config.lsp
+;;   3. Documents\CutOnce Backups (per user; set BackupDir for a team folder)
+;; No per-person subfolder: every copy gets a unique name instead (see
+;; coclean:backup-name), so nobody overwrites anyone else's copy.
+(defun cutonce:backup-dir-configured ( )
+  (cond ((cutonce:nonblank (getenv "CUTONCE_BACKUPDIR")))
+        ((cutonce:nonblank (cutonce:cfg "BackupDir" nil))))
+)
+
+(defun cutonce:backup-dir ( / d up)
+  (setq d (cond ((cutonce:backup-dir-configured))
+                ((setq up (cutonce:nonblank (getenv "USERPROFILE")))
+                 (strcat up "\\Documents\\CutOnce Backups"))
+                (T (strcat (getvar "TEMPPREFIX") "CutOnce Backups"))))
+  (cutonce:dir-slash d)
+)
 
 ;; ---------------------------------------------------------------------------
 ;; Messages
@@ -746,6 +773,11 @@
     ("GUARD_PROMOTE"     . "promote-reference")
     ("GUARD_TEXT"        . "text-instead-of-labels")
     ("GUARD_GROWTH"      . "drawing-growth")
+    ("GUARD_CLEANUP"     . "drawing-cleanup")
+    ("GUARD_COORD_UNITS" . "coordinate-system-units")
+    ("STD_LABEL_OVERRIDE" . "label-text-overrides")
+    ("STD_COORD_UNITS"   . "coordinate-system-units")
+    ("BACKUP"            . "backup-copies")
     ;; control center
     ("CONTROL_CENTER"    . "control-center")
     ("LINK_MAP"          . "link-map")))
@@ -783,18 +815,27 @@
 (defun cutonce:open-kb (topic) (cutonce:open-url (cutonce:kb-url topic)))
 
 ;; ---------------------------------------------------------------------------
-;; Notice dialog: a message with OK and one or more Learn More buttons, each
-;; opening its own section of the knowledge-base page. Used for every warning
-;; that has a section. Falls back to a plain alert (with the links written
-;; out) if the dialog cannot be shown.
+;; Notice dialog: a message with OK, optional action buttons, and one or more
+;; Learn More buttons, each opening its own section of the knowledge-base
+;; page. Used for every warning that has a section. Falls back to a plain
+;; alert (with the links written out) if the dialog cannot be shown.
 ;;
 ;;   (cutonce:notice text "GUARD_XREF_BIND")                one Learn More button
 ;;   (cutonce:notice-links text '(("About ByLayer..." . "STD_BYLAYER") ...))
+;;   (cutonce:notice-dialog text links '("Clean up now...") "Close")
+;;       returns 1 for OK / Close, 2 for the first action button, 3 for the
+;;       second, and so on (1 when only the fallback alert could be shown)
 ;; ---------------------------------------------------------------------------
+
+;; Text for a DCL string literal: backslashes doubled, double quotes made single.
+(defun cutonce:dcl-str (s)
+  (vl-string-translate "\"" "'"
+    (apply 'strcat (mapcar (function (lambda (c) (if (= c 92) "\\\\" (chr c)))) (vl-string->list s))))
+)
 
 ;; DCL with the buttons baked in; written fresh for each notice because the
 ;; number and labels of the buttons vary. Returns the temp file path.
-(defun cutonce:write-notice-dcl (links / path f i)
+(defun cutonce:write-notice-dcl (links actions oklabel / path f i)
   (setq path (vl-filename-mktemp "cutonce" nil ".dcl"))
   (if (setq f (open path "w"))
     (progn
@@ -804,14 +845,23 @@
                 "  label = \"CutOnce\";"
                 "  : list_box { key = \"notice_text\"; height = 16; width = 80; }"
                 "  : row {"
-                "    alignment = centered; fixed_width = true;"
-                "    : button { key = \"accept\"; label = \"OK\"; is_default = true; is_cancel = true; width = 12; }")
+                "    alignment = centered; fixed_width = true;")
+          (progn
+            (setq i 0)
+            (mapcar (function (lambda (lbl)
+                      (setq i (1+ i))
+                      (strcat "    : button { key = \"act_" (itoa i) "\"; label = \""
+                              (cutonce:dcl-str lbl) "\"; }")))
+                    actions))
+          (list (strcat "    : button { key = \"accept\"; label = \""
+                        (cutonce:dcl-str (cond ((cutonce:nonblank oklabel)) ("OK")))
+                        "\"; is_default = true; is_cancel = true; width = 12; }"))
           (progn
             (setq i 0)
             (mapcar (function (lambda (lk)
                       (setq i (1+ i))
                       (strcat "    : button { key = \"learn_" (itoa i) "\"; label = \""
-                              (vl-string-translate "\"" "'" (car lk)) "\"; }")))
+                              (cutonce:dcl-str (car lk)) "\"; }")))
                     links))
           (list "  }" "}"))
         (write-line ln f)
@@ -830,9 +880,9 @@
   (reverse (cons s out))
 )
 
-(defun cutonce:notice-links (text links / path dcl_id shown i)
+(defun cutonce:notice-dialog (text links actions oklabel / path dcl_id result i)
   (setq links (vl-remove-if-not (function (lambda (lk) (cdr lk))) links))
-  (setq path (cutonce:write-notice-dcl links) shown nil)
+  (setq path (cutonce:write-notice-dcl links actions oklabel) result nil)
   (if (and path (> (setq dcl_id (load_dialog path)) 0))
     (progn
       (if (new_dialog "co_notice" dcl_id)
@@ -842,25 +892,37 @@
           (end_list)
           (action_tile "accept" "(done_dialog 1)")
           (setq i 0)
+          (foreach a actions
+            (setq i (1+ i))
+            (action_tile (strcat "act_" (itoa i)) (strcat "(done_dialog " (itoa (1+ i)) ")"))
+          )
+          (setq i 0)
           (foreach lk links
             (setq i (1+ i))
             (action_tile (strcat "learn_" (itoa i))
                          (strcat "(cutonce:open-kb " (vl-prin1-to-string (cdr lk)) ")"))
           )
-          (start_dialog)
-          (setq shown T)
+          (setq result (start_dialog))
         )
       )
       (unload_dialog dcl_id)
     )
   )
   (if path (vl-file-delete path))
-  (if (not shown)
-    (alert (strcat text "\n"
-                   (apply 'strcat
-                     (mapcar (function (lambda (lk) (strcat "\n" (car lk) " " (cutonce:kb-url (cdr lk)))))
-                             links))))
+  (if (not result)
+    (progn
+      (alert (strcat text "\n"
+                     (apply 'strcat
+                       (mapcar (function (lambda (lk) (strcat "\n" (car lk) " " (cutonce:kb-url (cdr lk)))))
+                               links))))
+      (setq result 1)
+    )
   )
+  result
+)
+
+(defun cutonce:notice-links (text links)
+  (cutonce:notice-dialog text links nil nil)
   (princ)
 )
 
@@ -868,14 +930,39 @@
   (cutonce:notice-links text (list (cons "Learn More..." topic)))
 )
 
+;; Yes / no question. The safe answer (nolabel) is the default button.
+(defun cutonce:confirm (text yeslabel nolabel)
+  (= 2 (cutonce:notice-dialog text nil (list yeslabel) nolabel))
+)
+
 ;; A command or save-check warning: shown only when due under the designer's
 ;; frequency choice (see cutonce:warn-due-p), then remembered.
 (defun cutonce:notice-once (key text topic)
+  (cutonce:notice-once-actions key text (list (cons "Learn More..." topic)) nil)
+  (princ)
+)
+
+;; The same with action buttons. Returns the button pressed (see
+;; cutonce:notice-dialog), or nil when the frequency choice hid the warning.
+(defun cutonce:notice-once-actions (key text links actions / r)
   (if (cutonce:warn-due-p key)
     (progn
-      (cutonce:notice (strcat text "\n\n" (cutonce:freq-note)) topic)
+      (setq r (cutonce:notice-dialog (strcat text "\n\n" (cutonce:freq-note)) links actions nil))
       (cutonce:mark-warned key)
+      r
     )
+  )
+)
+
+;; Opens a folder in Windows Explorer.
+(defun cutonce:open-folder (dir / sh)
+  (setq sh (vl-catch-all-apply 'vlax-get-or-create-object (list "Shell.Application")))
+  (if (and sh (not (vl-catch-all-error-p sh)))
+    (progn
+      (vl-catch-all-apply 'vlax-invoke-method (list sh 'Open dir))
+      (vl-catch-all-apply 'vlax-release-object (list sh))
+    )
+    (vl-catch-all-apply 'startapp (list "explorer.exe" dir))
   )
   (princ)
 )
@@ -885,6 +972,8 @@
   (cutonce:msg "CutOnce" (strcat "Version " *cutonce:version* " - published by " *cutonce:publisher*))
   (princ (strcat "\n  Install folder:  " (cutonce:home)))
   (princ (strcat "\n  Log folder:      " (cutonce:log-dir)))
+  (princ (strcat "\n  Backup folder:   " (cutonce:backup-dir)
+                 (if (cutonce:backup-dir-configured) "" "  (personal default - set BackupDir for a shared folder)")))
   (princ (strcat "\n  Civil 3D COM:    "
                  (if app
                    (strcat "connected (" (cond ((vl-bb-ref '*cutonce:bb-civil-progid*)) ("?")) ")")

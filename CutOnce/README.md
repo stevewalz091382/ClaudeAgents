@@ -1,4 +1,4 @@
-# CutOnce 2.0 for Civil 3D
+# CutOnce 2.1 for Civil 3D
 
 Publisher: Stephen Walz
 
@@ -8,13 +8,16 @@ CutOnce keeps Civil 3D models healthy while designers work. It does three things
 - **Learn.** Every warning explains why it matters and links to a knowledge-base article for that exact situation.
 - **Insights.** Logs model health on every open and save, so teams can see trends across drawings, projects and people.
 
+**New in 2.1:** one-click bloat cleanup offered by the growth check, backup copies to a shared folder before cleanup (`CUTONCE-BACKUP`), typed-over Civil 3D label counts (open-time check, Health.csv, Labels.csv), and a coordinate system and units guard (open and save).
+
 CutOnce is one AutoLISP package that loads into every drawing. Each designer decides what runs for them in the **CutOnce Control Center**.
 
 | Part | What it does | Interrupts the user? |
 |---|---|---|
-| **Standards check** | When a drawing opens: objects not ByLayer, xrefs broken or unloaded, xrefs not at 0,0,0 | Only when something is wrong (or always, if the designer chooses) |
-| **Health log** | Writes a Health.csv row (and Xrefs.csv detail) on every save and open: counts, styles, ByLayer, xrefs, drawing settings | Never |
-| **Guard** | Warns when EXPLODE (of Civil 3D objects, blocks or hatches), BURST, XREF bind, or moving an xref destroys data. Flags unusual growth and xrefs off 0,0,0 on save | Only when something risky happens |
+| **Standards check** | When a drawing opens: objects not ByLayer, xrefs broken or unloaded, xrefs not at 0,0,0, Civil 3D labels with typed-over text, coordinate system and insertion units | Only when something is wrong (or always, if the designer chooses) |
+| **Health log** | Writes a Health.csv row (and Xrefs.csv and Labels.csv detail) on every save and open: counts, styles, ByLayer, xrefs, typed-over labels, drawing settings, coordinate system | Never |
+| **Guard** | Warns when EXPLODE (of Civil 3D objects, blocks or hatches), BURST, XREF bind, or moving an xref destroys data. Flags unusual growth, xrefs off 0,0,0 and coordinate system / units problems on save | Only when something risky happens |
+| **Cleanup** | When the growth check fires, offers one-click cleanup of unused registered apps, scales, styles and anonymous blocks (PURGE, AUDIT), after saving a backup copy to a shared folder | Only when the designer clicks Clean up now... |
 | **Impact** | Before an alignment, surface or profile is edited, lists what depends on it | On grip edits, surface edits and MOVE/STRETCH/ROTATE/SCALE of those objects |
 | **CutOnce Control Center** | One dialog to switch every item above on or off, per designer, including logging | Only when opened |
 
@@ -25,9 +28,9 @@ Type `CUTONCE`.
 | Group | Switches |
 |---|---|
 | Command warnings | Master on/off, every time or once per command per session, then one row per command (below) |
-| Checks on save | Unusual growth, xref not at 0,0,0 |
-| Standards check on open | Run on open, ByLayer, xref status (broken/unloaded), xref not at 0,0,0, always show result, include block definitions |
-| Logging | Master on/off, then Health.csv on save, Health.csv on open, Xrefs.csv, Events.csv, Opened.csv |
+| Checks on save | Unusual growth, offer cleanup when growth is flagged, xref not at 0,0,0, coordinate system / units, backup copy before cleanup; **Open backup folder** |
+| Standards check on open | Run on open, ByLayer, xref status (broken/unloaded), xref not at 0,0,0, typed-over labels, coordinate system / units, always show result, include block definitions |
+| Logging | Master on/off, then Health.csv on save, Health.csv on open, Xrefs.csv, Events.csv, Opened.csv, Labels.csv |
 
 - Choices are stored in the designer's AutoCAD profile and apply to every open drawing immediately.
 - Turning a master switch off greys out the items under it.
@@ -65,7 +68,7 @@ Command-line version, for scripts and toolbar buttons: `-CUTONCE`. Type a settin
 | `^C^C-CUTONCE;StdCheckOnOpen;;` | Toggle the standards check on open |
 | `^C^C-CUTONCE;WarnEXPLODE;;` | Toggle the EXPLODE warning |
 
-Setting names: `CommandWarnings`, `WarnMOVE`, `WarnCOPY`, `WarnSTRETCH`, `WarnROTATE`, `WarnSCALE`, `WarnEXPLODE`, `WarnXREFBIND`, `WarnREFEDIT`, `WarnPROMOTE`, `WarnTEXT`, `WarnDTEXT`, `WarnMTEXT`, `WarnGRIPS`, `WarnSURFACE`, `WarnOTHER`, `GuardGrowth`, `GuardXrefOrigin`, `StdCheckOnOpen`, `StdByLayer`, `StdXrefStatus`, `StdXrefOrigin`, `StdAlwaysShow`, `StdScanBlocks`, `LogEnabled`, `LogHealthOnSave`, `LogHealthOnOpen`, `LogXrefs`, `LogEvents`, `LogOpened`.
+Setting names: `CommandWarnings`, `WarnMOVE`, `WarnCOPY`, `WarnSTRETCH`, `WarnROTATE`, `WarnSCALE`, `WarnEXPLODE`, `WarnXREFBIND`, `WarnREFEDIT`, `WarnPROMOTE`, `WarnTEXT`, `WarnDTEXT`, `WarnMTEXT`, `WarnGRIPS`, `WarnSURFACE`, `WarnOTHER`, `GuardGrowth`, `GuardCleanup`, `GuardXrefOrigin`, `GuardCoordUnits`, `BackupBeforeCleanup`, `StdCheckOnOpen`, `StdByLayer`, `StdXrefStatus`, `StdXrefOrigin`, `StdLabelOverrides`, `StdCoordUnits`, `StdAlwaysShow`, `StdScanBlocks`, `LogEnabled`, `LogHealthOnSave`, `LogHealthOnOpen`, `LogXrefs`, `LogEvents`, `LogOpened`, `LogLabels`.
 
 ## Logs
 
@@ -74,11 +77,13 @@ All files go to the log folder (see `CUTONCE-STATUS`), none to the drawing's fol
 | File | One row per | Contents |
 |---|---|---|
 | `Health.csv` | check (Save, Open, Audit, Manual) | Who, when, trigger, drawing, then the columns below, plus any `HealthExtraCounts` columns |
-| `Xrefs.csv` | xref, per Health.csv row | Name, path, Attach/Overlay, Loaded/Unloaded/Not Found, nested, instances, insertion point, rotation, scale, at 0,0,0 |
+| `Xrefs.csv` | xref, per Health.csv row | Name, path, Attach/Overlay, Loaded/Unloaded/Not Found, nested, instances, insertion point, rotation, scale, at 0,0,0, insertion units, coordinate system |
+| `Labels.csv` | Civil 3D label type and style, per Health.csv row | Label type, label style, how many labels, how many have typed-over text (`n/a` if they could not be checked), how many could not be checked, handles of the typed-over labels |
+| `Backups.csv` | backup copy made | Who, when, computer, original drawing, backup copy path, reason, whether unsaved changes were left out. Written even with logging off |
 | `Events.csv` | warning raised (also when frequency hides it) | Who, when, drawing, event type, detail. Includes every impact warning (`IMPACT`), guard warning and advisory, standards issues on open, and every TEXT / DTEXT / MTEXT start (`TEXT-TIP` the first time in a session, `TEXT-USED` after that) |
 | `Opened.csv` | drawing opened | Who, when, drawing |
 
-**Event codes:** `IMPACT`, `STANDARDS-OPEN`, `EXPLODE-LOSS`, `ATTRIB-LOSS`, `XREF-BIND`, `XREF-MOVED`, `XREF-BASEPOINT`, `SAVE-FLAG`, `ADVISORY-REFEDIT`, `ADVISORY-REFCLOSE`, `ADVISORY-PROMOTE`, `TEXT-TIP`, `TEXT-USED`.
+**Event codes:** `IMPACT`, `STANDARDS-OPEN`, `EXPLODE-LOSS`, `ATTRIB-LOSS`, `XREF-BIND`, `XREF-MOVED`, `XREF-BASEPOINT`, `SAVE-FLAG`, `COORD-UNITS`, `CLEANUP`, `BACKUP-COPY`, `ADVISORY-REFEDIT`, `ADVISORY-REFCLOSE`, `ADVISORY-PROMOTE`, `TEXT-TIP`, `TEXT-USED`.
 
 **Health.csv columns**
 
@@ -88,11 +93,12 @@ All files go to the log folder (see `CUTONCE-STATUS`), none to the drawing's fol
 - Annotation: `Hatches, TextObjects`
 - ByLayer: `ColorNotByLayer, LinetypeNotByLayer, ObjectsNotByLayer, BlockDefColorNotByLayer, BlockDefLinetypeNotByLayer`
 - Xrefs: `Xrefs, XrefsBroken, XrefsUnloaded, XrefsOffOrigin`
-- Settings: `AngularUnits, InsUnits, DrawingScale`
+- Labels: `Labels, LabelsOverridden, LabelsUnchecked`
+- Settings: `AngularUnits, InsUnits, DrawingScale, CoordinateSystem, ProjectCoordinateSystem, CoordUnitIssues`
 
 **Health.csv keeps history.** For the latest state of a drawing, filter on `DrawingPath` and take the newest `Timestamp`.
 
-**If a later version changes a log's columns,** the old file is renamed to `<name>-archived-<date>.csv` and a new file starts. Nothing is deleted.
+**If a later version changes a log's columns,** the old file is renamed to `<name>-archived-<date>.csv` and a new file starts. Nothing is deleted. 2.1 adds columns to Health.csv and Xrefs.csv, so the first save after upgrading archives both.
 
 Notes:
 
@@ -109,6 +115,8 @@ Notes:
 | Inside block definitions | The same, inside named blocks. Anonymous blocks (dynamic, dimension, hatch) and xref-dependent blocks are skipped |
 | Xref status | **Loaded**: resolved. **Unloaded**: not loaded, file exists at its saved path, relative to the drawing, or by name in the drawing's folder. **Not Found**: none of those |
 | Xref not at 0,0,0 | Xref inserts in Model Space whose insertion point is not 0,0,0, each listed with its coordinates |
+| Typed-over labels | Civil 3D labels (surface, station, elevation and every other `AeccDb*Label*` type) whose text has been typed over, so they no longer update with the design. Listed by count, label type and style. See [Typed-over labels](#typed-over-labels) |
+| Coordinate system and units | No coordinate system assigned; a coordinate system or insertion units different from the project's (`CutOnce-Project.ini` or `ProjectStandards`); Unitless insertion units; an xref in different units or a different coordinate system |
 
 `CUTONCE-CHECK` runs it at any time and always shows the result.
 
@@ -150,11 +158,43 @@ Every CutOnce warning has a **Learn More** button that opens its own section of 
 | Guard: promoting a data shortcut reference | `GUARD_PROMOTE` | `#promote-reference` |
 | Guard: TEXT / DTEXT / MTEXT tip | `GUARD_TEXT` | `#text-instead-of-labels` |
 | Guard (on save): unusual growth | `GUARD_GROWTH` | `#drawing-growth` |
+| Cleanup (offered on growth, and its dialog) | `GUARD_CLEANUP` | `#drawing-cleanup` |
+| Guard (on save): coordinate system / units | `GUARD_COORD_UNITS` | `#coordinate-system-units` |
+| Standards check: typed-over labels | `STD_LABEL_OVERRIDE` | `#label-text-overrides` |
+| Standards check: coordinate system / units | `STD_COORD_UNITS` | `#coordinate-system-units` |
+| Backup copy required but failed | `BACKUP` | `#backup-copies` |
 | Control Center | `CONTROL_CENTER` | `#control-center` |
 
 The standards check can find several problems at once, so its dialog shows one button per problem found (for example "Not ByLayer..." and "Broken / unloaded xrefs..."), plus "Reading this check...".
 
-The page address and sections are set by `LearnMoreUrl` and `LearnMoreAnchors` in `CutOnce-Config.lsp`.
+The page address and sections are set by `LearnMoreUrl` and `LearnMoreAnchors` in `CutOnce-Config.lsp`. The 2.1 sections (`#drawing-cleanup`, `#coordinate-system-units`, `#label-text-overrides`, `#backup-copies`) need adding to the knowledge-base page; until they exist, those buttons open the top of the page.
+
+## Cleanup and backup copies
+
+When the save-time growth check fires, its warning has a **Clean up now...** button (switch: `GuardCleanup`). Cleanup runs as soon as that save finishes, so the file on disk is the drawing before cleanup. `CUTONCE-CLEANUP` opens the same dialog at any time.
+
+| Tick box | What runs |
+|---|---|
+| Unused registered applications | `-PURGE` Regapps |
+| Reset the annotation scale list | `-SCALELISTEDIT` Reset, back to the default scale list |
+| Unused text, dimension, multileader, table, multiline styles | `-PURGE` for each style type |
+| Unused anonymous blocks | `-PURGE` Blocks, anonymous (`*U`, `*D`...) names only |
+| Civil 3D Purge Styles | Opens Civil 3D's Purge Styles dialog afterwards, where the designer picks unused Civil 3D styles |
+| AUDIT | `AUDIT`, fixing errors |
+| Save a backup copy first | Copies the drawing to the shared backup folder before anything changes |
+
+- PURGE removes only items nothing uses, and repeats (up to 3 times) while counts keep falling.
+- The whole cleanup is one undo step: type **U** straight afterwards to undo it. The result lists each count before and after, offers **Save now**, and is logged to Events.csv (`CLEANUP`).
+- **Backup copies.** The copy is the drawing as last saved. It goes to the shared backup folder with a name nobody else can produce: `<drawing>__<YYYYMMDD-HHMMSS-mmm>_<user>-<computer>.dwg`, plus a `-2`, `-3`... counter if that name still exists, so copies never overwrite each other. Each copy is recorded in `Backups.csv`.
+- `BackupBeforeCleanup` sets whether the backup tick box starts ticked. Lock it (`LockedSettings`) to require a backup; if the copy then fails, cleanup stops and nothing changes. Without the lock, a failed copy asks before cleaning up without one.
+- `CUTONCE-BACKUP` copies the drawing to the backup folder at any time (it offers to save first if there are unsaved changes). `CUTONCE-BACKUP-FOLDER` opens the folder.
+- Cleanup is not offered while a drawing is closing (the queued command would land in another drawing).
+
+## Typed-over labels
+
+A label whose text has been typed over (Edit Label Text, then replacing a property field with typed text) keeps that text when the design changes. The standards check on open counts them, lists each label type and style with how many are typed over, and `Labels.csv` records them with their handles.
+
+AutoLISP cannot call Civil 3D's own "is this text overridden" check, so CutOnce reads a label property from the list in `LabelOverrideProperties`. **The CAD administrator should confirm that property once per Civil 3D release** with `CUTONCE-LABEL-PROBE` (steps in `CAD-Admin-Guide.html`). A label type with none of the listed properties is reported as "could not be checked", and `LabelsOverridden` reads `n/a`, never 0.
 
 ## Install
 
@@ -172,6 +212,7 @@ This installs to `%APPDATA%\Autodesk\ApplicationPlugins\CutOnce.bundle`, which C
 | Choose the log folder | `Install.cmd -LogDir "D:\CAD\CutOnce\Logs"` |
 | Shared team log folder, one subfolder per person | `Install.cmd -LogDir "\\server\cad\CutOnce\Logs" -LogSubfolder user-computer` |
 | Change the log folder after installing | Double-click **Set-LogFolder.cmd** and follow the steps |
+| Shared backup folder for copies made before cleanup | `Install.cmd -BackupDir "\\server\cad\CutOnce\Backups"` |
 | Custom install folder, such as a network share | `Install.cmd -InstallDir "\\server\cad\CutOnce"` |
 
 With a custom install folder, the installer prints a `(load ...)` line for acaddoc.lsp. Also add that folder to **Options > Files > Trusted Locations**.
@@ -180,7 +221,7 @@ Reinstalling keeps an existing `CutOnce-Config.lsp` and writes the current versi
 
 ## Configure (CAD administrators)
 
-**Step-by-step instructions are in `CAD-Admin-Guide.html` in the install package:** adding watched commands, adding data points to Health.csv, and sending logs to a shared team folder across offices.
+**Step-by-step instructions are in `CAD-Admin-Guide.html` in the install package:** adding watched commands, adding data points to Health.csv, sending logs to a shared team folder across offices, the shared backup folder, project coordinate systems, and confirming typed-over label detection.
 
 `CutOnce-Config.lsp`, in the install folder's `Contents`, is plain text with a comment for every setting.
 
@@ -190,9 +231,12 @@ Reinstalling keeps an existing `CutOnce-Config.lsp` and writes the current versi
 - `ImpactExtraCommands`: more Civil 3D command names to watch (the Control Center's **Other watched commands** row). Confirm a name with `CUTONCE-GUARD-LOGCOMMANDS` first, for example `("ImpactExtraCommands" . ("AECCSOMECOMMAND" "AECCOTHER"))`. The Control Center's **How to add other watched commands...** button walks through it.
 - `HealthExtraCounts`: extra Health.csv columns, each counting one or more object types, for example `("HealthExtraCounts" . (("FeatureLines" . "AeccDbFeatureLine") ("Dimensions" . "AcDb*Dimension")))`. Find the type names with `CUTONCE-GUARD-DUMPOBJECTS`. The new columns are also checked for unusual growth on save.
 - `LogDir` and `LogSubfolder` (`"user"`, `"computer"` or `"user-computer"`): a shared log folder, with each person writing to their own subfolder so files never collide or make sync conflicts.
+- `BackupDir`: the shared "master" folder for backup copies (environment variable `CUTONCE_BACKUPDIR` overrides it). Default: `Documents\CutOnce Backups` per user.
+- `ProjectStandards`, or a `CutOnce-Project.ini` file in a project's top folder (`CoordinateSystem=CA83-VIF`, `InsUnits=US Survey Feet`): the coordinate system and units each project should use. `CoordSysRequired` (default `T`): flag drawings with no coordinate system.
+- `LabelObjectNames` (default `"AECCDB*LABEL*"`) and `LabelOverrideProperties`: which objects are labels, and which property says a label's text is typed over (confirm with `CUTONCE-LABEL-PROBE`).
 - `GuardGrowthWarnPct` (default 20), `LearnMoreUrl`, `LearnMoreAnchors`.
 
-Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. Log folder: `CUTONCE_LOGDIR`, then `LogDir`, then `%LOCALAPPDATA%\CutOnce\Logs\`, plus the subfolder from `CUTONCE_LOGSUBFOLDER`, then `LogSubfolder`.
+Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. Log folder: `CUTONCE_LOGDIR`, then `LogDir`, then `%LOCALAPPDATA%\CutOnce\Logs\`, plus the subfolder from `CUTONCE_LOGSUBFOLDER`, then `LogSubfolder`. Backup folder: `CUTONCE_BACKUPDIR`, then `BackupDir`, then `Documents\CutOnce Backups`.
 
 ## Commands
 
@@ -205,6 +249,9 @@ Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. L
 | `CUTONCE-CHECK` / `CUTONCE-CHECK-STATUS` | Standards check now; its settings |
 | `CUTONCE-AUDIT` | Records every open drawing in Health.csv and opens it in Excel |
 | `CUTONCE-AUDIT-FOLDER` | Records every .dwg in a folder |
+| `CUTONCE-CLEANUP` | Cleanup dialog: purge unused regapps, scales, styles, anonymous blocks; AUDIT; backup copy first |
+| `CUTONCE-BACKUP` / `CUTONCE-BACKUP-FOLDER` | Copy this drawing to the shared backup folder now; open that folder |
+| `CUTONCE-LABEL-PROBE` | CAD admin: shows which property marks a label's text as typed over |
 | `CUTONCE-GUARD-STATUS` / `-CHECKNOW` / `-SUMMARY` / `-LOG` | Guard switches, health check now, history rollup, log paths |
 | `CUTONCE-GUARD-DUMPOBJECTS` | Counts of every object type by name, for checking a number against Toolspace or naming a `HealthExtraCounts` column |
 | `CUTONCE-GUARD-LOGCOMMANDS` | Prints every command name as it runs |
@@ -228,6 +275,10 @@ Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. L
 - New, unsaved drawings are not checked or logged on open. Run `CUTONCE-CHECK` by hand.
 - In `CUTONCE-AUDIT`, drawings other than the one you started it from report xref Type as blank (attach/overlay cannot be read through COM).
 - Pipe proximity uses bounding boxes, so treat it as "worth checking".
+- Typed-over label detection depends on a label property confirmed with `CUTONCE-LABEL-PROBE` (see [Typed-over labels](#typed-over-labels)). Labels that cannot be checked are reported as such.
+- An xref's coordinate system is read only when the xref is loaded and its geographic location can be read; otherwise that xref is not compared.
+- Civil 3D styles are not purged automatically: cleanup opens Civil 3D's Purge Styles dialog, where the designer chooses.
+- Cleanup offered from the growth warning is queued to start after the save; if it does not start, type `CUTONCE-CLEANUP`.
 
 ## Uninstall
 

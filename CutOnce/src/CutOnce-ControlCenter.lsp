@@ -14,11 +14,16 @@
 ;;;                            TEXT, DTEXT, MTEXT, grip edits, surface edits,
 ;;;                            other watched commands (with instructions
 ;;;                            for the CAD administrator on adding them)
-;;;   Save checks              unusual growth, xrefs not at 0,0,0
+;;;   Save checks              unusual growth (and the cleanup it offers),
+;;;                            xrefs not at 0,0,0, coordinate system / units,
+;;;                            backup copy before cleanup, backup folder
 ;;;   Standards check on open  ByLayer, xref status (broken / unloaded),
-;;;                            xrefs not at 0,0,0, always show, block defs
+;;;                            xrefs not at 0,0,0, typed-over labels,
+;;;                            coordinate system / units, always show,
+;;;                            block defs
 ;;;   Logging                  master switch, then Health.csv on save / on
-;;;                            open, Xrefs.csv, Events.csv, Opened.csv
+;;;                            open, Xrefs.csv, Events.csv, Opened.csv,
+;;;                            Labels.csv
 ;;;
 ;;; Commands:
 ;;;   CUTONCE     the dialog
@@ -46,8 +51,10 @@
 (setq *cocc:children*
   (list
     (append '("CommandWarnings" "every" "once") (cocc:cmd-keys))
-    '("StdCheckOnOpen" "StdByLayer" "StdXrefStatus" "StdXrefOrigin" "StdAlwaysShow")
-    '("LogEnabled" "LogHealthOnSave" "LogHealthOnOpen" "LogXrefs" "LogEvents" "LogOpened")))
+    '("GuardGrowth" "GuardCleanup")
+    '("StdCheckOnOpen" "StdByLayer" "StdXrefStatus" "StdXrefOrigin" "StdLabelOverrides" "StdCoordUnits"
+      "StdAlwaysShow")
+    '("LogEnabled" "LogHealthOnSave" "LogHealthOnOpen" "LogXrefs" "LogEvents" "LogOpened" "LogLabels")))
 
 (defun cocc:default-freq ( ) (cutonce:default-warn-mode))
 
@@ -95,13 +102,16 @@
       "   }"
       "   : column {")
     (cocc:group-lines "Checks on save"
-      '("GuardGrowth" "GuardXrefOrigin")
-      nil)
+      '("GuardGrowth" "GuardCleanup" "GuardXrefOrigin" "GuardCoordUnits" "BackupBeforeCleanup")
+      (list
+        "      : text { key = \"backupdir\"; width = 60; }"
+        "      : button { key = \"openbackups\"; label = \"Open backup folder\"; fixed_width = true; }"))
     (cocc:group-lines "Standards check when a drawing opens"
-      '("StdCheckOnOpen" "StdByLayer" "StdXrefStatus" "StdXrefOrigin" "StdAlwaysShow" "StdScanBlocks")
+      '("StdCheckOnOpen" "StdByLayer" "StdXrefStatus" "StdXrefOrigin" "StdLabelOverrides" "StdCoordUnits"
+        "StdAlwaysShow" "StdScanBlocks")
       nil)
     (cocc:group-lines "Logging"
-      '("LogEnabled" "LogHealthOnSave" "LogHealthOnOpen" "LogXrefs" "LogEvents" "LogOpened")
+      '("LogEnabled" "LogHealthOnSave" "LogHealthOnOpen" "LogXrefs" "LogEvents" "LogOpened" "LogLabels")
       (list
         "      : text { key = \"logdir\"; width = 60; }"
         "      : button { key = \"openlogs\"; label = \"Open log folder\"; fixed_width = true; }"))
@@ -234,18 +244,7 @@
     nil)
 )
 
-;; Opens a folder in Windows Explorer.
-(defun cocc:open-folder (dir / sh)
-  (setq sh (vl-catch-all-apply 'vlax-get-or-create-object (list "Shell.Application")))
-  (if (and sh (not (vl-catch-all-error-p sh)))
-    (progn
-      (vl-catch-all-apply 'vlax-invoke-method (list sh 'Open dir))
-      (vl-catch-all-apply 'vlax-release-object (list sh))
-    )
-    (vl-catch-all-apply 'startapp (list "explorer.exe" dir))
-  )
-  (princ)
-)
+(defun cocc:open-folder (dir) (cutonce:open-folder dir))
 
 (defun cocc:any-locked-p ( )
   (or (vl-some 'cutonce:locked-p (cutonce:setting-keys))
@@ -281,12 +280,14 @@
         (progn
           (cocc:fill-tiles nil)
           (set_tile "logdir" (strcat "Log folder: " (cutonce:log-dir)))
+          (set_tile "backupdir" (strcat "Backup folder: " (cutonce:backup-dir)))
           (set_tile "locknote"
             (if (cocc:any-locked-p) "Greyed-out items are set by your CAD administrator." ""))
           (foreach grp *cocc:children*
             (action_tile (car grp) "(cocc:refresh-modes)"))
           (action_tile "other_help" "(cocc:other-help)")
           (action_tile "openlogs" "(cocc:open-folder (cutonce:log-dir))")
+          (action_tile "openbackups" "(cutonce:mkdir-p (cutonce:backup-dir))(cocc:open-folder (cutonce:backup-dir))")
           (action_tile "defaults" "(cocc:press-defaults)")
           (action_tile "learn_more" "(cutonce:open-kb \"CONTROL_CENTER\")")
           (action_tile "accept" "(cocc:capture)(done_dialog 1)")
@@ -336,6 +337,7 @@
     )
   )
   (princ (strcat "\n  Log folder: " (cutonce:log-dir)))
+  (princ (strcat "\n  Backup folder: " (cutonce:backup-dir)))
   (princ)
 )
 

@@ -21,7 +21,8 @@
   '(
     ;; ---- Folders -----------------------------------------------------------
 
-    ;; Where Health.csv, Xrefs.csv, Events.csv and Opened.csv go.
+    ;; Where Health.csv, Xrefs.csv, Labels.csv, Events.csv, Opened.csv and
+    ;; Backups.csv go.
     ;; nil = %LOCALAPPDATA%\CutOnce\Logs\ (per user, per machine).
     ;; Use forward slashes, e.g. "D:/CAD/CutOnce/Logs" or a shared
     ;; folder "//server/cad/CutOnce/Logs".
@@ -40,6 +41,16 @@
     ;;   "user-computer"  <LogDir>/<user>-<computer>/   (recommended for teams)
     ;; The CUTONCE_LOGSUBFOLDER environment variable, if set, overrides this.
     ("LogSubfolder" . nil)
+
+    ;; The shared "master" backup folder. CUTONCE-BACKUP, and the cleanup
+    ;; offered when a drawing grows unusually, copy the drawing here before
+    ;; anything changes, so an earlier version can always be recovered.
+    ;; Every copy gets a unique name, so nobody overwrites anyone's copy:
+    ;;   <drawing>__<YYYYMMDD-HHMMSS-mmm>_<user>-<computer>.dwg
+    ;; nil = Documents\CutOnce Backups (per user - set a shared folder here).
+    ;; Use forward slashes, e.g. "//server/cad/CutOnce/Backups".
+    ;; The CUTONCE_BACKUPDIR environment variable, if set, overrides this.
+    ("BackupDir" . nil)
 
     ;; ---- Control Center defaults -------------------------------------------
     ;; Command warnings: master switch, then one switch per command
@@ -68,13 +79,19 @@
 
     ;; Checks on save
     ("GuardGrowth"      . T)    ; unusual growth since the last check
+    ("GuardCleanup"     . T)    ; the growth warning offers one-click cleanup
     ("GuardXrefOrigin"  . T)    ; xref not inserted at 0,0,0
+    ("GuardCoordUnits"  . T)    ; coordinate system or insertion units missing / mismatched
+    ("BackupBeforeCleanup" . T) ; cleanup copies the drawing to BackupDir first
+                                ; (lock it to require a backup before every cleanup)
 
     ;; Standards check when a drawing opens
     ("StdCheckOnOpen"   . T)    ; run the check on open (CUTONCE-CHECK runs it any time)
     ("StdByLayer"       . T)    ; objects whose color or linetype is not ByLayer
     ("StdXrefStatus"    . T)    ; xrefs broken (not found) or unloaded
     ("StdXrefOrigin"    . T)    ; xrefs not inserted at 0,0,0
+    ("StdLabelOverrides" . T)   ; Civil 3D labels with typed-over (overridden) text
+    ("StdCoordUnits"    . T)    ; coordinate system and insertion units
     ("StdAlwaysShow"    . nil)  ; show the result even when nothing is wrong
     ("StdScanBlocks"    . T)    ; include named block definitions (slower on big drawings)
 
@@ -85,6 +102,7 @@
     ("LogXrefs"         . T)    ; Xrefs.csv detail with every Health.csv row
     ("LogEvents"        . T)    ; Events.csv row for every warning
     ("LogOpened"        . T)    ; Opened.csv row for every drawing opened
+    ("LogLabels"        . T)    ; Labels.csv: typed-over labels by type and style
 
     ;; Keys designers may NOT change; the value above always applies.
     ;; Any key from the section above can be listed, plus
@@ -96,6 +114,44 @@
 
     ;; Percentage growth between checks that triggers the growth warning.
     ("GuardGrowthWarnPct" . 20)
+
+    ;; ---- Coordinate system and units ---------------------------------------
+
+    ;; Flag a drawing that has no coordinate system at all. Set nil if many
+    ;; of your drawings (details, sheets) legitimately have none; mismatches
+    ;; with the project and with xrefs are still flagged.
+    ("CoordSysRequired" . T)
+
+    ;; The coordinate system and insertion units each project should use.
+    ;; Easiest: put a text file named CutOnce-Project.ini in the project's
+    ;; top folder (CutOnce looks in the drawing's folder and the folders above):
+    ;;     CoordinateSystem=CA83-VIF
+    ;;     InsUnits=US Survey Feet
+    ;; Or list projects here by folder (wildcards * ?; the first match wins;
+    ;; a CutOnce-Project.ini, when found, takes precedence). InsUnits is a
+    ;; name (Feet, US Survey Feet, Meters...) or the INSUNITS number.
+    ;; Example:
+    ;;   ("ProjectStandards"
+    ;;     . (("//server/projects/1234*" . (("CoordinateSystem" . "CA83-VIF")
+    ;;                                      ("InsUnits" . "US Survey Feet")))
+    ;;        ("P:/Metric/*"             . (("CoordinateSystem" . "UTM83-10")
+    ;;                                      ("InsUnits" . "Meters")))))
+    ("ProjectStandards" . nil)
+
+    ;; ---- Typed-over (overridden) label text --------------------------------
+
+    ;; Which objects count as Civil 3D labels (ObjectName wildcard).
+    ("LabelObjectNames" . "AECCDB*LABEL*")
+
+    ;; The property that says a label's text has been typed over. AutoLISP
+    ;; cannot call Civil 3D's own override check, so CutOnce reads these
+    ;; properties in order; a label type that has none of them is reported
+    ;; as "could not be checked", never as clean. To confirm the right name
+    ;; for your Civil 3D release: type over a label's text, run
+    ;; CUTONCE-LABEL-PROBE, pick it, and add the property that changed.
+    ;; nil = the built-in list.
+    ;; Example:  ("LabelOverrideProperties" . ("IsTextOverridden"))
+    ("LabelOverrideProperties" . nil)
 
     ;; ---- Other watched commands ------------------------------------------
 
@@ -163,6 +219,11 @@
     ;;      ("GUARD_PROMOTE"     . "promote-reference")
     ;;      ("GUARD_TEXT"        . "text-instead-of-labels")
     ;;      ("GUARD_GROWTH"      . "drawing-growth")
+    ;;      ("GUARD_CLEANUP"     . "drawing-cleanup")           ; cleanup offered on save
+    ;;      ("GUARD_COORD_UNITS" . "coordinate-system-units")   ; save check
+    ;;      ("STD_LABEL_OVERRIDE" . "label-text-overrides")
+    ;;      ("STD_COORD_UNITS"   . "coordinate-system-units")
+    ;;      ("BACKUP"            . "backup-copies")
     ;;      ;; Control Center
     ;;      ("CONTROL_CENTER"    . "control-center")))
   )

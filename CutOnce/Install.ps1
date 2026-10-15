@@ -25,6 +25,11 @@
     user, computer or user-computer (recommended for teams). Sets the
     CUTONCE_LOGSUBFOLDER environment variable.
 
+.PARAMETER BackupDir
+    The shared "master" folder for backup copies made before cleanup and by
+    CUTONCE-BACKUP. Sets the CUTONCE_BACKUPDIR environment variable.
+    Default: Documents\CutOnce Backups (per user).
+
 .PARAMETER AllowSource
     Development builds only: install even though CutOnce.vlx has not been
     built, loading the .lsp sources instead.
@@ -36,6 +41,8 @@
 .EXAMPLE
     .\Install.ps1 -LogDir "\\server\cad\CutOnce\Logs" -LogSubfolder user-computer
 .EXAMPLE
+    .\Install.ps1 -LogDir "\\server\cad\CutOnce\Logs" -BackupDir "\\server\cad\CutOnce\Backups"
+.EXAMPLE
     .\Install.ps1 -InstallDir "D:\CAD\CutOnce"
 #>
 [CmdletBinding()]
@@ -46,6 +53,7 @@ param(
     [string]$LogDir,
     [ValidateSet('user', 'computer', 'user-computer')]
     [string]$LogSubfolder,
+    [string]$BackupDir,
     [switch]$AllowSource
 )
 
@@ -144,6 +152,12 @@ if ($LogDir) {
 if ($LogSubfolder) {
     [Environment]::SetEnvironmentVariable('CUTONCE_LOGSUBFOLDER', $LogSubfolder, $envTarget)
     Write-Host "Each person's logs go to a $LogSubfolder subfolder of the log folder"
+}
+
+if ($BackupDir) {
+    [Environment]::SetEnvironmentVariable('CUTONCE_BACKUPDIR', $BackupDir, $envTarget)
+    New-Item -ItemType Directory -Force -Path $BackupDir -ErrorAction SilentlyContinue | Out-Null
+    Write-Host "Backup copies go to $BackupDir"
 }
 
 Write-Host ''

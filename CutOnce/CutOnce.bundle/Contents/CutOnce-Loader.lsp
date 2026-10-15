@@ -74,6 +74,7 @@
               (cutonce:loader-load (strcat src "CutOnce-Health.lsp"))
               (cutonce:loader-load (strcat src "CutOnce-Guard.lsp"))
               (cutonce:loader-load (strcat src "CutOnce-Impact.lsp"))
+              (cutonce:loader-load (strcat src "CutOnce-Cleanup.lsp"))
               (cutonce:loader-load (strcat src "CutOnce-ControlCenter.lsp"))))
         (T (princ (strcat "\n[CutOnce] CutOnce.vlx is missing from " home)))
       )

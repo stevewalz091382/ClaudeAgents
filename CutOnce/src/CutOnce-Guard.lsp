@@ -543,7 +543,8 @@
 
 (setq *coguard:switches*
   '("CommandWarnings" "WarnMOVE" "WarnCOPY" "WarnEXPLODE" "WarnXREFBIND" "WarnREFEDIT"
-    "WarnPROMOTE" "WarnTEXT" "WarnDTEXT" "WarnMTEXT" "GuardGrowth" "GuardXrefOrigin"))
+    "WarnPROMOTE" "WarnTEXT" "WarnDTEXT" "WarnMTEXT" "GuardGrowth" "GuardCleanup" "GuardXrefOrigin"
+    "GuardCoordUnits" "BackupBeforeCleanup"))
 
 (defun c:CUTONCE-GUARD-STATUS ( )
   (coguard:log (strcat "Command reactor:  " (if *coguard:cmd-reactor* "active" "not loaded")))
@@ -581,6 +582,8 @@
 (defun c:CUTONCE-GUARD-LOG ( )
   (coguard:log (strcat "Health history: " (cohealth:path)))
   (coguard:log (strcat "Xref detail:    " (cohealth:xrefs-path)))
+  (coguard:log (strcat "Label detail:   " (cohealth:labels-path)))
+  (coguard:log (strcat "Backup copies:  " (cutonce:log-file "Backups.csv") "  (copies in " (cutonce:backup-dir) ")"))
   (coguard:log (strcat "Event log:      " (cutonce:events-path)))
   (coguard:log (strcat "Opened log:     " (coguard:opened-path)))
   (coguard:log (strcat "Logging is " (if (cutonce:on-p "LogEnabled") "on." "OFF (turn it on in the Control Center: CUTONCE).")))

@@ -13,6 +13,7 @@ A Claude Code pipeline: architect, coder, tester, manager, driven by one `/build
       commands/
         build.md        /build command that runs the whole chain
     CLAUDE.md           context the session loads automatically
+    CutOnce/            CutOnce for Civil 3D (AutoLISP add-in), see CutOnce/README.md
 
 ## Use on the web
 

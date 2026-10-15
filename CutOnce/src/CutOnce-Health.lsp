@@ -6,11 +6,15 @@
 ;;; Health.csv  one row per check:
 ;;;   who / when / which drawing / what triggered it (Save, Open, Audit,
 ;;;   Manual), table counts, Civil 3D object counts, style count, ByLayer
-;;;   counts, xref counts (broken, unloaded, not at 0,0,0) and drawing
-;;;   settings (units, scale).
+;;;   counts, xref counts (broken, unloaded, not at 0,0,0), Civil 3D labels
+;;;   with typed-over text, and drawing settings (units, scale, coordinate
+;;;   system and how many coordinate / units problems were found).
 ;;; Xrefs.csv   one row per xref per Health.csv row: path, attach/overlay,
 ;;;   loaded/unloaded/not found, nested, insertion point, rotation, scale and
-;;;   whether it is at 0,0,0.
+;;;   whether it is at 0,0,0, and the xref's insertion units and coordinate
+;;;   system.
+;;; Labels.csv  one row per label type and style per Health.csv row: how many
+;;;   labels, how many have typed-over text, and their handles.
 ;;;
 ;;; The latest state of each drawing is its most recent row; filter Health.csv
 ;;; on DrawingPath and sort by Timestamp.
@@ -21,6 +25,9 @@
 ;;;           so Styles and the settings columns read n/a on those rows)
 ;;;   Audit   CUTONCE-AUDIT / CUTONCE-AUDIT-FOLDER
 ;;;   Manual  CUTONCE-GUARD-CHECKNOW
+;;; On save the growth check can offer a one-click cleanup (see
+;;; CutOnce-Cleanup.lsp), and the coordinate system / units check warns
+;;; about a missing or mismatched coordinate system or insertion units.
 ;;; Each designer switches these on or off in CUTONCE.
 ;;;
 ;;; Commands:
@@ -38,6 +45,7 @@
 
 (defun cohealth:path ( )      (cutonce:log-file "Health.csv"))
 (defun cohealth:xrefs-path ( ) (cutonce:log-file "Xrefs.csv"))
+(defun cohealth:labels-path ( ) (cutonce:log-file "Labels.csv"))
 
 ;; ---------------------------------------------------------------------------
 ;; Columns
@@ -52,17 +60,19 @@
     "SectionViews" "Sections" "Hatches" "TextObjects"
     "ColorNotByLayer" "LinetypeNotByLayer" "ObjectsNotByLayer"
     "BlockDefColorNotByLayer" "BlockDefLinetypeNotByLayer"
-    "Xrefs" "XrefsBroken" "XrefsUnloaded" "XrefsOffOrigin"))
+    "Xrefs" "XrefsBroken" "XrefsUnloaded" "XrefsOffOrigin"
+    "Labels" "LabelsOverridden" "LabelsUnchecked"))
 
 (setq *cohealth:setting-columns*
-  '("AngularUnits" "InsUnits" "DrawingScale"))
+  '("AngularUnits" "InsUnits" "DrawingScale"
+    "CoordinateSystem" "ProjectCoordinateSystem" "CoordUnitIssues"))
 
 ;; Metrics compared against the previous check for unusual growth.
 (setq *cohealth:growth-watch*
   '("Layers" "Linetypes" "Blocks" "Layouts" "Xrefs" "RegApps" "Styles"
     "Alignments" "Profiles" "ProfileViews" "Surfaces" "Corridors" "Assemblies"
     "PipeNetworks" "PressurePipeNetworks" "SectionViews" "Sections"
-    "Hatches" "TextObjects"))
+    "Hatches" "TextObjects" "LabelsOverridden"))
 
 ;; Administrator-defined count columns ("HealthExtraCounts"), minus any
 ;; that would repeat a built-in column: ((Column . wildcard) ...)
@@ -81,7 +91,10 @@
 
 (setq *cohealth:xref-header*
   (strcat "Timestamp,Trigger,User,DrawingPath,DrawingName,XrefName,XrefPath,Type,Status,"
-          "Nested,Instances,InsertX,InsertY,InsertZ,Rotation,Scale,AtOrigin"))
+          "Nested,Instances,InsertX,InsertY,InsertZ,Rotation,Scale,AtOrigin,XrefInsUnits,XrefCoordinateSystem"))
+
+(setq *cohealth:labels-header*
+  "Timestamp,Trigger,User,DrawingPath,DrawingName,LabelType,LabelStyle,Labels,TextOverridden,NotChecked,OverriddenHandles")
 
 (defun cohealth:growth-pct ( / v)
   (setq v (cutonce:cfg "GuardGrowthWarnPct" 20))
@@ -176,7 +189,7 @@
 ;; ---------------------------------------------------------------------------
 
 (defun cohealth:collect (doc civilDoc scanblocks / std oc unitZone)
-  (setq std (costd:collect doc scanblocks))
+  (setq std (costd:collect doc scanblocks civilDoc))
   (setq oc (costd:fact std "objcounts"))
   (if civilDoc
     (setq unitZone (cutonce:prop (cutonce:prop (cutonce:prop civilDoc 'Settings) 'DrawingSettings) 'UnitZoneSettings))
@@ -266,8 +279,24 @@
         (list ts trigger user drawpath drawname
               (nth 0 x) (nth 1 x) (nth 2 x) (nth 3 x) (nth 4 x) (nth 5 x)
               (if pt (car pt)) (if pt (cadr pt)) (if pt (caddr pt))
-              (nth 7 x) (nth 8 x) (nth 9 x)))))
+              (nth 7 x) (nth 8 x) (nth 9 x)
+              (if (numberp (nth 10 x)) (costd:unit-name (nth 10 x)) "")
+              (cond ((nth 11 x)) (""))))))
     (costd:fact facts "xrefdetail"))
+)
+
+;; One row per label type and style: ((type style total overridden unchecked handles) ...)
+(defun cohealth:label-rows (trigger drawpath drawname facts / ts user)
+  (setq ts (cutonce:timestamp) user (cutonce:user))
+  (mapcar
+    (function (lambda (r)
+      (cutonce:csv-row
+        (list ts trigger user drawpath drawname
+              (nth 0 r) (nth 1 r) (nth 2 r)
+              (if (= (nth 4 r) (nth 2 r)) "n/a" (nth 3 r))
+              (nth 4 r)
+              (cutonce:join (reverse (nth 5 r)) " ")))))
+    (costd:fact facts "labeldetail"))
 )
 
 ;; Writes the Health.csv row (and Xrefs.csv rows when that log is on).
@@ -280,6 +309,10 @@
   (if (or force (cutonce:log-on-p "LogXrefs"))
     (cutonce:append-lines (cohealth:xrefs-path) *cohealth:xref-header*
                        (cohealth:xref-rows trigger drawpath drawname facts))
+  )
+  (if (or force (cutonce:log-on-p "LogLabels"))
+    (cutonce:append-lines (cohealth:labels-path) *cohealth:labels-header*
+                       (cohealth:label-rows trigger drawpath drawname facts))
   )
 )
 
@@ -315,20 +348,64 @@
   (if manual (cutonce:notice text topic) (cutonce:notice-once key text topic))
 )
 
-(defun cohealth:alert-growth (drawname flags manual)
+;; The same with action buttons; returns the button pressed (nil if hidden).
+(defun cohealth:show-actions (key text links actions manual)
+  (if manual
+    (cutonce:notice-dialog text links actions nil)
+    (cutonce:notice-once-actions key text links actions))
+)
+
+;; Cleanup is queued to run after the save, so it is not offered while the
+;; drawing is being closed (the queued command would land in another drawing).
+(defun cohealth:cleanup-offer-p ( )
+  (and (cutonce:on-p "GuardCleanup")
+       (not (wcmatch (strcase (cond ((cutonce:nonblank (getvar "CMDNAMES"))) ("")))
+                     "*CLOSE*,*QUIT*,*EXIT*")))
+)
+
+(defun cohealth:alert-growth (drawname flags manual / offer r)
   (cutonce:log-event "SAVE-FLAG"
     (apply 'strcat (mapcar (function (lambda (x) (strcat (car x) " " (itoa (cadr x)) "->" (itoa (caddr x)) "  "))) flags)))
-  (cohealth:show (strcat "GUARD_GROWTH|" drawname)
+  (setq offer (cohealth:cleanup-offer-p))
+  (setq r
+    (cohealth:show-actions (strcat "GUARD_GROWTH|" drawname)
+      (strcat
+        "CutOnce Guard: unusual growth since the last check of\n" drawname ":\n\n"
+        (apply 'strcat
+          (mapcar (function (lambda (x)
+                    (strcat "  " (car x) ": " (itoa (cadr x)) " -> " (itoa (caddr x)) "  (" (nth 3 x) ")\n")))
+                  flags))
+        "\nFull history: " (cohealth:path)
+        (if offer
+          (strcat
+            "\n\nClean up now... runs once this save finishes: it can remove unused registered\n"
+            "applications, scales, styles and anonymous blocks (PURGE, AUDIT), and saves a\n"
+            "backup copy to the shared folder first. You choose what runs before anything changes.\n"
+            "(If it does not start, type CUTONCE-CLEANUP.)")
+          "")
+        "\nTurn this check off in the CutOnce Control Center (type CUTONCE)."
+      )
+      (append (if offer (list (cons "About cleanup..." "GUARD_CLEANUP")))
+              (list (cons "Learn More..." "GUARD_GROWTH")))
+      (if offer (list "Clean up now..."))
+      manual
+    ))
+  (if (and offer (= r 2)) (coclean:queue))
+)
+
+(defun cohealth:alert-coord (drawname issues manual)
+  (cutonce:log-event "COORD-UNITS" (cutonce:join issues "  "))
+  (cohealth:show (strcat "GUARD_COORD_UNITS|" drawname)
     (strcat
-      "CutOnce Guard: unusual growth since the last check of\n" drawname ":\n\n"
-      (apply 'strcat
-        (mapcar (function (lambda (x)
-                  (strcat "  " (car x) ": " (itoa (cadr x)) " -> " (itoa (caddr x)) "  (" (nth 3 x) ")\n")))
-                flags))
-      "\nFull history: " (cohealth:path)
+      "CutOnce Guard: coordinate system or units problem in " drawname ":\n\n"
+      (apply 'strcat (mapcar (function (lambda (s) (strcat "  " s "\n"))) issues))
+      "\nA drawing without the right coordinate system or insertion units places\n"
+      "xrefs, data shortcuts, imported points and GIS data in the wrong place or\n"
+      "at the wrong scale. Set it in Toolspace > Settings > Edit Drawing Settings\n"
+      "(Units and Zone), and INSUNITS for the insertion units."
       "\nTurn this check off in the CutOnce Control Center (type CUTONCE)."
     )
-    "GUARD_GROWTH"
+    "GUARD_COORD_UNITS"
     manual
   )
 )
@@ -352,16 +429,18 @@
 
 ;; trigger: "Save" (reactor) or "Manual" (CUTONCE-GUARD-CHECKNOW).
 ;; Manual runs both alerts and writes the row whatever the settings say.
-(defun cohealth:check (trigger / manual doc drawpath drawname wantLog wantGrowth wantOrigin facts prev flags badpts)
+(defun cohealth:check (trigger / manual doc drawpath drawname wantLog wantGrowth wantOrigin wantCoord
+                                 facts prev flags badpts issues)
   (setq manual (= trigger "Manual"))
   (setq wantLog    (or manual (cutonce:log-on-p "LogHealthOnSave"))
         wantGrowth (or manual (cutonce:on-p "GuardGrowth"))
-        wantOrigin (or manual (cutonce:on-p "GuardXrefOrigin")))
+        wantOrigin (or manual (cutonce:on-p "GuardXrefOrigin"))
+        wantCoord  (or manual (cutonce:on-p "GuardCoordUnits")))
   (setq doc (cutonce:active-doc))
   (setq drawpath (cutonce:nonblank (cutonce:str-prop doc 'FullName))
         drawname (cond ((cutonce:str-prop doc 'Name)) ("")))
   (cond
-    ((not (or wantLog wantGrowth wantOrigin)) nil)
+    ((not (or wantLog wantGrowth wantOrigin wantCoord)) nil)
     ((or (not drawpath) (/= (getvar "DWGTITLED") 1))
      (cohealth:log "This drawing has not been saved yet - health check skipped."))
     (T
@@ -378,6 +457,8 @@
        (cohealth:alert-growth drawname flags manual))
      (if (and wantOrigin (setq badpts (costd:fact facts "offorigin")))
        (cohealth:alert-origin drawname badpts manual))
+     (if (and wantCoord (setq issues (costd:fact facts "coordissues")))
+       (cohealth:alert-coord drawname issues manual))
     )
   )
 )

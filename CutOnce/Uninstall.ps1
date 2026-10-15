@@ -6,11 +6,13 @@
     Deletes the CutOnce.bundle from the user and (when elevated) all-users
     ApplicationPlugins folders, removes the custom install folder named by
     CUTONCE_HOME, and clears the CUTONCE_HOME / CUTONCE_LOGDIR /
-    CUTONCE_LOGSUBFOLDER variables. -RemoveLogs never deletes a network,
+    CUTONCE_LOGSUBFOLDER / CUTONCE_BACKUPDIR variables. -RemoveLogs never deletes a network,
     mapped-drive or per-person-subfolder log folder, which may hold the
     whole team's logs.
-    Logs (Health.csv, Xrefs.csv, Events.csv, Opened.csv) are kept unless
-    -RemoveLogs is given. Each designer's Control Center choices are removed.
+    Logs (Health.csv, Xrefs.csv, Labels.csv, Events.csv, Opened.csv,
+    Backups.csv) are kept unless -RemoveLogs is given. Backup copies of
+    drawings are never deleted. Each designer's Control Center choices are
+    removed.
 #>
 [CmdletBinding()]
 param([switch]$RemoveLogs)
@@ -61,7 +63,7 @@ foreach ($target in 'User', 'Machine') {
         Remove-Item $logs -Recurse -Force -ErrorAction SilentlyContinue
         Write-Host "Removed $logs"
     }
-    foreach ($name in 'CUTONCE_HOME', 'CUTONCE_LOGDIR', 'CUTONCE_LOGSUBFOLDER') {
+    foreach ($name in 'CUTONCE_HOME', 'CUTONCE_LOGDIR', 'CUTONCE_LOGSUBFOLDER', 'CUTONCE_BACKUPDIR') {
         try { [Environment]::SetEnvironmentVariable($name, $null, $target) } catch { }
     }
 }
