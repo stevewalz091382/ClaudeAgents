@@ -258,7 +258,8 @@
         ((/= (type en) 'ENAME) nil)
         ((and (setq v (vl-catch-all-apply 'getpropertyvalue (list en "CoordinateSystem")))
               (= (type v) 'STR)
-              (costd:cs-code-from-def v)))
+              (setq v (costd:cs-code-from-def v)))
+         v)
         ((setq ed (entget en))
          ;; 301 holds the definition; long ones continue in 303 groups
          (setq txt "")
@@ -385,12 +386,17 @@
 ;; Civil 3D labels with typed-over text
 ;;
 ;; A label whose text component has been typed over keeps that text when the
-;; design changes. AutoLISP has no direct call for this, so each label type
-;; is asked for the properties in "LabelOverrideProperties" (CutOnce-Config.lsp)
-;; through the property system (getpropertyvalue) and COM. A property that
-;; reads True, non-zero or a non-empty string means overridden. A label type
-;; with none of the properties readable is counted as "unchecked", never as
-;; clean. CUTONCE-LABEL-PROBE lists what a selected label exposes.
+;; design changes. Civil 3D labels expose no override flag to AutoLISP (no
+;; property-system or COM property), but the Civil 3D .NET API has one
+;; (Label.IsTextComponentOverriden). So:
+;;   1. when the optional CutOnceLabels.dll helper is loaded, its
+;;      (cutonce-label-overrides ename) answers for each label;
+;;   2. otherwise each label type is asked for the properties in
+;;      "LabelOverrideProperties" (CutOnce-Config.lsp) through the property
+;;      system (getpropertyvalue) and COM; a property that reads True,
+;;      non-zero or a non-empty string means overridden.
+;; A label that neither can answer for is counted as "unchecked", never as
+;; clean. CUTONCE-LABEL-PROBE shows what a selected label exposes.
 ;; ---------------------------------------------------------------------------
 
 (setq *costd:label-default-props*
@@ -431,10 +437,24 @@
 ;; ObjectName -> the property that answers for it, or nil when none does.
 (setq *costd:label-prop-cache* nil)
 
+;; T when CutOnceLabels.dll is loaded (its LispFunctions are EXRXSUBR).
+(defun costd:net-labels-p ( )
+  (if (member (type cutonce-label-overrides) '(EXRXSUBR SUBR)) T)
+)
+
+;; Typed-over text components counted by the .NET helper, or nil.
+(defun costd:net-label-count (en / r)
+  (if (and en (costd:net-labels-p))
+    (progn
+      (setq r (vl-catch-all-apply 'cutonce-label-overrides (list en)))
+      (if (numberp r) r)))
+)
+
 ;; 'yes, 'no, or nil (cannot be checked).
-(defun costd:label-override-state (obj oname en / cached val props p)
+(defun costd:label-override-state (obj oname en / cached val props p n)
   (setq cached (assoc oname *costd:label-prop-cache*))
   (cond
+    ((setq n (costd:net-label-count en)) (if (> n 0) 'yes 'no))
     ((and cached (null (cdr cached))) nil)
     (cached
      (if (setq val (costd:read-prop obj en (cdr cached)))
@@ -451,13 +471,23 @@
   )
 )
 
+;; Name of a style object, or nil. (and ...) returns T, not the name, so
+;; the name is returned explicitly.
+(defun costd:style-object-name (st)
+  (if (= (type st) 'VLA-OBJECT) (cutonce:str-prop st 'Name))
+)
+
 (defun costd:label-style (obj en / st r)
   (cond
+    ;; Civil 3D labels: the COM LabelStyle object
+    ((cutonce:nonblank (costd:style-object-name (cutonce:prop obj 'LabelStyle))))
     ((cutonce:nonblank (cutonce:str-prop obj 'StyleName)))
-    ((and (setq st (cutonce:prop obj 'Style)) (= (type st) 'VLA-OBJECT)
-          (cutonce:nonblank (cutonce:str-prop st 'Name))))
-    ((and en (setq r (vl-catch-all-apply 'getpropertyvalue (list en "StyleName")))
-          (= (type r) 'STR) (cutonce:nonblank r)))
+    ((cutonce:nonblank (costd:style-object-name (cutonce:prop obj 'Style))))
+    ((and en
+          (setq r (vl-catch-all-apply 'getpropertyvalue (list en "StyleName")))
+          (= (type r) 'STR)
+          (cutonce:nonblank r))
+     r)
     ("(style not readable)")
   )
 )
@@ -729,7 +759,9 @@
                 over)
         (if (> (costd:fact facts "LabelsUnchecked") 0)
           (list (strcat "   Could not be checked:   " (costd:num (costd:fact facts "LabelsUnchecked"))
-                        "  (CAD admin: see CUTONCE-LABEL-PROBE)")))
+                        (if (costd:net-labels-p)
+                          "  (not standard labels)"
+                          "  (CAD admin: install CutOnceLabels.dll - see CUTONCE-LABEL-PROBE)"))))
         (if (and over (cutonce:log-on-p "LogLabels"))
           (list (strcat "   Each label is listed in " (cutonce:log-file "Labels.csv"))))))
     )
@@ -791,6 +823,10 @@
      (costd:log (strcat "ObjectName: " oname
                         (if (wcmatch (strcase oname) (costd:label-wildcard)) "" "  (not matched by LabelObjectNames)")))
      (princ (strcat "\n  Style: " (costd:label-style obj en)))
+     (princ (strcat "\n  .NET helper (CutOnceLabels.dll): "
+                    (if (costd:net-labels-p)
+                      (strcat "loaded - " (vl-princ-to-string (vl-catch-all-apply 'cutonce-label-api (list en))))
+                      "NOT LOADED - typed-over text can only be detected with it (see dotnet\\CutOnceLabels\\README.md)")))
      (princ "\n  Properties CutOnce asks for (LabelOverrideProperties):")
      (foreach p (costd:label-props)
        (setq val (costd:read-prop obj en p))
@@ -801,10 +837,11 @@
      (vl-catch-all-apply 'dumpallproperties (list en))
      (princ "\n\n  COM properties:")
      (vl-catch-all-apply 'vlax-dump-object (list obj))
-     (princ (strcat "\n\n  Run this on a typed-over label and on an unchanged one of the same type."
-                    "\n  A property that reads True / 1 / the typed text on the first and False / 0 / empty"
-                    "\n  on the second is the one to add to LabelOverrideProperties in"
-                    "\n  " (cutonce:home) "CutOnce-Config.lsp, then restart Civil 3D."))
+     (princ (strcat "\n\n  With the .NET helper loaded, the \"typed over\" count above is what CutOnce uses."
+                    "\n  Without it: run this on a typed-over label and on an unchanged one of the same type;"
+                    "\n  a property that reads True / 1 / the typed text on the first and False / 0 / empty"
+                    "\n  on the second can be added to LabelOverrideProperties in"
+                    "\n  " (cutonce:home) "CutOnce-Config.lsp (surface elevation labels expose none)."))
     )
   )
   (princ)

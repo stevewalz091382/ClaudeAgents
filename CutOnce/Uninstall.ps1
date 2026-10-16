@@ -53,6 +53,9 @@ foreach ($target in 'User', 'Machine') {
             Remove-Item (Join-Path $instDir $f) -Force -ErrorAction SilentlyContinue
         }
         Remove-Item (Join-Path $instDir 'src') -Recurse -Force -ErrorAction SilentlyContinue
+        foreach ($sub in 'net48', 'net8') {
+            Remove-Item (Join-Path $instDir $sub) -Recurse -Force -ErrorAction SilentlyContinue
+        }
         Write-Host "Removed CutOnce files from $instDir"
         Write-Host '  Remember to delete its (load ...) line from acaddoc.lsp.'
     }

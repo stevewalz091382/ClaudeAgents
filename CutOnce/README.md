@@ -195,7 +195,7 @@ When the save-time growth check fires, its warning has a **Clean up now...** but
 
 A label whose text has been typed over (Edit Label Text, then replacing a property field with typed text) keeps that text when the design changes. The standards check on open counts them, lists each label type and style with how many are typed over, and `Labels.csv` records them with their handles.
 
-AutoLISP cannot call Civil 3D's own "is this text overridden" check, so CutOnce reads a label property from the list in `LabelOverrideProperties`. **The CAD administrator should confirm that property once per Civil 3D release** with `CUTONCE-LABEL-PROBE` (steps in `CAD-Admin-Guide.html`). A label type with none of the listed properties is reported as "could not be checked", and `LabelsOverridden` reads `n/a`, never 0.
+**Detection needs the small .NET helper `CutOnceLabels.dll`.** Civil 3D labels expose no "typed over" flag to AutoLISP (`CUTONCE-LABEL-PROBE` on a surface elevation label shows none in the property system or COM), but Civil 3D's .NET API does (`Label.IsTextComponentOverriden`). The helper's source is in `dotnet\CutOnceLabels`; build it once per .NET generation (steps in its `README.md` and `CAD-Admin-Guide.html`), drop the DLL into the package and reinstall. Without it, labels are counted but reported as "could not be checked", and `LabelsOverridden` reads `n/a`, never 0. `LabelOverrideProperties` remains as a fallback for label types that do expose a flag.
 
 ## Install
 
@@ -234,7 +234,7 @@ Reinstalling keeps an existing `CutOnce-Config.lsp` and writes the current versi
 - `LogDir` and `LogSubfolder` (`"user"`, `"computer"` or `"user-computer"`): a shared log folder, with each person writing to their own subfolder so files never collide or make sync conflicts.
 - `BackupDir`: the shared "master" folder for backup copies (environment variable `CUTONCE_BACKUPDIR` overrides it). Default: `Documents\CutOnce Backups` per user.
 - `ProjectStandards`, or a `CutOnce-Project.ini` file in a project's top folder (`CoordinateSystem=CA83-VIF`, `InsUnits=US Survey Feet`): the coordinate system and units each project should use. `CoordSysRequired` (default `T`): flag drawings with no coordinate system.
-- `LabelObjectNames` (default `"AECCDB*LABEL*"`) and `LabelOverrideProperties`: which objects are labels, and which property says a label's text is typed over (confirm with `CUTONCE-LABEL-PROBE`).
+- `LabelObjectNames` (default `"AECCDB*LABEL*"`): which objects are labels. `LabelOverrideProperties`: fallback properties read when the `CutOnceLabels.dll` helper is not loaded.
 - `GuardGrowthWarnPct` (default 20), `LearnMoreUrl`, `LearnMoreAnchors`.
 
 Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. Log folder: `CUTONCE_LOGDIR`, then `LogDir`, then `%LOCALAPPDATA%\CutOnce\Logs\`, plus the subfolder from `CUTONCE_LOGSUBFOLDER`, then `LogSubfolder`. Backup folder: `CUTONCE_BACKUPDIR`, then `BackupDir`, then `Documents\CutOnce Backups`.
@@ -252,7 +252,7 @@ Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. L
 | `CUTONCE-AUDIT-FOLDER` | Records every .dwg in a folder |
 | `CUTONCE-CLEANUP` | Cleanup dialog: purge unused regapps, scales, styles, anonymous blocks; AUDIT; backup copy first |
 | `CUTONCE-BACKUP` / `CUTONCE-BACKUP-FOLDER` | Copy this drawing to the shared backup folder now; open that folder |
-| `CUTONCE-LABEL-PROBE` | CAD admin: shows which property marks a label's text as typed over |
+| `CUTONCE-LABEL-PROBE` | CAD admin: pick a label; shows whether the .NET label helper is loaded and what it reports, its style, and every property it exposes |
 | `CUTONCE-GUARD-STATUS` / `-CHECKNOW` / `-SUMMARY` / `-LOG` | Guard switches, health check now, history rollup, log paths |
 | `CUTONCE-GUARD-DUMPOBJECTS` | Counts of every object type by name, for checking a number against Toolspace or naming a `HealthExtraCounts` column |
 | `CUTONCE-GUARD-LOGCOMMANDS` | Prints every command name as it runs |
@@ -276,7 +276,7 @@ Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. L
 - New, unsaved drawings are not checked or logged on open. Run `CUTONCE-CHECK` by hand.
 - In `CUTONCE-AUDIT`, drawings other than the one you started it from report xref Type as blank (attach/overlay cannot be read through COM).
 - Pipe proximity uses bounding boxes, so treat it as "worth checking".
-- Typed-over label detection depends on a label property confirmed with `CUTONCE-LABEL-PROBE` (see [Typed-over labels](#typed-over-labels)). Labels that cannot be checked are reported as such.
+- Typed-over label detection needs the `CutOnceLabels.dll` .NET helper, which has to be built once with the .NET SDK (see [Typed-over labels](#typed-over-labels)). Without it, labels are reported as "could not be checked". Label groups (such as alignment station label groups) are not checked.
 - An xref's coordinate system is read only when the xref is loaded and its geographic location can be read; otherwise that xref is not compared.
 - Civil 3D styles are purged through Civil 3D's own `_PURGESTYLES` dialog (there is no command-line version), so the designer confirms them there.
 - Cleanup offered from the growth warning is queued to start after the save; if it does not start, type `CUTONCE-CLEANUP`.

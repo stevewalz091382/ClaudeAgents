@@ -115,6 +115,17 @@ function Copy-Contents([string]$from, [string]$to) {
             Copy-Item $_.FullName $dest -Force
         }
     }
+    # the optional label helper (net48 / net8 builds of CutOnceLabels.dll)
+    foreach ($sub in 'net48', 'net8') {
+        $dllFrom = Join-Path (Join-Path $from $sub) 'CutOnceLabels.dll'
+        $dllTo = Join-Path $to $sub
+        if (Test-Path $dllTo) { Remove-Item $dllTo -Recurse -Force }
+        if (Test-Path $dllFrom) {
+            New-Item -ItemType Directory -Force -Path $dllTo | Out-Null
+            Copy-Item $dllFrom $dllTo -Force
+            Write-Host "Label helper ($sub) installed."
+        }
+    }
     # never leave sources from an earlier build next to the new ones
     $srcTo = Join-Path $to 'src'
     if (Test-Path $srcTo) { Remove-Item $srcTo -Recurse -Force }
@@ -141,13 +152,34 @@ if ($InstallDir) {
     Write-Host 'Two manual steps are needed for a custom folder:'
     Write-Host "  1. Add this line to acaddoc.lsp:   (load `"$loader`")"
     Write-Host "  2. Add $target to Options > Files > Trusted Locations."
+    foreach ($sub in 'net48', 'net8') {
+        $dll = Join-Path (Join-Path $target $sub) 'CutOnceLabels.dll'
+        if (Test-Path $dll) {
+            Write-Host "  3. For the label helper, NETLOAD $dll (net48 = Civil 3D 2021-2024, net8 = 2025+),"
+            Write-Host '     or add it to the Startup Suite (APPLOAD > Contents).'
+        }
+    }
 } else {
     $root = if ($Scope -eq 'AllUsers') { $env:ProgramData } else { $env:APPDATA }
     $pluginDir = Join-Path $root 'Autodesk\ApplicationPlugins'
     $target = Join-Path $pluginDir 'CutOnce.bundle'
     New-Item -ItemType Directory -Force -Path $target | Out-Null
-    Copy-Item (Join-Path $bundleSrc 'PackageContents.xml') $target -Force
     Copy-Contents $contents (Join-Path $target 'Contents')
+    # Keep only the label-helper entries whose DLL was built and copied, so
+    # Civil 3D never tries to load a missing module.
+    [xml]$pkg = Get-Content (Join-Path $bundleSrc 'PackageContents.xml') -Raw
+    foreach ($comp in @($pkg.ApplicationPackage.Components)) {
+        $entry = $comp.ComponentEntry
+        if ($entry.ModuleName -like '*CutOnceLabels.dll' -and
+            -not (Test-Path (Join-Path $target ($entry.ModuleName -replace '^\./', '')))) {
+            [void]$pkg.ApplicationPackage.RemoveChild($comp)
+        }
+    }
+    $pkg.Save((Join-Path $target 'PackageContents.xml'))
+    if (-not (Get-ChildItem (Join-Path $target 'Contents') -Recurse -Filter 'CutOnceLabels.dll' -ErrorAction SilentlyContinue)) {
+        Write-Host 'Label helper not included: typed-over labels will show as "could not be checked".'
+        Write-Host '  To add it, build dotnet\CutOnceLabels (see its README.md) and reinstall.'
+    }
     Write-Host "Installed to $target"
 }
 

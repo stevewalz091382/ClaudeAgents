@@ -24,4 +24,26 @@
         LoadOnAutoCADStartup="True"
         PerDocument="True" />
   </Components>
+
+  <!-- Optional .NET helper that detects typed-over label text (see
+       dotnet/CutOnceLabels/README.md). One build per .NET generation; the
+       installer removes the entry for a DLL that was not built. -->
+  <Components Description="CutOnce label helper, Civil 3D 2021-2024">
+    <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R24.0" SeriesMax="R24.3" />
+    <ComponentEntry
+        AppName="CutOnceLabels"
+        Version="2.1.0"
+        ModuleName="./Contents/net48/CutOnceLabels.dll"
+        AppDescription="Lets CutOnce detect typed-over Civil 3D label text."
+        LoadOnAutoCADStartup="True" />
+  </Components>
+  <Components Description="CutOnce label helper, Civil 3D 2025 and later">
+    <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R25.0" />
+    <ComponentEntry
+        AppName="CutOnceLabels"
+        Version="2.1.0"
+        ModuleName="./Contents/net8/CutOnceLabels.dll"
+        AppDescription="Lets CutOnce detect typed-over Civil 3D label text."
+        LoadOnAutoCADStartup="True" />
+  </Components>
 </ApplicationPackage>

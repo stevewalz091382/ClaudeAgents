@@ -143,13 +143,12 @@
     ;; Which objects count as Civil 3D labels (ObjectName wildcard).
     ("LabelObjectNames" . "AECCDB*LABEL*")
 
-    ;; The property that says a label's text has been typed over. AutoLISP
-    ;; cannot call Civil 3D's own override check, so CutOnce reads these
-    ;; properties in order; a label type that has none of them is reported
-    ;; as "could not be checked", never as clean. To confirm the right name
-    ;; for your Civil 3D release: type over a label's text, run
-    ;; CUTONCE-LABEL-PROBE, pick it, and add the property that changed.
-    ;; nil = the built-in list.
+    ;; Typed-over label text is detected by the .NET helper CutOnceLabels.dll
+    ;; (build it from dotnet\CutOnceLabels; see CAD-Admin-Guide.html), because
+    ;; Civil 3D labels expose no override flag to AutoLISP. Without the
+    ;; helper, CutOnce falls back to reading these properties in order; a
+    ;; label nothing can answer for is reported as "could not be checked",
+    ;; never as clean. nil = the built-in list.
     ;; Example:  ("LabelOverrideProperties" . ("IsTextOverridden"))
     ("LabelOverrideProperties" . nil)
 
