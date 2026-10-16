@@ -169,17 +169,18 @@ The page address and sections are set by `LearnMoreUrl` and `LearnMoreAnchors` i
 
 **One warning per save.** Everything the save checks find (unusual growth, xrefs off 0,0,0, coordinate system / units) is listed in a single numbered summary, with one **Save a copy** button and one **Learn More** button per issue. When growth is among them, the summary also has a **Clean up now...** button (switch: `GuardCleanup`). Cleanup runs as soon as that save finishes, so the file on disk is the drawing before cleanup. `CUTONCE-CLEANUP` opens the same dialog at any time.
 
-| Tick box | What runs |
+| Tick box (in the order they run) | What runs |
 |---|---|
-| Unused registered applications | `-PURGE` Regapps |
-| Reset the annotation scale list | `-SCALELISTEDIT` Reset, back to the default scale list |
+| Unused Civil 3D styles | `_PURGESTYLES`, first: Civil 3D styles hold on to text styles, blocks, layers and registered apps, which PURGE can only remove once the styles are gone |
 | Unused text, dimension, multileader, table, multiline styles | `-PURGE` for each style type |
+| Unused registered applications | `-PURGE` Regapps |
 | Unused anonymous blocks | `-PURGE` Blocks, anonymous (`*U`, `*D`...) names only |
-| Unused Civil 3D styles | `_PURGESTYLES`: Civil 3D's Purge Styles dialog opens during the cleanup, where the designer confirms the unused Civil 3D styles to remove |
-| AUDIT | `AUDIT`, fixing errors |
+| Everything else unused | `-PURGE All`: unused layers, linetypes, named blocks, groups, materials, visual styles and the rest. Untick it to keep unused standard layers and blocks |
+| Reset the annotation scale list | `-SCALELISTEDIT` Reset, back to the default scale list |
+| AUDIT | `AUDIT`, fixing errors, last |
 | Save a backup copy first | Copies the drawing to the shared backup folder before anything changes |
 
-- PURGE removes only items nothing uses, and repeats (up to 3 times) while counts keep falling. Command echo is on while cleanup runs, so each `-PURGE`, `-SCALELISTEDIT`, `_PURGESTYLES` and `AUDIT` and its own messages show on the command line (F2). The result lists every command run and, per item, how many were removed, or "nothing unused to remove" when everything of that kind is still in use.
+- PURGE removes only items nothing uses. The PURGE passes repeat (up to 5 times) while any count is still falling, because purging one item can free another. Command echo is on while cleanup runs, so each `-PURGE`, `-SCALELISTEDIT`, `_PURGESTYLES` and `AUDIT` and its own messages show on the command line (F2). The result lists every command run and, per item, how many were removed, or "nothing unused to remove" when everything of that kind is still in use.
 - The whole cleanup is one undo step: type **U** straight afterwards to undo it. The result lists each count before and after, offers **Save now**, and is logged to Events.csv (`CLEANUP`).
 - **Backup copies.** The copy is the drawing as last saved. It goes to the shared backup folder with a name nobody else can produce: `<drawing>__<YYYYMMDD-HHMMSS-mmm>_<user>-<computer>.dwg`, plus a `-2`, `-3`... counter if that name still exists, so copies never overwrite each other. Each copy is recorded in `Backups.csv`.
 - `BackupBeforeCleanup` sets whether the backup tick box starts ticked. Lock it (`LockedSettings`) to require a backup; if the copy then fails, cleanup stops and nothing changes. Without the lock, a failed copy asks before cleaning up without one.
@@ -265,7 +266,7 @@ Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. L
 - In `CUTONCE-AUDIT`, drawings other than the one you started it from report xref Type as blank (attach/overlay cannot be read through COM).
 - Pipe proximity uses bounding boxes, so treat it as "worth checking".
 - An xref's coordinate system is read only when the xref is loaded and its geographic location can be read; otherwise that xref is not compared.
-- Civil 3D styles are purged through Civil 3D's own `_PURGESTYLES` dialog (there is no command-line version), so the designer confirms them there.
+- Civil 3D styles are purged with Civil 3D's own `_PURGESTYLES` command; if a release asks for confirmation, its dialog opens during cleanup.
 - Cleanup offered from the growth warning is queued to start after the save; if it does not start, type `CUTONCE-CLEANUP`.
 
 ## Uninstall

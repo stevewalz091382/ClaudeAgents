@@ -9,13 +9,19 @@
 ;;;   save finishes, so the copy on disk is the drawing before cleanup. The
 ;;;   cleanup dialog shows what it can remove, with the current counts, and the
 ;;;   designer ticks what runs:
-;;;     - unused registered applications      -PURGE Regapps
-;;;     - the annotation scale list           -SCALELISTEDIT Reset
+;;;     - unused Civil 3D styles              _PURGESTYLES   (runs first)
 ;;;     - unused text, dimension, multileader, table and multiline styles
 ;;;                                           -PURGE (one per style type)
+;;;     - unused registered applications      -PURGE Regapps
 ;;;     - unused anonymous blocks             -PURGE Blocks `**
-;;;     - unused Civil 3D styles              _PURGESTYLES (Civil 3D's dialog)
-;;;     - AUDIT, fixing errors
+;;;     - everything else unused (layers, linetypes, named blocks, groups,
+;;;       materials, visual styles ...)       -PURGE All
+;;;     - the annotation scale list           -SCALELISTEDIT Reset
+;;;     - AUDIT, fixing errors                (runs last)
+;;;   Civil 3D styles go first because they hold on to text styles, blocks,
+;;;   layers and registered apps; only once they are gone can PURGE remove
+;;;   those. The PURGE passes then repeat (up to 5 times) while any count is
+;;;   still falling, because purging one item can free another.
 ;;;   PURGE only removes items nothing uses. Everything runs as one undo step,
 ;;;   so U straight afterwards undoes it. The result lists each count before
 ;;;   and after and is logged to Events.csv (CLEANUP).
@@ -81,26 +87,50 @@
      (coclean:dict-count "ACAD_MLINESTYLE"))
 )
 
+;; Layers + linetypes + named block definitions (not layouts, xrefs or
+;; xref-dependent blocks): what -PURGE All removes besides the items above.
+(defun coclean:other-count (doc / n name)
+  (setq n (+ (cutonce:count (vla-get-Layers doc)) (cutonce:count (vla-get-Linetypes doc))))
+  (vl-catch-all-apply
+    (function (lambda ()
+      (vlax-for blk (vla-get-Blocks doc)
+        (setq name (cond ((cutonce:str-prop blk 'Name)) ("*")))
+        (if (and (/= (substr name 1 1) "*")
+                 (not (vl-string-search "|" name))
+                 (not (eq (cutonce:prop blk 'IsXRef) :vlax-true))
+                 (not (eq (cutonce:prop blk 'IsLayout) :vlax-true)))
+          (setq n (1+ n)))))))
+  n
+)
+
 (defun coclean:counts (doc / civ)
   (setq civ (cutonce:civil-doc))
   (list (cons "RegApps"     (cutonce:count (vla-get-RegisteredApplications doc)))
         (cons "Scales"      (coclean:dict-count "ACAD_SCALELIST"))
         (cons "Styles"      (coclean:style-count doc))
         (cons "AnonBlocks"  (coclean:anon-count doc))
+        (cons "Other"       (coclean:other-count doc))
         (cons "CivilStyles" (if civ (cohealth:count-styles civ) "n/a")))
+)
+
+;; Sum of the counts the PURGE passes can lower.
+(defun coclean:purge-sum (counts)
+  (apply '+ (mapcar (function (lambda (k) (cdr (assoc k counts)))) '("RegApps" "Styles" "AnonBlocks" "Other")))
 )
 
 ;; ---------------------------------------------------------------------------
 ;; Steps: (key label count-name)
 ;; ---------------------------------------------------------------------------
 
+;; In the order they run.
 (setq *coclean:steps*
-  '(("regapps" "Unused registered applications (RegApps)"                    "RegApps")
-    ("scales"  "Reset the annotation scale list to the default"              "Scales")
-    ("styles"  "Unused text, dimension, multileader, table, multiline styles" "Styles")
-    ("anon"    "Unused anonymous blocks"                                     "AnonBlocks")
-    ("civil"   "Unused Civil 3D styles (opens Civil 3D Purge Styles)"         "CivilStyles")
-    ("audit"   "AUDIT the drawing and fix errors"                            nil)))
+  '(("civil"   "Unused Civil 3D styles (_PURGESTYLES, runs first)"                     "CivilStyles")
+    ("styles"  "Unused text, dimension, multileader, table, multiline styles"          "Styles")
+    ("regapps" "Unused registered applications (RegApps)"                              "RegApps")
+    ("anon"    "Unused anonymous blocks"                                               "AnonBlocks")
+    ("all"     "Everything else unused: layers, linetypes, named blocks... (PURGE All)" "Other")
+    ("scales"  "Reset the annotation scale list to the default"                        "Scales")
+    ("audit"   "AUDIT the drawing and fix errors (runs last)"                          nil)))
 
 (defun coclean:count-text (v) (if (numberp v) (itoa v) (vl-princ-to-string v)))
 
@@ -246,13 +276,13 @@
   ;; anonymous blocks only: ` makes the first * literal
   (if (member "anon" choice) (coclean:purge "_Blocks" "`**"))
   (if (member "regapps" choice) (coclean:purge "_Regapps" "*"))
+  (if (member "all" choice) (coclean:purge "_All" "*"))
 )
 
 (defun coclean:purge-styles-civil ( )
-  (coclean:note "_PURGESTYLES (Civil 3D Purge Styles dialog)")
-  (initdia)
+  (coclean:note "_PURGESTYLES (unused Civil 3D styles)")
   (command "_.PURGESTYLES")
-  ;; the dialog is modal; wait for it if the command is still running
+  ;; wait for it if the command is still running (some releases ask first)
   (while (and (= 1 (logand 1 (getvar "CMDACTIVE")))
               (wcmatch (strcase (cond ((getvar "CMDNAMES")) (""))) "*PURGESTYLES*"))
     (command pause))
@@ -299,15 +329,17 @@
   (setvar "CMDECHO" 1)
   (coclean:log "Cleaning up - each command and its result is shown below.")
   (command "_.UNDO" "_Begin")
+  ;; Civil 3D styles first: they hold on to text styles, blocks, layers and
+  ;; registered apps, which PURGE can only remove once the styles are gone
+  (if (member "civil" choice) (coclean:purge-styles-civil))
   ;; purging one item can free another (a style using a regapp, a block
-  ;; inside a block), so repeat while counts keep falling, at most 3 times
-  (setq pass 0 cursum -1)
-  (while (and (< pass 3) (/= cursum prevsum)
-              (vl-some (function (lambda (k) (member k choice))) '("styles" "anon" "regapps")))
-    (setq prevsum (if (= pass 0) -2 cursum))
+  ;; inside a block), so repeat while any count is still falling, at most 5 times
+  (setq pass 0 cursum (coclean:purge-sum (coclean:counts doc)) prevsum nil)
+  (while (and (< pass 5) (not (equal cursum prevsum))
+              (vl-some (function (lambda (k) (member k choice))) '("styles" "anon" "regapps" "all")))
+    (setq prevsum cursum)
     (coclean:purge-pass choice)
-    (setq after (coclean:counts doc)
-          cursum (+ (cdr (assoc "RegApps" after)) (cdr (assoc "Styles" after)) (cdr (assoc "AnonBlocks" after)))
+    (setq cursum (coclean:purge-sum (coclean:counts doc))
           pass (1+ pass))
   )
   (if (member "scales" choice)
@@ -315,7 +347,6 @@
       (coclean:note "-SCALELISTEDIT Reset Yes Exit")
       (command "_.-SCALELISTEDIT" "_Reset" "_Yes" "_Exit")
       (coclean:cancel-active)))
-  (if (member "civil" choice) (coclean:purge-styles-civil))
   (if (member "audit" choice)
     (progn
       (coclean:note "AUDIT Yes (fix errors)")
@@ -337,7 +368,7 @@
     (cutonce:join
       (mapcar (function (lambda (k) (strcat k " " (coclean:count-text (cdr (assoc k before)))
                                             "->" (coclean:count-text (cdr (assoc k after))))))
-              '("RegApps" "Scales" "Styles" "AnonBlocks" "CivilStyles"))
+              '("CivilStyles" "Styles" "RegApps" "AnonBlocks" "Other" "Scales"))
       "  "))
   (setq r
     (cutonce:notice-dialog
