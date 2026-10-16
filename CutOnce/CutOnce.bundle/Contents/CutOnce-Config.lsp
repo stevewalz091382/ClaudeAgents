@@ -162,6 +162,23 @@
     ;; as Health-archived-<date>.csv and a new one is started.
     ("HealthExtraCounts" . nil)
 
+    ;; ---- Branding ----------------------------------------------------------
+
+    ;; Every CutOnce dialog opens with a header band: a logo tile, the name and
+    ;; tagline, the dialog's headline, and a colour strip (amber = warning,
+    ;; red = problem, green = all clear, brand colour = information).
+    ("BrandName"    . "CutOnce")
+    ("BrandTagline" . "Healthy Civil 3D models, one save at a time")
+    ;; Logo tile background, an AutoCAD Color Index number (1-255), e.g.
+    ;; 150 blue, 5 pure blue, 1 red, 30 orange, 94 green, 250 dark grey.
+    ("BrandColor"   . 150)
+    ;; Your own logo instead of the built-in check mark: draw it in AutoCAD
+    ;; (white or light lines read best on BrandColor), zoom so it fills the
+    ;; screen, run MSLIDE, and point this at the .sld file. A file named
+    ;; CutOnce-Logo.sld in the install folder is used automatically.
+    ;; Example:  ("BrandLogoSlide" . "//server/cad/CutOnce/FirmLogo.sld")
+    ("BrandLogoSlide" . nil)
+
     ;; ---- Learn More links --------------------------------------------------
 
     ;; The Learn More buttons open "Civil 3D Warnings Explained"

@@ -188,6 +188,16 @@ The page address and sections are set by `LearnMoreUrl` and `LearnMoreAnchors` i
 - `CUTONCE-BACKUP` copies the drawing to the backup folder at any time (it offers to save first if there are unsaved changes). `CUTONCE-BACKUP-FOLDER` opens the folder.
 - Cleanup is not offered while a drawing is closing (the queued command would land in another drawing).
 
+## Look and branding
+
+Every CutOnce dialog (warnings, the save summary, change-impact, cleanup, the Control Center) shares one look:
+
+- **Header band**: a logo tile, the name and tagline, and a one-line headline saying what the dialog is about.
+- **Colour strip** under the header: amber for a warning, red for a problem that stops something, green when all is clear, the brand colour for information.
+- **Footer** with the name and version.
+
+The CAD administrator sets the brand in `CutOnce-Config.lsp`: `BrandName`, `BrandTagline`, `BrandColor` (an AutoCAD colour number for the logo tile) and `BrandLogoSlide` (the firm's logo as an AutoCAD slide, made with `MSLIDE`; a `CutOnce-Logo.sld` in the install folder is used automatically). Without a slide, the logo tile shows CutOnce's built-in mark, a check above a dashed cut line. AutoCAD dialogs cannot change fonts or text colours, so the branding comes from these image tiles.
+
 ## Install
 
 Requirements: Civil 3D 2021 or later on 64-bit Windows.

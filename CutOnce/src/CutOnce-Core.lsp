@@ -908,6 +908,121 @@
 (defun cutonce:open-kb (topic) (cutonce:open-url (cutonce:kb-url topic)))
 
 ;; ---------------------------------------------------------------------------
+;; Branding: every CutOnce dialog opens with the same header band
+;;
+;;   [logo]  CutOnce  |  Healthy Civil 3D models, one save at a time
+;;           <headline: what this dialog is about>
+;;   ============ colour strip: amber warning, red error, green ok, brand info
+;;   ... dialog body ...
+;;   CutOnce 2.1.0  |  Stephen Walz                     (footer)
+;;
+;; DCL has no fonts or text colours, so the look comes from image tiles: the
+;; logo tile is filled with the brand colour and carries a vector mark (a
+;; check above a dashed cut line), or the firm's own logo as an AutoCAD slide
+;; (BrandLogoSlide: draw the logo, MSLIDE it, point the setting at the .sld).
+;; BrandName, BrandTagline and BrandColor (an AutoCAD colour index) come from
+;; CutOnce-Config.lsp.
+;; ---------------------------------------------------------------------------
+
+(defun cutonce:brand-name ( ) (cond ((cutonce:nonblank (cutonce:cfg "BrandName" nil))) ("CutOnce")))
+
+(defun cutonce:brand-tagline ( )
+  (cond ((cutonce:nonblank (cutonce:cfg "BrandTagline" nil))) ("Healthy Civil 3D models, one save at a time"))
+)
+
+(defun cutonce:brand-color ( / c)
+  (setq c (cutonce:cfg "BrandColor" 150))
+  (if (and (numberp c) (<= 1 c 255)) (fix c) 150)
+)
+
+;; Severity colours for the strip under the header (AutoCAD colour index).
+(defun cutonce:kind-color (kind)
+  (cond ((eq kind 'warning) 30)
+        ((eq kind 'error) 1)
+        ((eq kind 'ok) 94)
+        (T (cutonce:brand-color)))
+)
+
+;; DCL for the header band and the footer; width in characters.
+(defun cutonce:brand-header-dcl (width)
+  (list
+    "  : row {"
+    "    : image { key = \"co_logo\"; width = 7; height = 3.2; fixed_width = true; fixed_height = true; }"
+    "    : column {"
+    (strcat "      : text { key = \"co_title\"; width = " (itoa (- width 9)) "; }")
+    (strcat "      : text { key = \"co_head\"; width = " (itoa (- width 9)) "; }")
+    "    }"
+    "  }"
+    (strcat "  : image { key = \"co_bar\"; width = " (itoa width) "; height = 0.45; fixed_height = true; }"))
+)
+
+(defun cutonce:brand-footer-dcl ( )
+  (list "  : text { key = \"co_foot\"; alignment = right; }")
+)
+
+;; The built-in mark: a check above a dashed "cut once" line, in white.
+(defun cutonce:draw-mark (w h / i x)
+  (foreach d '(-1 0 1)
+    (vector_image (fix (* 0.20 w)) (+ d (fix (* 0.42 h))) (fix (* 0.42 w)) (+ d (fix (* 0.64 h))) 7)
+    (vector_image (fix (* 0.42 w)) (+ d (fix (* 0.64 h))) (fix (* 0.80 w)) (+ d (fix (* 0.16 h))) 7))
+  (setq x (fix (* 0.14 w)))
+  (while (< x (* 0.86 w))
+    (vector_image x (fix (* 0.84 h)) (min (+ x 3) (fix (* 0.86 w))) (fix (* 0.84 h)) 7)
+    (setq x (+ x 6)))
+)
+
+(defun cutonce:paint-brand-body (headline kind / w h sld)
+  (set_tile "co_title" (strcat (cutonce:brand-name) "  |  " (cutonce:brand-tagline)))
+  (set_tile "co_head" (cond ((cutonce:nonblank headline)) ("")))
+  (set_tile "co_foot" (strcat (cutonce:brand-name) " " *cutonce:version* "  |  " *cutonce:publisher*))
+  (setq w (dimx_tile "co_logo") h (dimy_tile "co_logo"))
+  (start_image "co_logo")
+  (fill_image 0 0 w h (cutonce:brand-color))
+  (if (setq sld (cutonce:brand-logo-slide))
+    (slide_image 0 0 w h sld)
+    (cutonce:draw-mark w h))
+  (end_image)
+  (start_image "co_bar")
+  (fill_image 0 0 (dimx_tile "co_bar") (dimy_tile "co_bar") (cutonce:kind-color kind))
+  (end_image)
+)
+
+;; The firm's logo slide: BrandLogoSlide, else CutOnce-Logo.sld in the
+;; install folder; nil for the built-in mark.
+(defun cutonce:brand-logo-slide ( / cfg)
+  (cond ((and (setq cfg (cutonce:nonblank (cutonce:cfg "BrandLogoSlide" nil))) (findfile cfg)))
+        ((findfile (strcat (cutonce:home) "CutOnce-Logo.sld"))))
+)
+
+;; Call with the dialog open, after new_dialog. Never stops the dialog.
+(defun cutonce:paint-brand (headline kind)
+  (vl-catch-all-apply 'cutonce:paint-brand-body (list headline kind))
+)
+
+;; The first line of a message becomes the header's headline (without the
+;; "CutOnce Guard:" prefix the header already says); the rest is the body.
+;; Returns (headline . body-lines).
+(defun cutonce:split-headline (text / lines head)
+  (setq lines (cutonce:split-lines text))
+  (while (and lines (not (cutonce:nonblank (car lines)))) (setq lines (cdr lines)))
+  (setq head (vl-string-trim " " (cond ((car lines)) (""))) lines (cdr lines))
+  (foreach pre '("CutOnce Guard tip:" "CutOnce Guard:" "CutOnce:")
+    (if (wcmatch (strcase head) (strcat (strcase pre) "*"))
+      (setq head (vl-string-trim " " (substr head (1+ (strlen pre)))))))
+  (while (and lines (not (cutonce:nonblank (car lines)))) (setq lines (cdr lines)))
+  ;; "CutOnce Guard tip:" alone on its line: the next line is the headline
+  (if (and (= head "") lines)
+    (progn
+      (setq head (vl-string-trim " " (car lines)) lines (cdr lines))
+      (while (and lines (not (cutonce:nonblank (car lines)))) (setq lines (cdr lines)))))
+  (cons (if (= head "") (cutonce:brand-name) head) lines)
+)
+
+;; Severity of the next notice: 'warning 'error 'ok or 'info. Callers set it
+;; just before showing a notice; it is cleared after every notice.
+(setq *cutonce:notice-kind* nil)
+
+;; ---------------------------------------------------------------------------
 ;; Notice dialog: a message with OK, optional action buttons, and one or more
 ;; Learn More buttons, each opening its own section of the knowledge-base
 ;; page. Used for every warning that has a section. Falls back to a plain
@@ -938,8 +1053,10 @@
       (foreach ln
         (append
           (list "co_notice : dialog {"
-                "  label = \"CutOnce\";"
-                "  : list_box { key = \"notice_text\"; height = 16; width = 80; }")
+                (strcat "  label = \"" (cutonce:dcl-str (cutonce:brand-name)) "\";"))
+          (cutonce:brand-header-dcl 82)
+          (list "  : spacer { height = 0.3; }"
+                "  : list_box { key = \"notice_text\"; height = 15; width = 82; }")
           (if copy (list "  : text { key = \"copy_status\"; width = 80; }"
                          "  : text { key = \"copy_where\"; width = 80; }"))
           (list "  : row {"
@@ -962,7 +1079,9 @@
                       (strcat "    : button { key = \"learn_" (itoa i) "\"; label = \""
                               (cutonce:dcl-str (car lk)) "\"; }")))
                     links))
-          (list "  }" "}"))
+          (list "  }")
+          (cutonce:brand-footer-dcl)
+          (list "}"))
         (write-line ln f)
       )
       (close f)
@@ -988,15 +1107,19 @@
 )
 
 ;; copyreason non-nil adds the "Save a copy" button (see cutonce:copy-now).
-(defun cutonce:notice-dialog-full (text links actions oklabel copyreason / path dcl_id result i)
+(defun cutonce:notice-dialog-full (text links actions oklabel copyreason / path dcl_id result i kind parts)
+  (setq kind (cond (*cutonce:notice-kind*) (copyreason 'warning) (T 'info))
+        *cutonce:notice-kind* nil
+        parts (cutonce:split-headline text))
   (setq links (vl-remove-if-not (function (lambda (lk) (cdr lk))) links))
   (setq path (cutonce:write-notice-dcl links actions oklabel copyreason) result nil)
   (if (and path (> (setq dcl_id (load_dialog path)) 0))
     (progn
       (if (new_dialog "co_notice" dcl_id)
         (progn
+          (cutonce:paint-brand (car parts) kind)
           (start_list "notice_text")
-          (foreach ln (cutonce:split-lines text) (add_list ln))
+          (foreach ln (cdr parts) (add_list ln))
           (end_list)
           (if copyreason
             (progn (setq *cutonce:copy-reason* copyreason) (cutonce:fill-copy-tiles)))
@@ -1042,6 +1165,7 @@
 
 ;; Yes / no question. The safe answer (nolabel) is the default button.
 (defun cutonce:confirm (text yeslabel nolabel)
+  (setq *cutonce:notice-kind* 'error)
   (= 2 (cutonce:notice-dialog text nil (list yeslabel) nolabel))
 )
 
@@ -1060,6 +1184,7 @@
 ;; The same with action buttons. Returns the button pressed (see
 ;; cutonce:notice-dialog), or nil when the frequency choice hid the warning.
 (defun cutonce:notice-once-actions (key text links actions / r)
+  (if (not (cutonce:warn-due-p key)) (setq *cutonce:notice-kind* nil))
   (if (cutonce:warn-due-p key)
     (progn
       (setq r (cutonce:warning-dialog (strcat text "\n\n" (cutonce:freq-note)) links actions

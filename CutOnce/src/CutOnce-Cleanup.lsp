@@ -147,7 +147,9 @@
       (foreach ln
         (append
           (list "co_cleanup : dialog {"
-                "  label = \"CutOnce - clean up this drawing\";"
+                (strcat "  label = \"" (cutonce:dcl-str (cutonce:brand-name)) " - clean up this drawing\";"))
+          (cutonce:brand-header-dcl 86)
+          (list "  : spacer { height = 0.3; }"
                 "  : list_box { key = \"info\"; height = 7; width = 84; }"
                 "  : boxed_column {"
                 "    label = \"Remove (only items nothing uses)\";")
@@ -169,8 +171,9 @@
                 "    : button { key = \"accept\"; label = \"Clean up\"; is_default = true; width = 14; }"
                 "    : button { key = \"cancel\"; label = \"Cancel\"; is_cancel = true; width = 12; }"
                 "    : button { key = \"learn\"; label = \"Learn More...\"; width = 16; }"
-                "  }"
-                "}"))
+                "  }")
+          (cutonce:brand-footer-dcl)
+          (list "}"))
         (write-line ln f)
       )
       (close f)
@@ -196,6 +199,7 @@
     (progn
       (if (new_dialog "co_cleanup" dcl_id)
         (progn
+          (cutonce:paint-brand "Clean up this drawing: choose what runs" 'info)
           (start_list "info")
           (foreach ln (list
                         "Cleanup changes this drawing. Clicking Clean up means you accept that risk."
@@ -311,6 +315,7 @@
     (if (not (setq bk (cutonce:backup doc "Before cleanup")))
       (cond
         ((and (cutonce:locked-p "BackupBeforeCleanup") (cutonce:on-p "BackupBeforeCleanup"))
+         (setq *cutonce:notice-kind* 'error)
          (cutonce:notice (strcat "The backup copy could not be saved, and your CAD administrator\n"
                                  "requires one before cleanup. Nothing was changed.\n\n"
                                  "Backup folder: " (cutonce:backup-dir))
@@ -370,11 +375,12 @@
                                             "->" (coclean:count-text (cdr (assoc k after))))))
               '("CivilStyles" "Styles" "RegApps" "AnonBlocks" "Other" "Scales"))
       "  "))
+  (setq *cutonce:notice-kind* 'ok)
   (setq r
     (cutonce:notice-dialog
       (cutonce:join
         (append
-          (list "CutOnce cleanup finished." "")
+          (list "Cleanup finished" "")
           lines
           (list "" "Commands run:")
           (mapcar (function (lambda (x) (strcat "  " x))) (reverse *coclean:ran*))

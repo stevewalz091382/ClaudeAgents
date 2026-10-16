@@ -440,10 +440,12 @@
       (if (setq f (open path "w"))
         (progn
           (foreach ln
-            '("coimpact_dialog : dialog {"
-              "  label = \"CutOnce - Change-Impact Analysis\";"
-              "  : text { label = \"These objects depend on what you are about to edit:\"; }"
-              "  : list_box { key = \"impact_list\"; height = 16; width = 72; }"
+            (append
+             (list "coimpact_dialog : dialog {"
+              (strcat "  label = \"" (cutonce:dcl-str (cutonce:brand-name)) " - change impact\";"))
+             (cutonce:brand-header-dcl 74)
+             '("  : spacer { height = 0.3; }"
+              "  : list_box { key = \"impact_list\"; height = 14; width = 72; }"
               "  : text { key = \"hint\"; width = 72; }"
               "  : text { key = \"freq_note\"; width = 72; }"
               "  : text { key = \"copy_status\"; width = 72; }"
@@ -453,8 +455,9 @@
               "    : button { key = \"savecopy\"; label = \"Save a copy\"; }"
               "    : button { key = \"accept\"; label = \"OK\"; is_default = true; is_cancel = true; width = 14; }"
               "    : button { key = \"learn_more\"; label = \"Learn More...\"; width = 16; }"
-              "  }"
-              "}")
+              "  }")
+             (cutonce:brand-footer-dcl)
+             '("}"))
             (write-line ln f)
           )
           (close f)
@@ -513,6 +516,7 @@
     (progn
       (if (new_dialog "coimpact_dialog" dcl_id)
         (progn
+          (cutonce:paint-brand (strcat cmdname ": these objects depend on what you are about to edit") 'warning)
           (coimpact:fill-list "impact_list"
             (append (list (strcat "Command: " cmdname) "")
                     (if lines lines (list "No dependent objects were found by the automated scan."))))

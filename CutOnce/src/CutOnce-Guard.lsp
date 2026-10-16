@@ -401,6 +401,7 @@
   (if (cutonce:warn-due-p key)
     (progn
       (coguard:log-event "TEXT-TIP" (strcat cmd " started, tip shown"))
+      (setq *cutonce:notice-kind* 'info)
       (cutonce:notice-once key
         (strcat
           "CutOnce Guard tip:\n\n"

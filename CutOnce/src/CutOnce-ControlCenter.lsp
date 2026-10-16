@@ -78,8 +78,10 @@
   (append
     (list
       "cocc_dialog : dialog {"
-      "  label = \"CutOnce Control Center\";"
-      "  : text { label = \"Choose which checks, warnings and logs run for you. Changes apply to every open drawing.\"; }"
+      (strcat "  label = \"" (cutonce:dcl-str (cutonce:brand-name)) " Control Center\";"))
+    (cutonce:brand-header-dcl 120)
+    (list
+      "  : spacer { height = 0.3; }"
       "  : row {"
       "   : column {")
     (list
@@ -123,8 +125,9 @@
       "    : button { key = \"cancel\"; label = \"Cancel\"; is_cancel = true; width = 12; }"
       "    : button { key = \"defaults\"; label = \"Reset to defaults\"; width = 18; }"
       "    : button { key = \"learn_more\"; label = \"Learn More...\"; width = 16; }"
-      "  }"
-      "}")
+      "  }")
+    (cutonce:brand-footer-dcl)
+    (list "}")
   )
 )
 
@@ -276,6 +279,7 @@
     (progn
       (if (new_dialog "cocc_dialog" dcl_id)
         (progn
+          (cutonce:paint-brand "Control Center: choose which checks, warnings and logs run for you (applies to every open drawing)" 'info)
           (cocc:fill-tiles nil)
           (set_tile "logdir" (strcat "Log folder: " (cutonce:log-dir)))
           (set_tile "backupdir" (strcat "Backup folder: " (cutonce:backup-dir)))

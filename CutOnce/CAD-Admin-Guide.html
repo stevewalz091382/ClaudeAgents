@@ -57,6 +57,7 @@
     <li><a href="#logs">3. Send logs to a shared team folder</a></li>
     <li><a href="#backups">4. Set up the shared backup folder</a></li>
     <li><a href="#coords">5. Set each project's coordinate system and units</a></li>
+    <li><a href="#brand">6. Brand the dialogs</a></li>
     <li><a href="#trouble">Troubleshooting</a></li>
   </ul>
 </nav>
@@ -221,6 +222,20 @@ InsUnits=US Survey Feet</code></pre>
   <tr><td>Xrefs</td><td>Units come from each xref's insertion units. The coordinate system is read from a loaded xref's geographic location; an xref whose system cannot be read is not flagged.</td></tr>
   <tr><td>Logs</td><td>Health.csv gets <code>CoordinateSystem</code>, <code>ProjectCoordinateSystem</code> and <code>CoordUnitIssues</code>; Xrefs.csv gets <code>XrefInsUnits</code> and <code>XrefCoordinateSystem</code>.</td></tr>
 </table>
+
+<h2 id="brand">6. Brand the dialogs</h2>
+<p>Every CutOnce dialog opens with a header band: a logo tile, the name and tagline, a headline, and a colour strip (amber warning, red problem, green all clear). Set your firm's look in <code>CutOnce-Config.lsp</code>:</p>
+<pre><code>("BrandName"      . "Acme Civil")
+("BrandTagline"   . "Built right the first time")
+("BrandColor"     . 150)        ; AutoCAD colour number behind the logo
+("BrandLogoSlide" . "//server/cad/CutOnce/FirmLogo.sld")</code></pre>
+<ol class="steps">
+  <li>To use your logo: open a new drawing, draw the logo in white or light colours (it sits on <code>BrandColor</code>), and zoom so it fills the screen at roughly a 3:2 width to height.</li>
+  <li>Type <code>MSLIDE</code> and save the slide, e.g. <code>FirmLogo.sld</code>, to a shared folder.</li>
+  <li>Point <code>BrandLogoSlide</code> at it, or name it <code>CutOnce-Logo.sld</code> and put it in the install folder.</li>
+  <li>Restart Civil 3D and type <code>CUTONCE</code> to see it in the Control Center header.</li>
+</ol>
+<p>AutoCAD dialogs cannot change fonts or text colours, so the brand comes from the logo tile and the colour strip. Without a slide, CutOnce draws its own mark.</p>
 
 <h2 id="trouble">Troubleshooting</h2>
 <table>

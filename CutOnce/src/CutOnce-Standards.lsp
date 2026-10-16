@@ -561,8 +561,7 @@
   (if issXS (setq links (append links (list (cons "Broken / unloaded xrefs..." "STD_XREF_STATUS")))))
   (if issXO (setq links (append links (list (cons "Xrefs not at 0,0,0..." "STD_XREF_ORIGIN")))))
   (if issCU (setq links (append links (list (cons "Coordinates / units..." "STD_COORD_UNITS")))))
-  (setq lines (list (if issues "WARNING - drawing standards check" "Drawing standards check")
-                    drawname))
+  (setq lines (list (strcat (if issues "Standards check found problems in " "Standards check passed: ") drawname)))
   (if wantBL
     (setq lines (append lines
       (list ""
@@ -615,7 +614,9 @@
               "  xrefs off 0,0,0 " (costd:num (costd:fact facts "XrefsOffOrigin"))
               "  coordinate/unit issues " (costd:num (costd:fact facts "CoordUnitIssues")))))
   (if (or manual issues (cutonce:on-p "StdAlwaysShow"))
-    (cutonce:notice-links msg links)
+    (progn
+      (setq *cutonce:notice-kind* (if issues 'warning 'ok))
+      (cutonce:notice-links msg links))
   )
   (princ)
 )
