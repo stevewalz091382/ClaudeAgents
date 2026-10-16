@@ -23,9 +23,9 @@
 ;;;           so Styles and the settings columns read n/a on those rows)
 ;;;   Audit   CUTONCE-AUDIT / CUTONCE-AUDIT-FOLDER
 ;;;   Manual  CUTONCE-GUARD-CHECKNOW
-;;; On save the growth check can offer a one-click cleanup (see
-;;; CutOnce-Cleanup.lsp), and the coordinate system / units check warns
-;;; about a missing or mismatched coordinate system or insertion units.
+;;; On save, everything the growth, xref-origin and coordinate system / units
+;;; checks find is shown in ONE summary warning, with one Save a copy button
+;;; and, when growth was found, Clean up now... (see CutOnce-Cleanup.lsp).
 ;;; Each designer switches these on or off in CUTONCE.
 ;;;
 ;;; Commands:
@@ -317,21 +317,14 @@
   (reverse flags)
 )
 
-;; Save-check warnings follow the designer's frequency choice, counted per
-;; check per drawing; a manual check (CUTONCE-GUARD-CHECKNOW) always shows.
-(defun cohealth:show (key text topic manual)
-  (if manual
-    (cutonce:warning-dialog text (list (cons "Learn More..." topic)) nil
-                            (strcat "Before going ahead: " (cutonce:warning-name key)))
-    (cutonce:notice-once key text topic))
-)
-
-;; The same with action buttons; returns the button pressed (nil if hidden).
-(defun cohealth:show-actions (key text links actions manual)
-  (if manual
-    (cutonce:warning-dialog text links actions (strcat "Before going ahead: " (cutonce:warning-name key)))
-    (cutonce:notice-once-actions key text links actions))
-)
+;; ---------------------------------------------------------------------------
+;; One summary per save. Every save check that finds something adds a section;
+;; the designer sees a single warning listing them all, with one Save a copy
+;; button and, when growth was found, Clean up now...
+;; Each check still follows the frequency choice on its own ("once" hides a
+;; section already shown this session) and still writes its Events.csv row.
+;; A section is (key title (line ...) (learn-label . topic)).
+;; ---------------------------------------------------------------------------
 
 ;; Cleanup is queued to run after the save, so it is not offered while the
 ;; drawing is being closed (the queued command would land in another drawing).
@@ -344,77 +337,84 @@
   (and (cutonce:on-p "GuardCleanup") (not (cohealth:closing-p)))
 )
 
-(defun cohealth:alert-growth (drawname flags manual / offer actions r)
+(defun cohealth:growth-section (drawname flags)
   (cutonce:log-event "SAVE-FLAG"
     (apply 'strcat (mapcar (function (lambda (x) (strcat (car x) " " (itoa (cadr x)) "->" (itoa (caddr x)) "  "))) flags)))
-  (setq offer (cohealth:cleanup-offer-p)
-        actions (if offer (list "Clean up now...")))
-  (setq r
-    (cohealth:show-actions (strcat "GUARD_GROWTH|" drawname)
-      (strcat
-        "CutOnce Guard: unusual growth since the last check of\n" drawname ":\n\n"
-        (apply 'strcat
+  (list (strcat "GUARD_GROWTH|" drawname)
+        "UNUSUAL GROWTH SINCE THE LAST CHECK"
+        (append
           (mapcar (function (lambda (x)
-                    (strcat "  " (car x) ": " (itoa (cadr x)) " -> " (itoa (caddr x)) "  (" (nth 3 x) ")\n")))
-                  flags))
-        "\nFull history: " (cohealth:path)
-        (if offer
-          (strcat
-            "\n\nClean up now... runs once this save finishes: it can remove unused registered\n"
-            "applications, scales, styles and anonymous blocks (PURGE, AUDIT), and saves a\n"
-            "backup copy to the shared folder first. You choose what runs before anything changes.\n"
-            "(If it does not start, type CUTONCE-CLEANUP.)")
-          "")
-        "\nTurn this check off in the CutOnce Control Center (type CUTONCE)."
-      )
-      (append (if offer (list (cons "About cleanup..." "GUARD_CLEANUP")))
-              (list (cons "Learn More..." "GUARD_GROWTH")))
-      actions
-      manual
-    ))
-  ;; r: 1 = OK, 2 = first action, 3 = second ...
-  (setq r (if (and (numberp r) (> r 1)) (nth (- r 2) actions)))
-  (if (= r "Clean up now...") (coclean:queue "CUTONCE-CLEANUP"))
+                    (strcat (car x) ": " (itoa (cadr x)) " -> " (itoa (caddr x)) "  (" (nth 3 x) ")")))
+                  flags)
+          (list (strcat "Full history: " (cohealth:path))))
+        (cons "Growth..." "GUARD_GROWTH"))
 )
 
-(defun cohealth:alert-coord (drawname issues manual)
-  (cutonce:log-event "COORD-UNITS" (cutonce:join issues "  "))
-  (cohealth:show (strcat "GUARD_COORD_UNITS|" drawname)
-    (strcat
-      "CutOnce Guard: coordinate system or units problem in " drawname ":\n\n"
-      (apply 'strcat (mapcar (function (lambda (s) (strcat "  " s "\n"))) issues))
-      "\nA drawing without the right coordinate system or insertion units places\n"
-      "xrefs, data shortcuts, imported points and GIS data in the wrong place or\n"
-      "at the wrong scale. Set it in Toolspace > Settings > Edit Drawing Settings\n"
-      "(Units and Zone), and INSUNITS for the insertion units."
-      "\nTurn this check off in the CutOnce Control Center (type CUTONCE)."
-    )
-    "GUARD_COORD_UNITS"
-    manual
-  )
-)
-
-(defun cohealth:alert-origin (drawname badpts manual)
+(defun cohealth:origin-section (drawname badpts)
   (cutonce:log-event "XREF-BASEPOINT" (apply 'strcat (mapcar (function (lambda (p) (strcat (car p) "  "))) badpts)))
-  (cohealth:show (strcat "GUARD_XREF_ORIGIN|" drawname)
-    (strcat
-      "CutOnce Guard: xref insertion point(s) are not at 0,0,0:\n\n"
-      (apply 'strcat
-        (mapcar (function (lambda (p) (strcat "  " (car p) ": " (costd:pt-text (cadr p)) "\n")))
-                badpts))
-      "\nA non-zero xref insertion point commonly causes misalignment against\n"
-      "a shared coordinate system or data shortcuts."
-      "\nTurn this check off in the CutOnce Control Center (type CUTONCE)."
+  (list (strcat "GUARD_XREF_ORIGIN|" drawname)
+        "XREFS NOT INSERTED AT 0,0,0"
+        (append
+          (mapcar (function (lambda (p) (strcat (car p) ": " (costd:pt-text (cadr p))))) badpts)
+          (list "A non-zero insertion point misaligns the xref against shared coordinates and data shortcuts."))
+        (cons "Xref origin..." "GUARD_XREF_ORIGIN"))
+)
+
+(defun cohealth:coord-section (drawname issues)
+  (cutonce:log-event "COORD-UNITS" (cutonce:join issues "  "))
+  (list (strcat "GUARD_COORD_UNITS|" drawname)
+        "COORDINATE SYSTEM OR UNITS"
+        (append
+          issues
+          (list "Set it in Toolspace > Settings > Edit Drawing Settings (Units and Zone);"
+                "INSUNITS sets the insertion units."))
+        (cons "Coordinates..." "GUARD_COORD_UNITS"))
+)
+
+;; sections: list of cohealth:*-section results. manual = CUTONCE-GUARD-CHECKNOW
+;; (every section shown, whatever the frequency choice).
+(defun cohealth:show-summary (drawname sections manual / due growth offer n i lines actions r)
+  (setq due (if manual
+              sections
+              (vl-remove-if-not (function (lambda (sc) (cutonce:warn-due-p (car sc)))) sections)))
+  (if due
+    (progn
+      (setq growth (vl-some (function (lambda (sc) (wcmatch (car sc) "GUARD_GROWTH|*"))) due)
+            offer (and growth (cohealth:cleanup-offer-p))
+            n (length due) i 0)
+      (setq lines (list (strcat "CutOnce found " (itoa n) (if (= n 1) " thing" " things")
+                                " to check in " drawname ":")))
+      (foreach sc due
+        (setq i (1+ i))
+        (setq lines (append lines
+                            (list "" (strcat (itoa i) ". " (cadr sc)))
+                            (mapcar (function (lambda (ln) (strcat "   " ln))) (caddr sc))))
+      )
+      (setq lines (append lines
+        (list "")
+        (if offer
+          (list "Clean up now... runs once this save finishes. It can remove unused registered"
+                "applications, scales, styles and anonymous blocks (PURGE, AUDIT); you choose"
+                "what runs first. (If it does not start, type CUTONCE-CLEANUP.)"))
+        (list "Save a copy keeps the drawing as last saved in the backup folder before you go on.")
+        (if manual
+          (list "Turn any of these checks off in the CutOnce Control Center (type CUTONCE).")
+          (list (strcat (cutonce:freq-note) " Each check can be turned off there.")))))
+      (setq actions (if offer (list "Clean up now...")))
+      (setq r (cutonce:warning-dialog (cutonce:join lines "\n")
+                                      (mapcar 'cadddr due)
+                                      actions
+                                      "Before going ahead: save checks"))
+      (if (not manual) (foreach sc due (cutonce:mark-warned (car sc))))
+      (if (and offer (= r 2)) (coclean:queue "CUTONCE-CLEANUP"))
     )
-    "GUARD_XREF_ORIGIN"
-    manual
   )
 )
 
 ;; trigger: "Save" (reactor) or "Manual" (CUTONCE-GUARD-CHECKNOW).
 ;; Manual runs both alerts and writes the row whatever the settings say.
 (defun cohealth:check (trigger / manual doc drawpath drawname wantLog wantGrowth wantOrigin wantCoord
-                                 facts prev flags badpts issues)
+                                 facts prev flags badpts issues sections)
   (setq manual (= trigger "Manual"))
   (setq wantLog    (or manual (cutonce:log-on-p "LogHealthOnSave"))
         wantGrowth (or manual (cutonce:on-p "GuardGrowth"))
@@ -437,12 +437,14 @@
      )
      (if wantLog (vl-catch-all-apply 'cohealth:write (list doc facts trigger manual)))
      (cohealth:remember drawpath facts)
+     ;; every check that finds something adds a section to one summary
      (if (and wantGrowth (setq flags (cohealth:growth-flags prev facts)))
-       (cohealth:alert-growth drawname flags manual))
+       (setq sections (cons (cohealth:growth-section drawname flags) sections)))
      (if (and wantOrigin (setq badpts (costd:fact facts "offorigin")))
-       (cohealth:alert-origin drawname badpts manual))
+       (setq sections (cons (cohealth:origin-section drawname badpts) sections)))
      (if (and wantCoord (setq issues (costd:fact facts "coordissues")))
-       (cohealth:alert-coord drawname issues manual))
+       (setq sections (cons (cohealth:coord-section drawname issues) sections)))
+     (if sections (cohealth:show-summary drawname (reverse sections) manual))
     )
   )
 )

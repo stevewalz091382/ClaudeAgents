@@ -182,7 +182,7 @@
 </ul>
 
 <h2 id="backups">4. Set up the shared backup folder</h2>
-<p>When the save-time growth warning fires, it offers <strong>Clean up now...</strong>. Before cleanup changes anything, CutOnce can copy the drawing (as last saved) into one shared "master" backup folder, so any earlier version can be recovered. Every CutOnce warning (command warnings and save checks) also has a <strong>Save a copy</strong> button that copies the drawing there before the designer goes ahead, and <code>CUTONCE-BACKUP</code> makes a copy at any time.</p>
+<p>On save, CutOnce shows one summary of everything its save checks found. When unusual growth is among them, the summary offers <strong>Clean up now...</strong>. Before cleanup changes anything, CutOnce can copy the drawing (as last saved) into one shared "master" backup folder, so any earlier version can be recovered. Every CutOnce warning (command warnings and save checks) also has a <strong>Save a copy</strong> button that copies the drawing there before the designer goes ahead, and <code>CUTONCE-BACKUP</code> makes a copy at any time.</p>
 <ol class="steps">
   <li>Create the folder on a share everyone can reach, e.g. <code>\\server\cad\CutOnce\Backups</code>. Everyone needs permission to create files there (Modify). Nobody needs to delete anything.</li>
   <li>Point CutOnce at it, the same three ways as the log folder:

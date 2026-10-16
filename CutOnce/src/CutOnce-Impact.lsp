@@ -447,6 +447,7 @@
               "  : text { key = \"hint\"; width = 72; }"
               "  : text { key = \"freq_note\"; width = 72; }"
               "  : text { key = \"copy_status\"; width = 72; }"
+              "  : text { key = \"copy_where\"; width = 72; }"
               "  : row {"
               "    alignment = centered; fixed_width = true;"
               "    : button { key = \"savecopy\"; label = \"Save a copy\"; }"

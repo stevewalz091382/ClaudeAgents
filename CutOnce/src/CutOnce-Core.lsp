@@ -674,14 +674,16 @@
     ((not (cutonce:copy-available-p))
      "Save a copy: not available until this drawing has been saved once.")
     ((/= 0 (getvar "DBMOD"))
-     (strcat "Save a copy: puts this drawing as last saved (without unsaved changes) in " (cutonce:backup-dir)))
-    (T (strcat "Save a copy: puts this drawing, as it is now, in " (cutonce:backup-dir)))
+     "Save a copy puts the drawing as last saved (unsaved changes not included) in:")
+    (T "Save a copy puts the drawing, as it is now, in:")
   )
 )
 
-;; Called with the dialog open: copy key "savecopy", status key "copy_status".
+;; Called with the dialog open: button "savecopy", status lines "copy_status"
+;; and "copy_where" (the folder on a line of its own, so it is never cut off).
 (defun cutonce:fill-copy-tiles ( )
   (set_tile "copy_status" (cutonce:copy-intro))
+  (set_tile "copy_where" (if (cutonce:copy-available-p) (cutonce:backup-dir) ""))
   (if (not (cutonce:copy-available-p)) (mode_tile "savecopy" 1))
   (action_tile "savecopy" "(cutonce:copy-now)")
 )
@@ -691,8 +693,9 @@
              (list (cutonce:active-doc) (cond (*cutonce:copy-reason*) ("Before going ahead with a warning")))))
   (if (vl-catch-all-error-p bk) (setq bk nil))
   (if bk
-    (progn (set_tile "copy_status" (strcat "Copy saved: " bk)) (mode_tile "savecopy" 1))
-    (set_tile "copy_status" (strcat "Copy failed - is " (cutonce:backup-dir) " reachable? Details on the command line."))
+    (progn (set_tile "copy_status" "Copy saved:") (set_tile "copy_where" bk) (mode_tile "savecopy" 1))
+    (progn (set_tile "copy_status" "Copy failed - is this folder reachable? Details are on the command line.")
+           (set_tile "copy_where" (cutonce:backup-dir)))
   )
 )
 
@@ -937,7 +940,8 @@
           (list "co_notice : dialog {"
                 "  label = \"CutOnce\";"
                 "  : list_box { key = \"notice_text\"; height = 16; width = 80; }")
-          (if copy (list "  : text { key = \"copy_status\"; width = 80; }"))
+          (if copy (list "  : text { key = \"copy_status\"; width = 80; }"
+                         "  : text { key = \"copy_where\"; width = 80; }"))
           (list "  : row {"
                 "    alignment = centered; fixed_width = true;")
           (if copy (list "    : button { key = \"savecopy\"; label = \"Save a copy\"; }"))
