@@ -91,7 +91,6 @@
     ("StdByLayer"       "Open"     "Objects whose color or linetype is not ByLayer"       T)
     ("StdXrefStatus"    "Open"     "Xrefs that are broken (not found) or unloaded"        T)
     ("StdXrefOrigin"    "Open"     "Xrefs not inserted at 0,0,0"                          T)
-    ("StdLabelOverrides" "Open"    "Civil 3D labels with typed-over (overridden) text"    T)
     ("StdCoordUnits"    "Open"     "Coordinate system and insertion units"                T)
     ("StdAlwaysShow"    "Open"     "Show the result even when nothing is wrong"           nil)
     ("StdScanBlocks"    "Open"     "Include block definitions in ByLayer counts (slower)" T)
@@ -102,7 +101,6 @@
     ("LogXrefs"         "Log"      "Xrefs.csv detail with every Health.csv row"           T)
     ("LogEvents"        "Log"      "Events.csv row for every warning"                     T)
     ("LogOpened"        "Log"      "Opened.csv row for every drawing opened"              T)
-    ("LogLabels"        "Log"      "Labels.csv detail of typed-over label text"           T)
   )
 )
 
@@ -868,7 +866,6 @@
     ("GUARD_GROWTH"      . "drawing-growth")
     ("GUARD_CLEANUP"     . "drawing-cleanup")
     ("GUARD_COORD_UNITS" . "coordinate-system-units")
-    ("STD_LABEL_OVERRIDE" . "label-text-overrides")
     ("STD_COORD_UNITS"   . "coordinate-system-units")
     ("BACKUP"            . "backup-copies")
     ;; control center

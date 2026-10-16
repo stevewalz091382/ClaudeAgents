@@ -47,7 +47,7 @@
 <body>
 <main>
 <h1>CutOnce CAD Admin Guide</h1>
-<p class="lead">Step-by-step setup for CAD administrators: watched commands, extra data points in Health.csv, one shared log folder for a team or several offices, the shared backup folder, project coordinate systems, and typed-over label detection.</p>
+<p class="lead">Step-by-step setup for CAD administrators: watched commands, extra data points in Health.csv, one shared log folder for a team or several offices, the shared backup folder, and project coordinate systems.</p>
 
 <nav>
   <ul>
@@ -57,7 +57,6 @@
     <li><a href="#logs">3. Send logs to a shared team folder</a></li>
     <li><a href="#backups">4. Set up the shared backup folder</a></li>
     <li><a href="#coords">5. Set each project's coordinate system and units</a></li>
-    <li><a href="#labels">6. Turn on typed-over label detection</a></li>
     <li><a href="#trouble">Troubleshooting</a></li>
   </ul>
 </nav>
@@ -223,25 +222,6 @@ InsUnits=US Survey Feet</code></pre>
   <tr><td>Logs</td><td>Health.csv gets <code>CoordinateSystem</code>, <code>ProjectCoordinateSystem</code> and <code>CoordUnitIssues</code>; Xrefs.csv gets <code>XrefInsUnits</code> and <code>XrefCoordinateSystem</code>.</td></tr>
 </table>
 
-<h2 id="labels">6. Turn on typed-over label detection (.NET helper)</h2>
-<p>When someone types over a Civil 3D label's text (a surface spot elevation, a station, an elevation), the label keeps that text and no longer updates with the design. CutOnce counts these labels in the open-time standards check, and writes them to <code>Labels.csv</code> (one row per label type and style, with the handles of the typed-over labels) and Health.csv (<code>Labels</code>, <code>LabelsOverridden</code>, <code>LabelsUnchecked</code>).</p>
-<div class="note"><strong>Detection needs a small .NET helper.</strong> Civil 3D labels expose no "typed over" flag to AutoLISP: <code>CUTONCE-LABEL-PROBE</code> on a surface elevation label shows none in the property system or COM. Civil 3D's .NET API does have one (<code>Label.IsTextComponentOverriden</code>), so CutOnce ships the source of <code>CutOnceLabels.dll</code>, which adds it to AutoLISP. Without the helper, labels are counted but reported as <em>could not be checked</em> (<code>LabelsOverridden</code> reads <code>n/a</code>), never as clean. The helper only reads labels.</div>
-<ol class="steps">
-  <li>On a PC with Civil 3D, install the free .NET 8 SDK: <code>winget install Microsoft.DotNet.SDK.8</code>.</li>
-  <li>Open a command prompt in <code>dotnet\CutOnceLabels</code> in the install package and build, pointing at your Civil 3D (AutoCAD) folder:
-<pre><code>Civil 3D 2021-2024:
-dotnet build -c Release -p:AcadDir="C:\Program Files\Autodesk\AutoCAD 2024"
-
-Civil 3D 2025 and later:
-dotnet build -c Release -p:AcadDir="C:\Program Files\Autodesk\AutoCAD 2025" -p:TargetFramework=net8.0-windows</code></pre></li>
-  <li>Copy <code>bin\Release\net48\CutOnceLabels.dll</code> to <code>CutOnce.bundle\Contents\net48\</code> (or <code>bin\Release\net8.0-windows\CutOnceLabels.dll</code> to <code>CutOnce.bundle\Contents\net8\</code>). Build both if your firm runs both generations.</li>
-  <li>Run <code>Install.cmd</code> and restart Civil 3D. Civil 3D loads the right DLL for its release.</li>
-  <li>In a test drawing, type over one label's text. Type <code>CUTONCE-LABEL-PROBE</code> and pick it: the <em>.NET helper</em> line should say <code>loaded</code> and <code>typed over: 1</code>; an unchanged label says <code>typed over: 0</code>.</li>
-  <li>Run <code>CUTONCE-CHECK</code>. The label section lists the typed-over label by type and style.</li>
-</ol>
-<p>Label groups (such as alignment station label groups) are not label objects and are not checked. <code>LabelOverrideProperties</code> stays as a fallback for any label type that does expose a flag.</p>
-<p>Which objects count as labels is set by <code>("LabelObjectNames" . "AECCDB*LABEL*")</code>. Use <code>CUTONCE-GUARD-DUMPOBJECTS</code> to see the names in a drawing.</p>
-
 <h2 id="trouble">Troubleshooting</h2>
 <table>
   <tr><th>Problem</th><th>Check</th></tr>
@@ -253,7 +233,6 @@ dotnet build -c Release -p:AcadDir="C:\Program Files\Autodesk\AutoCAD 2025" -p:T
   <tr><td>No "Save a copy" button, or <code>CUTONCE-STATUS</code> shows version 2.0.0</td><td>An older <code>CutOnce.vlx</code> is still in the install folder and loads instead of 2.1. Re-run <code>Install.cmd</code> from the 2.1 package (it removes the old file), or delete <code>CutOnce.vlx</code> from the folder <code>CUTONCE-STATUS</code> shows, then restart Civil 3D.</td></tr>
   <tr><td>Cleanup did not start after "Clean up now..."</td><td>Type <code>CUTONCE-CLEANUP</code>. Cleanup is not offered while a drawing is being closed.</td></tr>
   <tr><td>"Backup folder not reachable"</td><td>Check the folder <code>CUTONCE-STATUS</code> shows exists and that the person can create files in it.</td></tr>
-  <tr><td>Labels "could not be checked"</td><td>The .NET label helper is not loaded. Follow <a href="#labels">step 6</a>; <code>CUTONCE-LABEL-PROBE</code> shows whether it is loaded.</td></tr>
   <tr><td>Every drawing says "No coordinate system"</td><td>Assign one in Drawing Settings, or set <code>("CoordSysRequired" . nil)</code>. See <a href="#coords">step 5</a>.</td></tr>
   <tr><td>Logs still go to the old folder</td><td>An environment variable from the installer or <code>Set-LogFolder.cmd</code> wins over the configuration file. Run <code>Set-LogFolder.cmd -Clear</code>, then restart Civil 3D.</td></tr>
 </table>

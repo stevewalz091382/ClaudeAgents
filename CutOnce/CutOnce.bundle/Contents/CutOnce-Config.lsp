@@ -21,8 +21,7 @@
   '(
     ;; ---- Folders -----------------------------------------------------------
 
-    ;; Where Health.csv, Xrefs.csv, Labels.csv, Events.csv, Opened.csv and
-    ;; Backups.csv go.
+    ;; Where Health.csv, Xrefs.csv, Events.csv, Opened.csv and Backups.csv go.
     ;; nil = %LOCALAPPDATA%\CutOnce\Logs\ (per user, per machine).
     ;; Use forward slashes, e.g. "D:/CAD/CutOnce/Logs" or a shared
     ;; folder "//server/cad/CutOnce/Logs".
@@ -90,7 +89,6 @@
     ("StdByLayer"       . T)    ; objects whose color or linetype is not ByLayer
     ("StdXrefStatus"    . T)    ; xrefs broken (not found) or unloaded
     ("StdXrefOrigin"    . T)    ; xrefs not inserted at 0,0,0
-    ("StdLabelOverrides" . T)   ; Civil 3D labels with typed-over (overridden) text
     ("StdCoordUnits"    . T)    ; coordinate system and insertion units
     ("StdAlwaysShow"    . nil)  ; show the result even when nothing is wrong
     ("StdScanBlocks"    . T)    ; include named block definitions (slower on big drawings)
@@ -102,7 +100,6 @@
     ("LogXrefs"         . T)    ; Xrefs.csv detail with every Health.csv row
     ("LogEvents"        . T)    ; Events.csv row for every warning
     ("LogOpened"        . T)    ; Opened.csv row for every drawing opened
-    ("LogLabels"        . T)    ; Labels.csv: typed-over labels by type and style
 
     ;; Keys designers may NOT change; the value above always applies.
     ;; Any key from the section above can be listed, plus
@@ -137,20 +134,6 @@
     ;;        ("P:/Metric/*"             . (("CoordinateSystem" . "UTM83-10")
     ;;                                      ("InsUnits" . "Meters")))))
     ("ProjectStandards" . nil)
-
-    ;; ---- Typed-over (overridden) label text --------------------------------
-
-    ;; Which objects count as Civil 3D labels (ObjectName wildcard).
-    ("LabelObjectNames" . "AECCDB*LABEL*")
-
-    ;; Typed-over label text is detected by the .NET helper CutOnceLabels.dll
-    ;; (build it from dotnet\CutOnceLabels; see CAD-Admin-Guide.html), because
-    ;; Civil 3D labels expose no override flag to AutoLISP. Without the
-    ;; helper, CutOnce falls back to reading these properties in order; a
-    ;; label nothing can answer for is reported as "could not be checked",
-    ;; never as clean. nil = the built-in list.
-    ;; Example:  ("LabelOverrideProperties" . ("IsTextOverridden"))
-    ("LabelOverrideProperties" . nil)
 
     ;; ---- Other watched commands ------------------------------------------
 
@@ -220,7 +203,6 @@
     ;;      ("GUARD_GROWTH"      . "drawing-growth")
     ;;      ("GUARD_CLEANUP"     . "drawing-cleanup")           ; cleanup offered on save
     ;;      ("GUARD_COORD_UNITS" . "coordinate-system-units")   ; save check
-    ;;      ("STD_LABEL_OVERRIDE" . "label-text-overrides")
     ;;      ("STD_COORD_UNITS"   . "coordinate-system-units")
     ;;      ("BACKUP"            . "backup-copies")
     ;;      ;; Control Center

@@ -582,7 +582,6 @@
 (defun c:CUTONCE-GUARD-LOG ( )
   (coguard:log (strcat "Health history: " (cohealth:path)))
   (coguard:log (strcat "Xref detail:    " (cohealth:xrefs-path)))
-  (coguard:log (strcat "Label detail:   " (cohealth:labels-path)))
   (coguard:log (strcat "Backup copies:  " (cutonce:log-file "Backups.csv") "  (copies in " (cutonce:backup-dir) ")"))
   (coguard:log (strcat "Event log:      " (cutonce:events-path)))
   (coguard:log (strcat "Opened log:     " (coguard:opened-path)))

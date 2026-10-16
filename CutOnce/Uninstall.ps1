@@ -9,7 +9,7 @@
     CUTONCE_LOGSUBFOLDER / CUTONCE_BACKUPDIR variables. -RemoveLogs never deletes a network,
     mapped-drive or per-person-subfolder log folder, which may hold the
     whole team's logs.
-    Logs (Health.csv, Xrefs.csv, Labels.csv, Events.csv, Opened.csv,
+    Logs (Health.csv, Xrefs.csv, Events.csv, Opened.csv,
     Backups.csv) are kept unless -RemoveLogs is given. Backup copies of
     drawings are never deleted. Each designer's Control Center choices are
     removed.
@@ -53,9 +53,6 @@ foreach ($target in 'User', 'Machine') {
             Remove-Item (Join-Path $instDir $f) -Force -ErrorAction SilentlyContinue
         }
         Remove-Item (Join-Path $instDir 'src') -Recurse -Force -ErrorAction SilentlyContinue
-        foreach ($sub in 'net48', 'net8') {
-            Remove-Item (Join-Path $instDir $sub) -Recurse -Force -ErrorAction SilentlyContinue
-        }
         Write-Host "Removed CutOnce files from $instDir"
         Write-Host '  Remember to delete its (load ...) line from acaddoc.lsp.'
     }

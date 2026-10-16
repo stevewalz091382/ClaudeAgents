@@ -6,15 +6,13 @@
 ;;; Health.csv  one row per check:
 ;;;   who / when / which drawing / what triggered it (Save, Open, Audit,
 ;;;   Manual), table counts, Civil 3D object counts, style count, ByLayer
-;;;   counts, xref counts (broken, unloaded, not at 0,0,0), Civil 3D labels
-;;;   with typed-over text, and drawing settings (units, scale, coordinate
+;;;   counts, xref counts (broken, unloaded, not at 0,0,0), and drawing
+;;;   settings (units, scale, coordinate
 ;;;   system and how many coordinate / units problems were found).
 ;;; Xrefs.csv   one row per xref per Health.csv row: path, attach/overlay,
 ;;;   loaded/unloaded/not found, nested, insertion point, rotation, scale and
 ;;;   whether it is at 0,0,0, and the xref's insertion units and coordinate
 ;;;   system.
-;;; Labels.csv  one row per label type and style per Health.csv row: how many
-;;;   labels, how many have typed-over text, and their handles.
 ;;;
 ;;; The latest state of each drawing is its most recent row; filter Health.csv
 ;;; on DrawingPath and sort by Timestamp.
@@ -45,7 +43,6 @@
 
 (defun cohealth:path ( )      (cutonce:log-file "Health.csv"))
 (defun cohealth:xrefs-path ( ) (cutonce:log-file "Xrefs.csv"))
-(defun cohealth:labels-path ( ) (cutonce:log-file "Labels.csv"))
 
 ;; ---------------------------------------------------------------------------
 ;; Columns
@@ -60,8 +57,7 @@
     "SectionViews" "Sections" "Hatches" "TextObjects"
     "ColorNotByLayer" "LinetypeNotByLayer" "ObjectsNotByLayer"
     "BlockDefColorNotByLayer" "BlockDefLinetypeNotByLayer"
-    "Xrefs" "XrefsBroken" "XrefsUnloaded" "XrefsOffOrigin"
-    "Labels" "LabelsOverridden" "LabelsUnchecked"))
+    "Xrefs" "XrefsBroken" "XrefsUnloaded" "XrefsOffOrigin"))
 
 (setq *cohealth:setting-columns*
   '("AngularUnits" "InsUnits" "DrawingScale"
@@ -72,7 +68,7 @@
   '("Layers" "Linetypes" "Blocks" "Layouts" "Xrefs" "RegApps" "Styles"
     "Alignments" "Profiles" "ProfileViews" "Surfaces" "Corridors" "Assemblies"
     "PipeNetworks" "PressurePipeNetworks" "SectionViews" "Sections"
-    "Hatches" "TextObjects" "LabelsOverridden"))
+    "Hatches" "TextObjects"))
 
 ;; Administrator-defined count columns ("HealthExtraCounts"), minus any
 ;; that would repeat a built-in column: ((Column . wildcard) ...)
@@ -92,9 +88,6 @@
 (setq *cohealth:xref-header*
   (strcat "Timestamp,Trigger,User,DrawingPath,DrawingName,XrefName,XrefPath,Type,Status,"
           "Nested,Instances,InsertX,InsertY,InsertZ,Rotation,Scale,AtOrigin,XrefInsUnits,XrefCoordinateSystem"))
-
-(setq *cohealth:labels-header*
-  "Timestamp,Trigger,User,DrawingPath,DrawingName,LabelType,LabelStyle,Labels,TextOverridden,NotChecked,OverriddenHandles")
 
 (defun cohealth:growth-pct ( / v)
   (setq v (cutonce:cfg "GuardGrowthWarnPct" 20))
@@ -285,20 +278,6 @@
     (costd:fact facts "xrefdetail"))
 )
 
-;; One row per label type and style: ((type style total overridden unchecked handles) ...)
-(defun cohealth:label-rows (trigger drawpath drawname facts / ts user)
-  (setq ts (cutonce:timestamp) user (cutonce:user))
-  (mapcar
-    (function (lambda (r)
-      (cutonce:csv-row
-        (list ts trigger user drawpath drawname
-              (nth 0 r) (nth 1 r) (nth 2 r)
-              (if (= (nth 4 r) (nth 2 r)) "n/a" (nth 3 r))
-              (nth 4 r)
-              (cutonce:join (reverse (nth 5 r)) " ")))))
-    (costd:fact facts "labeldetail"))
-)
-
 ;; Writes the Health.csv row (and Xrefs.csv rows when that log is on).
 ;; force = T writes even when logging is switched off (explicit CUTONCE-AUDIT).
 (defun cohealth:write (doc facts trigger force / drawpath drawname)
@@ -309,10 +288,6 @@
   (if (or force (cutonce:log-on-p "LogXrefs"))
     (cutonce:append-lines (cohealth:xrefs-path) *cohealth:xref-header*
                        (cohealth:xref-rows trigger drawpath drawname facts))
-  )
-  (if (or force (cutonce:log-on-p "LogLabels"))
-    (cutonce:append-lines (cohealth:labels-path) *cohealth:labels-header*
-                       (cohealth:label-rows trigger drawpath drawname facts))
   )
 )
 

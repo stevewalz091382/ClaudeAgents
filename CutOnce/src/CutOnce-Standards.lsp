@@ -7,8 +7,6 @@
 ;;;   - the same two checks inside named block definitions (optional)
 ;;;   - xrefs: total, broken (file not found), unloaded
 ;;;   - xref inserts in Model Space that are not at 0,0,0
-;;;   - Civil 3D labels whose text has been typed over (overridden), so they
-;;;     no longer update with the design
 ;;;   - coordinate system and insertion units: none assigned, different from
 ;;;     the project's, or different from an xref's
 ;;;
@@ -383,143 +381,6 @@
 )
 
 ;; ---------------------------------------------------------------------------
-;; Civil 3D labels with typed-over text
-;;
-;; A label whose text component has been typed over keeps that text when the
-;; design changes. Civil 3D labels expose no override flag to AutoLISP (no
-;; property-system or COM property), but the Civil 3D .NET API has one
-;; (Label.IsTextComponentOverriden). So:
-;;   1. when the optional CutOnceLabels.dll helper is loaded, its
-;;      (cutonce-label-overrides ename) answers for each label;
-;;   2. otherwise each label type is asked for the properties in
-;;      "LabelOverrideProperties" (CutOnce-Config.lsp) through the property
-;;      system (getpropertyvalue) and COM; a property that reads True,
-;;      non-zero or a non-empty string means overridden.
-;; A label that neither can answer for is counted as "unchecked", never as
-;; clean. CUTONCE-LABEL-PROBE shows what a selected label exposes.
-;; ---------------------------------------------------------------------------
-
-(setq *costd:label-default-props*
-  '("IsTextOverridden" "TextOverridden" "HasTextOverride" "IsLabelTextOverridden"
-    "TextComponentOverridden" "LabelTextOverridden" "TextOverride" "OverrideText"))
-
-(defun costd:label-props ( / v)
-  (setq v (cutonce:cfg "LabelOverrideProperties" nil))
-  (if (and v (listp v)) (vl-remove-if-not 'cutonce:nonblank v) *costd:label-default-props*)
-)
-
-(defun costd:label-wildcard ( )
-  (strcase (cond ((cutonce:nonblank (cutonce:cfg "LabelObjectNames" nil))) ("AECCDB*LABEL*")))
-)
-
-;; (value) when the property can be read, nil when it cannot.
-(defun costd:read-prop (obj en name / r)
-  (setq r (if en (vl-catch-all-apply 'getpropertyvalue (list en name))))
-  (if (and en (not (vl-catch-all-error-p r)))
-    (list r)
-    (progn
-      (setq r (vl-catch-all-apply 'vlax-get-property (list obj name)))
-      (if (not (vl-catch-all-error-p r)) (list r)))
-  )
-)
-
-(defun costd:override-value-p (v)
-  (cond
-    ((eq v :vlax-true) T)
-    ((eq v :vlax-false) nil)
-    ((= (type v) 'VARIANT) (costd:override-value-p (vlax-variant-value v)))
-    ((= (type v) 'STR) (if (cutonce:nonblank v) T))
-    ((numberp v) (/= v 0))
-    ((eq v T) T)
-  )
-)
-
-;; ObjectName -> the property that answers for it, or nil when none does.
-(setq *costd:label-prop-cache* nil)
-
-;; T when CutOnceLabels.dll is loaded (its LispFunctions are EXRXSUBR).
-(defun costd:net-labels-p ( )
-  (if (member (type cutonce-label-overrides) '(EXRXSUBR SUBR)) T)
-)
-
-;; Typed-over text components counted by the .NET helper, or nil.
-(defun costd:net-label-count (en / r)
-  (if (and en (costd:net-labels-p))
-    (progn
-      (setq r (vl-catch-all-apply 'cutonce-label-overrides (list en)))
-      (if (numberp r) r)))
-)
-
-;; 'yes, 'no, or nil (cannot be checked).
-(defun costd:label-override-state (obj oname en / cached val props p n)
-  (setq cached (assoc oname *costd:label-prop-cache*))
-  (cond
-    ((setq n (costd:net-label-count en)) (if (> n 0) 'yes 'no))
-    ((and cached (null (cdr cached))) nil)
-    (cached
-     (if (setq val (costd:read-prop obj en (cdr cached)))
-       (if (costd:override-value-p (car val)) 'yes 'no)))
-    (T
-     (setq props (costd:label-props))
-     (while (and props (not val))
-       (setq p (car props) props (cdr props))
-       (setq val (costd:read-prop obj en p))
-     )
-     (setq *costd:label-prop-cache* (cons (cons oname (if val p)) *costd:label-prop-cache*))
-     (if val (if (costd:override-value-p (car val)) 'yes 'no))
-    )
-  )
-)
-
-;; Name of a style object, or nil. (and ...) returns T, not the name, so
-;; the name is returned explicitly.
-(defun costd:style-object-name (st)
-  (if (= (type st) 'VLA-OBJECT) (cutonce:str-prop st 'Name))
-)
-
-(defun costd:label-style (obj en / st r)
-  (cond
-    ;; Civil 3D labels: the COM LabelStyle object
-    ((cutonce:nonblank (costd:style-object-name (cutonce:prop obj 'LabelStyle))))
-    ((cutonce:nonblank (cutonce:str-prop obj 'StyleName)))
-    ((cutonce:nonblank (costd:style-object-name (cutonce:prop obj 'Style))))
-    ((and en
-          (setq r (vl-catch-all-apply 'getpropertyvalue (list en "StyleName")))
-          (= (type r) 'STR)
-          (cutonce:nonblank r))
-     r)
-    ("(style not readable)")
-  )
-)
-
-;; "AeccDbSurfaceElevationLabel" -> "SurfaceElevationLabel"
-(defun costd:label-type (oname)
-  (if (wcmatch (strcase oname) "AECCDB*") (substr oname 7) oname)
-)
-
-;; Called from costd:tally for each label; updates its caller's counters.
-;; labels: ((type style total overridden unchecked handles) ...)
-(defun costd:tally-label (obj oname / en state ltype lstyle row handle)
-  (setq en (vl-catch-all-apply 'vlax-vla-object->ename (list obj)))
-  (if (/= (type en) 'ENAME) (setq en nil))
-  (setq state (costd:label-override-state obj oname en)
-        ltype (costd:label-type oname)
-        lstyle (costd:label-style obj en)
-        handle (cond ((cutonce:str-prop obj 'Handle)) ("")))
-  (setq labelN (1+ labelN))
-  (cond ((eq state 'yes) (setq labelOvN (1+ labelOvN)))
-        ((null state) (setq labelUnN (1+ labelUnN))))
-  (setq row (vl-member-if (function (lambda (r) (and (= (car r) ltype) (= (cadr r) lstyle)))) labels))
-  (setq row (if row (car row) (list ltype lstyle 0 0 0 nil)))
-  (setq labels (cons (list ltype lstyle
-                           (1+ (nth 2 row))
-                           (+ (nth 3 row) (if (eq state 'yes) 1 0))
-                           (+ (nth 4 row) (if state 0 1))
-                           (if (eq state 'yes) (cons handle (nth 5 row)) (nth 5 row)))
-                     (vl-remove row labels)))
-)
-
-;; ---------------------------------------------------------------------------
 ;; Model Space and layouts: one pass
 ;; ---------------------------------------------------------------------------
 
@@ -529,9 +390,6 @@
   (setq oname (cutonce:object-name obj))
   (if (or countall (= oname "AcDbBlockReference") (wcmatch (strcase oname) "AECC*"))
     (setq objcounts (costd:bump objcounts oname))
-  )
-  (if (wcmatch (strcase oname) labelwc)
-    (vl-catch-all-apply 'costd:tally-label (list obj oname))
   )
   (setq ed (costd:ent-data obj))
   (setq flags (costd:bylayer-flags obj ed))
@@ -557,14 +415,10 @@
 ;;   ("Hatches" . n) ("TextObjects" . n)      Model Space only
 ;;   ("ColorNotByLayer" . n) ("LinetypeNotByLayer" . n) ("ObjectsNotByLayer" . n)
 ;;   ("inserts" . ((name point rotation scale) ...))   xref inserts, Model Space
-;;   ("Labels" . n) ("LabelsOverridden" . n or "n/a") ("LabelsUnchecked" . n)
-;;   ("labeldetail" . ((type style total overridden unchecked handles) ...))
-(defun costd:scan-spaces (doc / xrefnames spaces blk objcounts hatchN textN colN ltN eitherN inserts countall
-                                labelwc labelN labelOvN labelUnN labels)
+(defun costd:scan-spaces (doc / xrefnames spaces blk objcounts hatchN textN colN ltN eitherN inserts countall)
   (setq xrefnames (costd:xref-block-names doc)
         objcounts nil hatchN 0 textN 0 colN 0 ltN 0 eitherN 0 inserts nil
-        countall (if (cutonce:health-extra-counts) T)
-        labelwc (costd:label-wildcard) labelN 0 labelOvN 0 labelUnN 0 labels nil)
+        countall (if (cutonce:health-extra-counts) T))
   (setq spaces (list (cons (vla-get-ModelSpace doc) T)))
   ;; the Layouts collection includes "Model"; skip it so Model Space is read once
   (vl-catch-all-apply
@@ -583,11 +437,6 @@
         (cons "ColorNotByLayer" colN)
         (cons "LinetypeNotByLayer" ltN)
         (cons "ObjectsNotByLayer" eitherN)
-        (cons "Labels" labelN)
-        ;; n/a when there are labels but none could be checked
-        (cons "LabelsOverridden" (if (and (> labelN 0) (= labelUnN labelN)) "n/a" labelOvN))
-        (cons "LabelsUnchecked" labelUnN)
-        (cons "labeldetail" (vl-sort labels (function (lambda (a b) (> (nth 3 a) (nth 3 b))))))
         (cons "inserts" (reverse inserts)))
 )
 
@@ -691,30 +540,26 @@
 ;; is on). The result is always printed on the command line.
 ;; ---------------------------------------------------------------------------
 
-(defun costd:show-report (facts drawname manual / wantBL wantXS wantXO wantLB wantCU issBL issXS issXO issLB issCU
-                                                   issues lines msg bdc links lov over src)
+(defun costd:show-report (facts drawname manual / wantBL wantXS wantXO wantCU issBL issXS issXO issCU
+                                                   issues lines msg bdc links src)
   (setq wantBL (or manual (cutonce:on-p "StdByLayer"))
         wantXS (or manual (cutonce:on-p "StdXrefStatus"))
         wantXO (or manual (cutonce:on-p "StdXrefOrigin"))
-        wantLB (or manual (cutonce:on-p "StdLabelOverrides"))
         wantCU (or manual (cutonce:on-p "StdCoordUnits"))
-        bdc    (costd:fact facts "BlockDefColorNotByLayer")
-        lov    (costd:fact facts "LabelsOverridden"))
+        bdc    (costd:fact facts "BlockDefColorNotByLayer"))
   (setq issBL (and wantBL
                    (or (> (costd:fact facts "ObjectsNotByLayer") 0)
                        (and (numberp bdc)
                             (> (+ bdc (costd:fact facts "BlockDefLinetypeNotByLayer")) 0))))
         issXS (and wantXS (> (+ (costd:fact facts "XrefsBroken") (costd:fact facts "XrefsUnloaded")) 0))
         issXO (and wantXO (> (costd:fact facts "XrefsOffOrigin") 0))
-        issLB (and wantLB (numberp lov) (> lov 0))
         issCU (and wantCU (> (costd:fact facts "CoordUnitIssues") 0)))
-  (setq issues (or issBL issXS issXO issLB issCU))
+  (setq issues (or issBL issXS issXO issCU))
   ;; one Learn More button per problem found, plus how to read the check
   (setq links (list (cons "Reading this check..." "STANDARDS_OPEN")))
   (if issBL (setq links (append links (list (cons "Not ByLayer..." "STD_BYLAYER")))))
   (if issXS (setq links (append links (list (cons "Broken / unloaded xrefs..." "STD_XREF_STATUS")))))
   (if issXO (setq links (append links (list (cons "Xrefs not at 0,0,0..." "STD_XREF_ORIGIN")))))
-  (if issLB (setq links (append links (list (cons "Typed-over labels..." "STD_LABEL_OVERRIDE")))))
   (if issCU (setq links (append links (list (cons "Coordinates / units..." "STD_COORD_UNITS")))))
   (setq lines (list (if issues "WARNING - drawing standards check" "Drawing standards check")
                     drawname))
@@ -748,24 +593,6 @@
         (mapcar (function (lambda (p) (strcat "      " (car p) " at " (costd:pt-text (cadr p)))))
                 (costd:fact facts "offorigin")))))
   )
-  (if wantLB
-    (progn
-      (setq over (vl-remove-if-not (function (lambda (r) (> (nth 3 r) 0))) (costd:fact facts "labeldetail")))
-      (setq lines (append lines
-        (list "" "CIVIL 3D LABELS WITH TYPED-OVER TEXT (will not update with the design)"
-              (strcat "   Labels:                 " (costd:num (costd:fact facts "Labels")))
-              (strcat "   Text overridden:        " (costd:num lov)))
-        (mapcar (function (lambda (r) (strcat "      " (itoa (nth 3 r)) " x " (car r) "  -  style: " (cadr r))))
-                over)
-        (if (> (costd:fact facts "LabelsUnchecked") 0)
-          (list (strcat "   Could not be checked:   " (costd:num (costd:fact facts "LabelsUnchecked"))
-                        (if (costd:net-labels-p)
-                          "  (not standard labels)"
-                          "  (CAD admin: install CutOnceLabels.dll - see CUTONCE-LABEL-PROBE)"))))
-        (if (and over (cutonce:log-on-p "LogLabels"))
-          (list (strcat "   Each label is listed in " (cutonce:log-file "Labels.csv"))))))
-    )
-  )
   (if wantCU
     (setq lines (append lines
       (list "" "COORDINATE SYSTEM AND UNITS"
@@ -786,7 +613,6 @@
               "  broken xrefs " (costd:num (costd:fact facts "XrefsBroken"))
               "  unloaded xrefs " (costd:num (costd:fact facts "XrefsUnloaded"))
               "  xrefs off 0,0,0 " (costd:num (costd:fact facts "XrefsOffOrigin"))
-              "  labels overridden " (costd:num lov)
               "  coordinate/unit issues " (costd:num (costd:fact facts "CoordUnitIssues")))))
   (if (or manual issues (cutonce:on-p "StdAlwaysShow"))
     (cutonce:notice-links msg links)
@@ -812,44 +638,9 @@
 
 (defun c:CUTONCE-CHECK ( ) (costd:check-now))
 
-;; For the CAD administrator: shows which property tells whether a label's
-;; text has been typed over, so it can be added to LabelOverrideProperties.
-(defun c:CUTONCE-LABEL-PROBE ( / sel en obj oname val)
-  (setq sel (entsel "\nSelect a Civil 3D label whose text you have typed over: "))
-  (cond
-    ((not sel) (costd:log "Nothing selected."))
-    (T
-     (setq en (car sel) obj (vlax-ename->vla-object en) oname (cutonce:object-name obj))
-     (costd:log (strcat "ObjectName: " oname
-                        (if (wcmatch (strcase oname) (costd:label-wildcard)) "" "  (not matched by LabelObjectNames)")))
-     (princ (strcat "\n  Style: " (costd:label-style obj en)))
-     (princ (strcat "\n  .NET helper (CutOnceLabels.dll): "
-                    (if (costd:net-labels-p)
-                      (strcat "loaded - " (vl-princ-to-string (vl-catch-all-apply 'cutonce-label-api (list en))))
-                      "NOT LOADED - typed-over text can only be detected with it (see dotnet\\CutOnceLabels\\README.md)")))
-     (princ "\n  Properties CutOnce asks for (LabelOverrideProperties):")
-     (foreach p (costd:label-props)
-       (setq val (costd:read-prop obj en p))
-       (princ (strcat "\n    " p ": " (if val (vl-prin1-to-string (car val)) "not available")))
-     )
-     (setq *costd:label-prop-cache* (vl-remove (assoc oname *costd:label-prop-cache*) *costd:label-prop-cache*))
-     (princ "\n\n  Every property this label exposes (property system):")
-     (vl-catch-all-apply 'dumpallproperties (list en))
-     (princ "\n\n  COM properties:")
-     (vl-catch-all-apply 'vlax-dump-object (list obj))
-     (princ (strcat "\n\n  With the .NET helper loaded, the \"typed over\" count above is what CutOnce uses."
-                    "\n  Without it: run this on a typed-over label and on an unchanged one of the same type;"
-                    "\n  a property that reads True / 1 / the typed text on the first and False / 0 / empty"
-                    "\n  on the second can be added to LabelOverrideProperties in"
-                    "\n  " (cutonce:home) "CutOnce-Config.lsp (surface elevation labels expose none)."))
-    )
-  )
-  (princ)
-)
-
 (defun c:CUTONCE-CHECK-STATUS ( )
   (costd:log "Standards check settings (change in the Control Center: CUTONCE):")
-  (foreach k '("StdCheckOnOpen" "StdByLayer" "StdXrefStatus" "StdXrefOrigin" "StdLabelOverrides" "StdCoordUnits"
+  (foreach k '("StdCheckOnOpen" "StdByLayer" "StdXrefStatus" "StdXrefOrigin" "StdCoordUnits"
                "StdAlwaysShow" "StdScanBlocks")
     (princ (strcat "\n  " (cutonce:setting-label k) ": " (if (cutonce:on-p k) "on" "off")
                    (if (cutonce:locked-p k) "  (set by CAD admin)" "")))

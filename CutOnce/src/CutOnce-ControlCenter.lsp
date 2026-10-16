@@ -18,12 +18,10 @@
 ;;;                            xrefs not at 0,0,0, coordinate system / units,
 ;;;                            backup copy before cleanup, backup folder
 ;;;   Standards check on open  ByLayer, xref status (broken / unloaded),
-;;;                            xrefs not at 0,0,0, typed-over labels,
-;;;                            coordinate system / units, always show,
-;;;                            block defs
+;;;                            xrefs not at 0,0,0, coordinate system /
+;;;                            units, always show, block defs
 ;;;   Logging                  master switch, then Health.csv on save / on
-;;;                            open, Xrefs.csv, Events.csv, Opened.csv,
-;;;                            Labels.csv
+;;;                            open, Xrefs.csv, Events.csv, Opened.csv
 ;;;
 ;;; Commands:
 ;;;   CUTONCE     the dialog
@@ -52,9 +50,9 @@
   (list
     (append '("CommandWarnings" "every" "once") (cocc:cmd-keys))
     '("GuardGrowth" "GuardCleanup")
-    '("StdCheckOnOpen" "StdByLayer" "StdXrefStatus" "StdXrefOrigin" "StdLabelOverrides" "StdCoordUnits"
+    '("StdCheckOnOpen" "StdByLayer" "StdXrefStatus" "StdXrefOrigin" "StdCoordUnits"
       "StdAlwaysShow")
-    '("LogEnabled" "LogHealthOnSave" "LogHealthOnOpen" "LogXrefs" "LogEvents" "LogOpened" "LogLabels")))
+    '("LogEnabled" "LogHealthOnSave" "LogHealthOnOpen" "LogXrefs" "LogEvents" "LogOpened")))
 
 (defun cocc:default-freq ( ) (cutonce:default-warn-mode))
 
@@ -107,11 +105,11 @@
         "      : text { key = \"backupdir\"; width = 60; }"
         "      : button { key = \"openbackups\"; label = \"Open backup folder\"; fixed_width = true; }"))
     (cocc:group-lines "Standards check when a drawing opens"
-      '("StdCheckOnOpen" "StdByLayer" "StdXrefStatus" "StdXrefOrigin" "StdLabelOverrides" "StdCoordUnits"
+      '("StdCheckOnOpen" "StdByLayer" "StdXrefStatus" "StdXrefOrigin" "StdCoordUnits"
         "StdAlwaysShow" "StdScanBlocks")
       nil)
     (cocc:group-lines "Logging"
-      '("LogEnabled" "LogHealthOnSave" "LogHealthOnOpen" "LogXrefs" "LogEvents" "LogOpened" "LogLabels")
+      '("LogEnabled" "LogHealthOnSave" "LogHealthOnOpen" "LogXrefs" "LogEvents" "LogOpened")
       (list
         "      : text { key = \"logdir\"; width = 60; }"
         "      : button { key = \"openlogs\"; label = \"Open log folder\"; fixed_width = true; }"))
