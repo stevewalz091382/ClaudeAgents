@@ -1183,12 +1183,38 @@
 
 ;; The same with action buttons. Returns the button pressed (see
 ;; cutonce:notice-dialog), or nil when the frequency choice hid the warning.
+;; Warnings that do not offer "Save a copy": advisories and edits that are
+;; quick to undo, where a backup copy is not worth the extra button.
+;; Every other warning offers it.
+(setq *cutonce:no-copy-warnings*
+  '("GUARD_TEXT"            ; TEXT / DTEXT / MTEXT tip
+    "GUARD_XREF_MOVED"      ; MOVE / COPY of an xref
+    "GUARD_EXPLODE_BLOCKS"  ; EXPLODE of blocks and hatches only (no Civil 3D objects)
+    "GUARD_ATTRIB"          ; EXPLODE / BURST of attributed blocks
+    "GUARD_REFEDIT"         ; REFEDIT advisory
+    "GUARD_REFCLOSE"))      ; REFCLOSE advisory
+
+;; "GUARD_TEXT:MTEXT" / "GUARD_GROWTH|A.dwg" -> "GUARD_TEXT" / "GUARD_GROWTH"
+(defun cutonce:warning-base (key / i)
+  (setq key (cutonce:warning-name key))
+  (if (setq i (vl-string-search ":" key)) (substr key 1 i) key)
+)
+
+(defun cutonce:copy-offered-p (key)
+  (not (member (cutonce:warning-base key) *cutonce:no-copy-warnings*))
+)
+
 (defun cutonce:notice-once-actions (key text links actions / r)
   (if (not (cutonce:warn-due-p key)) (setq *cutonce:notice-kind* nil))
   (if (cutonce:warn-due-p key)
     (progn
-      (setq r (cutonce:warning-dialog (strcat text "\n\n" (cutonce:freq-note)) links actions
-                                      (strcat "Before going ahead: " (cutonce:warning-name key))))
+      (setq text (strcat text "\n\n" (cutonce:freq-note)))
+      (setq r (if (cutonce:copy-offered-p key)
+                (cutonce:warning-dialog text links actions
+                                        (strcat "Before going ahead: " (cutonce:warning-name key)))
+                (progn
+                  (if (not *cutonce:notice-kind*) (setq *cutonce:notice-kind* 'warning))
+                  (cutonce:notice-dialog text links actions nil))))
       (cutonce:mark-warned key)
       r
     )

@@ -168,7 +168,11 @@
              (mapcar (function (lambda (x)
                        (strcat (coguard:friendly-name (car x)) " " (itoa (cadr x)) "->" (itoa (caddr x)) "  ")))
                      lost)))
-         (cutonce:notice-once "GUARD_EXPLODE"
+         ;; Civil 3D objects lost: GUARD_EXPLODE (offers Save a copy);
+         ;; only blocks and hatches: GUARD_EXPLODE_BLOCKS (no copy button)
+         (cutonce:notice-once
+           (if (vl-some (function (lambda (x) (wcmatch (strcase (car x)) "AECC*"))) lost)
+             "GUARD_EXPLODE" "GUARD_EXPLODE_BLOCKS")
            (strcat
              "CutOnce Guard: EXPLODE just removed or converted an object.\n\n"
              (apply 'strcat
