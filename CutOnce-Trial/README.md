@@ -52,7 +52,7 @@ Command-line version, for scripts and toolbar buttons: `-CUTONCE`. Type `WarnEXP
 
 ## Install
 
-Requirements: Civil 3D 2021 or later on 64-bit Windows.
+Requirements: Civil 3D 2024 or later on 64-bit Windows.
 
 1. Close Civil 3D.
 2. Unzip the trial and double-click **Install.cmd**.

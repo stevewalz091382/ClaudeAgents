@@ -13,10 +13,10 @@
 
   <CompanyDetails Name="Stephen Walz" Url="" Email="stevewalz@hotmail.com" />
 
-  <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R24.0" />
+  <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R24.3" />
 
   <Components Description="CutOnce Trial AutoLISP application">
-    <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R24.0" />
+    <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R24.3" />
     <ComponentEntry
         AppName="CutOnce"
         Version="2.0.0"
