@@ -389,7 +389,7 @@
       "Choosing Save writes your changes into the external drawing now, for\n"
       "everyone who references it. Choose Discard if you were only looking."
     )
-    "GUARD_REFEDIT"
+    "GUARD_REFCLOSE"
   )
 )
 

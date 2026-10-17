@@ -133,7 +133,9 @@ Using any of these on an alignment, profile or surface shows the impact warning:
 
 ## Learn More links
 
-Every CutOnce warning has a **Learn More** button that opens its own section of [Civil 3D Warnings Explained](https://designtovisualization.com/kb-c3d-and-cutonce-assistant/). The warning stays open, and the link is also printed on the command line.
+Every CutOnce warning has a **Learn More** button that opens [Civil 3D Warnings Explained](https://designtovisualization.com/kb-c3d-and-cutonce-assistant/) scrolled to that warning's article. The warning stays open, and the link is also printed on the command line.
+
+Each link names the article's section and, on this page, also highlights the article's "Learn More topic:" line (a text fragment, e.g. `#drawing-growth:~:text=Learn%20More%20topic%3A%20GUARD_GROWTH`). Edge and Chrome scroll straight to that line and highlight it, even if ads or images shift the page while it loads; other browsers jump to the section. `LearnMoreHighlight` set to `nil` gives plain section links.
 
 | Warning | Topic | Section |
 |---|---|---|
@@ -150,7 +152,8 @@ Every CutOnce warning has a **Learn More** button that opens its own section of 
 | Guard: EXPLODE / BURST converted attributed blocks | `GUARD_ATTRIB` | `#explode-attributed-blocks` |
 | Guard: xref bound | `GUARD_XREF_BIND` | `#xref-bind` |
 | Guard: xref moved or copied | `GUARD_XREF_MOVED` | `#xref-moved` |
-| Guard: REFEDIT / REFCLOSE | `GUARD_REFEDIT` | `#refedit` |
+| Guard: REFEDIT | `GUARD_REFEDIT` | `#refedit` |
+| Guard: REFCLOSE | `GUARD_REFCLOSE` | `#refclose` (the REFCLOSE example in the REFEDIT article) |
 | Guard: promoting a data shortcut reference | `GUARD_PROMOTE` | `#promote-reference` |
 | Guard: TEXT / DTEXT / MTEXT tip | `GUARD_TEXT` | `#text-instead-of-labels` |
 | Guard (on save): unusual growth | `GUARD_GROWTH` | `#drawing-growth` |
@@ -161,7 +164,7 @@ Every CutOnce warning has a **Learn More** button that opens its own section of 
 
 The standards check can find several problems at once, so its dialog shows one button per problem found (for example "Not ByLayer..." and "Broken / unloaded xrefs..."), plus "Reading this check...".
 
-The page address and sections are set by `LearnMoreUrl` and `LearnMoreAnchors` in `CutOnce-Config.lsp`. The 2.1 sections (`#drawing-cleanup`, `#coordinate-system-units`, `#backup-copies`) need adding to the knowledge-base page; until they exist, those buttons open the top of the page.
+The page address and sections are set by `LearnMoreUrl` and `LearnMoreAnchors` in `CutOnce-Config.lsp`. Every section above exists on the knowledge-base page. With your own `LearnMoreUrl` or `LearnMoreAnchors`, links use plain sections, no highlighting.
 
 ## Cleanup and backup copies
 

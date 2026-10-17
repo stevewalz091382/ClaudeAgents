@@ -860,8 +860,8 @@
     ("GUARD_ATTRIB"      . "explode-attributed-blocks")
     ("GUARD_XREF_BIND"   . "xref-bind")
     ("GUARD_XREF_MOVED"  . "xref-moved")
-    ("GUARD_XREF_ORIGIN" . "xref-not-at-origin")
     ("GUARD_REFEDIT"     . "refedit")
+    ("GUARD_REFCLOSE"    . "refclose")          ; the REFCLOSE example in the REFEDIT article
     ("GUARD_PROMOTE"     . "promote-reference")
     ("GUARD_TEXT"        . "text-instead-of-labels")
     ("GUARD_GROWTH"      . "drawing-growth")
@@ -872,6 +872,35 @@
     ("CONTROL_CENTER"    . "control-center")
     ("LINK_MAP"          . "link-map")))
 
+;; Percent-encoding for a URL fragment: letters, digits and _ . ~ stay,
+;; everything else (spaces, colons, hyphens, commas) becomes %XX.
+(defun cutonce:url-encode (s / hex)
+  (setq hex "0123456789ABCDEF")
+  (apply 'strcat
+    (mapcar (function (lambda (c)
+              (if (or (<= 48 c 57) (<= 65 c 90) (<= 97 c 122) (member c '(95 46 126)))
+                (chr c)
+                (strcat "%" (substr hex (1+ (/ c 16)) 1) (substr hex (1+ (rem c 16)) 1)))))
+            (vl-string->list s)))
+)
+
+;; Topics whose section has no "Learn More topic:" line of their own: the
+;; REFCLOSE example (inside the REFEDIT article) and the foundation article.
+(setq *cutonce:kb-no-text* '("GUARD_REFCLOSE" "GENERAL"))
+
+;; On the CutOnce knowledge base, every article lists "Learn More topic:
+;; <TOPIC>" once. A text fragment (#anchor:~:text=...) makes Edge and Chrome
+;; scroll to that line and highlight it, even when ads or images load late
+;; and shift the page; a browser that cannot use it falls back to #anchor.
+;; Only added for the built-in page, and only while LearnMoreHighlight is on.
+(defun cutonce:kb-text-directive (topic base)
+  (if (and (cutonce:cfg "LearnMoreHighlight" T)
+           (= (strcase base) (strcase *cutonce:kb-default-url*))
+           (not (member topic *cutonce:kb-no-text*)))
+    (strcat ":~:text=" (cutonce:url-encode (strcat "Learn More topic: " topic)))
+    "")
+)
+
 (defun cutonce:kb-url (topic / base i anchors pair anchor)
   (setq base (cond ((cutonce:nonblank (cutonce:cfg "LearnMoreUrl" nil)))
                    (*cutonce:kb-default-url*)))
@@ -880,7 +909,8 @@
   (setq pair (if (and anchors (listp anchors)) (assoc topic anchors)))
   (setq anchor (if pair (cdr pair) (cdr (assoc topic *cutonce:kb-default-anchors*))))
   (if (cutonce:nonblank anchor)
-    (strcat base "#" (vl-string-left-trim "#" anchor))
+    (strcat base "#" (vl-string-left-trim "#" anchor)
+            (if pair "" (cutonce:kb-text-directive topic base)))
     base
   )
 )

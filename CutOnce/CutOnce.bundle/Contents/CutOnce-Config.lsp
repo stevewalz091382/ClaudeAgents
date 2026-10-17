@@ -187,6 +187,12 @@
     ;;
     ;; ("LearnMoreUrl" . "https://designtovisualization.com/kb-c3d-and-cutonce-assistant/")
     ;;
+    ;; On the built-in page each link also highlights the article's
+    ;; "Learn More topic:" line, so Edge and Chrome scroll exactly to it even
+    ;; when the page shifts while loading (other browsers use the section).
+    ;; Set nil for plain section links.
+    ;; ("LearnMoreHighlight" . T)
+    ;;
     ;; Section of that page for each warning (the part after "#"), matching
     ;; the page's "Linking warnings to articles" table (#link-map). Set an
     ;; entry to "" to open the top of the page. A topic left out uses the
@@ -211,8 +217,8 @@
     ;;      ("GUARD_ATTRIB"      . "explode-attributed-blocks")
     ;;      ("GUARD_XREF_BIND"   . "xref-bind")
     ;;      ("GUARD_XREF_MOVED"  . "xref-moved")
-    ;;      ("GUARD_XREF_ORIGIN" . "xref-not-at-origin")
-    ;;      ("GUARD_REFEDIT"     . "refedit")                   ; REFEDIT and REFCLOSE
+    ;;      ("GUARD_REFEDIT"     . "refedit")                   ; REFEDIT
+    ;;      ("GUARD_REFCLOSE"    . "refclose")                  ; REFCLOSE (its example in the REFEDIT article)
     ;;      ("GUARD_PROMOTE"     . "promote-reference")
     ;;      ("GUARD_TEXT"        . "text-instead-of-labels")
     ;;      ("GUARD_GROWTH"      . "drawing-growth")
@@ -220,7 +226,8 @@
     ;;      ("STD_COORD_UNITS"   . "coordinate-system-units")
     ;;      ("BACKUP"            . "backup-copies")
     ;;      ;; Control Center
-    ;;      ("CONTROL_CENTER"    . "control-center")))
+    ;;      ("CONTROL_CENTER"    . "control-center")
+    ;;      ("LINK_MAP"          . "link-map")))
   )
 )
 
