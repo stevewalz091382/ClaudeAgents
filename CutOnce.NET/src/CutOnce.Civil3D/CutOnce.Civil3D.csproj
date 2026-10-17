@@ -1,0 +1,86 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    CutOnce for Civil 3D, .NET edition.
+
+    Two builds from one source tree:
+      net48           Civil 3D 2021, 2022, 2023, 2024  (AutoCAD R24.x, .NET Framework 4.8)
+      net8.0-windows  Civil 3D 2025, 2026 and later    (AutoCAD R25.x, .NET 8)
+
+    Only the AutoCAD managed DLLs are referenced (acmgd, acdbmgd, accoremgd), from your
+    own install. Civil 3D objects are read by reflection (Host/Civil.cs), so no
+    AeccDbMgd reference is needed and one build runs on every release in its range.
+
+    Point the build at your installs (defaults below), for example:
+      dotnet build -c Release -p:Civil3DDirNet8="C:\Program Files\Autodesk\AutoCAD 2026"
+    A target framework whose install folder is missing is skipped automatically.
+  -->
+
+  <PropertyGroup>
+    <Civil3DDirNet48 Condition="'$(Civil3DDirNet48)' == ''">C:\Program Files\Autodesk\AutoCAD 2024</Civil3DDirNet48>
+    <Civil3DDirNet8 Condition="'$(Civil3DDirNet8)' == ''">C:\Program Files\Autodesk\AutoCAD 2025</Civil3DDirNet8>
+
+    <_CutOnceTfms Condition="Exists('$(Civil3DDirNet48)\acdbmgd.dll')">net48</_CutOnceTfms>
+    <_CutOnceTfms Condition="Exists('$(Civil3DDirNet8)\acdbmgd.dll')">$(_CutOnceTfms);net8.0-windows</_CutOnceTfms>
+    <_CutOnceNoAcad Condition="'$(_CutOnceTfms)' == ''">true</_CutOnceNoAcad>
+    <_CutOnceTfms Condition="'$(_CutOnceTfms)' == ''">net8.0-windows</_CutOnceTfms>
+    <TargetFrameworks>$(_CutOnceTfms.Trim(';'))</TargetFrameworks>
+
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <LangVersion>10.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>CutOnce.Civil3D</AssemblyName>
+    <RootNamespace>CutOnce</RootNamespace>
+    <Version>2.2.0</Version>
+    <Company>Stephen Walz</Company>
+    <Product>CutOnce for Civil 3D</Product>
+    <Copyright>Stephen Walz</Copyright>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- AutoCAD loads the plugin DLL; nothing else is copied next to it -->
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net48'">
+    <AcadDir>$(Civil3DDirNet48)</AcadDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
+    <AcadDir>$(Civil3DDirNet8)</AcadDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="accoremgd">
+      <HintPath>$(AcadDir)\accoremgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="acdbmgd">
+      <HintPath>$(AcadDir)\acdbmgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="acmgd">
+      <HintPath>$(AcadDir)\acmgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Brand colours from AutoCAD colour numbers come back as System.Drawing.Color -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+
+  <!-- The UI-free logic, shared with the test project: compiled into this one DLL -->
+  <ItemGroup>
+    <Compile Include="..\CutOnce.Core\**\*.cs"
+             Exclude="..\CutOnce.Core\obj\**;..\CutOnce.Core\bin\**"
+             Link="Core\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <Target Name="CutOnceCheckAcad" BeforeTargets="ResolveAssemblyReferences" Condition="'$(_CutOnceNoAcad)' == 'true'">
+    <Error Text="CutOnce: no AutoCAD / Civil 3D install found. Looked for acdbmgd.dll in '$(Civil3DDirNet48)' (Civil 3D 2021-2024) and '$(Civil3DDirNet8)' (Civil 3D 2025+). Pass the folder of yours, e.g. dotnet build -p:Civil3DDirNet8=&quot;C:\Program Files\Autodesk\AutoCAD 2026&quot;" />
+  </Target>
+
+</Project>

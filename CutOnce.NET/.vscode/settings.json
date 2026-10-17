@@ -1,0 +1,15 @@
+{
+  "dotnet.defaultSolution": "CutOnce.sln",
+  "files.exclude": {
+    "**/bin": true,
+    "**/obj": true
+  },
+  "files.associations": {
+    "*.xaml": "xml",
+    "CutOnce-Config*.lsp": "lisp"
+  },
+  "[xml]": { "editor.tabSize": 4 },
+  "[csharp]": { "editor.tabSize": 4 },
+  "files.eol": "\r\n",
+  "editor.rulers": [130]
+}

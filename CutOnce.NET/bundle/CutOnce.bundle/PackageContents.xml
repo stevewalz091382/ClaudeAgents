@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  CutOnce autoloader bundle. Civil 3D reads this file at startup from
+  %APPDATA% or %ProgramData%\Autodesk\ApplicationPlugins\CutOnce.bundle and loads
+  the one DLL that matches the running release:
+    R24.0 - R24.3   Civil 3D 2021 - 2024   .NET Framework 4.8 build
+    R25.0 and later Civil 3D 2025 onward   .NET 8 build
+  The UpgradeCode is the same as the LISP edition's, so this bundle replaces it.
+-->
+<ApplicationPackage
+    SchemaVersion="1.0"
+    AutodeskProduct="AutoCAD"
+    ProductType="Application"
+    Name="CutOnce"
+    AppVersion="2.2.0"
+    Description="CutOnce for Civil 3D (.NET edition): data-loss guards that can stop a command before it runs, change-impact warnings, ByLayer, xref and coordinate system checks, bloat cleanup with backup copies, and drawing health logs, controlled per designer."
+    Author="Stephen Walz"
+    ProductCode="{EFD690DE-CAB6-45BA-AA91-2C75C2BD6D43}"
+    UpgradeCode="{FD9441FE-9603-4169-8EFD-D9FDD76DD7B1}">
+
+  <CompanyDetails Name="Stephen Walz" Url="https://designtovisualization.com/kb-c3d-and-cutonce-assistant/" Email="" />
+
+  <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R24.0" />
+
+  <Components Description="Civil 3D 2021 to 2024 (.NET Framework 4.8)">
+    <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R24.0" SeriesMax="R24.3" />
+    <ComponentEntry
+        AppName="CutOnce"
+        Version="2.2.0"
+        ModuleName="./Contents/Win64/R24/CutOnce.Civil3D.dll"
+        AppDescription="CutOnce for Civil 3D 2021-2024. Reads CutOnce-Config.lsp from the Contents folder."
+        LoadOnAutoCADStartup="True" />
+  </Components>
+
+  <Components Description="Civil 3D 2025 and later (.NET 8)">
+    <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R25.0" />
+    <ComponentEntry
+        AppName="CutOnce"
+        Version="2.2.0"
+        ModuleName="./Contents/Win64/R25/CutOnce.Civil3D.dll"
+        AppDescription="CutOnce for Civil 3D 2025 and later. Reads CutOnce-Config.lsp from the Contents folder."
+        LoadOnAutoCADStartup="True" />
+  </Components>
+</ApplicationPackage>

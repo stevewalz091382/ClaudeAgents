@@ -1,0 +1,421 @@
+<!--
+  CutOnce look and feel: colours, type, buttons, switches, cards and the branded
+  window frame. Every dialog merges this dictionary (see BrandedWindow.cs).
+  The brand colours (CutOnce.Brand, CutOnce.BrandDark, CutOnce.BrandSoft,
+  CutOnce.BrandGradient) are set per window from CutOnce-Config.lsp, so they are
+  always used as DynamicResource here.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:ui="clr-namespace:CutOnce.UI">
+
+    <!-- Palette -->
+    <FontFamily x:Key="CutOnce.IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+    <FontFamily x:Key="CutOnce.MonoFont">Cascadia Mono, Consolas</FontFamily>
+    <SolidColorBrush x:Key="CutOnce.Surface" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="CutOnce.Canvas" Color="#F4F6F9" />
+    <SolidColorBrush x:Key="CutOnce.Line" Color="#DDE2E8" />
+    <SolidColorBrush x:Key="CutOnce.LineStrong" Color="#C3CBD5" />
+    <SolidColorBrush x:Key="CutOnce.Text" Color="#1C2430" />
+    <SolidColorBrush x:Key="CutOnce.Muted" Color="#5D6978" />
+    <SolidColorBrush x:Key="CutOnce.Danger" Color="#C62828" />
+    <SolidColorBrush x:Key="CutOnce.Success" Color="#2E7D32" />
+    <SolidColorBrush x:Key="CutOnce.HoverOverlay" Color="#14000000" />
+    <SolidColorBrush x:Key="CutOnce.PressOverlay" Color="#29000000" />
+
+    <BooleanToVisibilityConverter x:Key="CutOnce.BoolToVis" />
+
+    <!-- Text -->
+    <Style x:Key="CutOnce.CardTitle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource CutOnce.Text}" />
+        <Setter Property="Margin" Value="0,0,0,10" />
+    </Style>
+
+    <Style x:Key="CutOnce.Subtle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{StaticResource CutOnce.Muted}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <Style x:Key="CutOnce.Eyebrow" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource CutOnce.Muted}" />
+        <Setter Property="Margin" Value="0,14,0,6" />
+    </Style>
+
+    <!-- Cards -->
+    <Style x:Key="CutOnce.Card" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource CutOnce.Surface}" />
+        <Setter Property="BorderBrush" Value="{StaticResource CutOnce.Line}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="18,16" />
+    </Style>
+
+    <Style x:Key="CutOnce.SoftCard" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource CutOnce.Canvas}" />
+        <Setter Property="BorderBrush" Value="{StaticResource CutOnce.Line}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="14,10" />
+    </Style>
+
+    <!-- A read-only, selectable path -->
+    <Style x:Key="CutOnce.PathBox" TargetType="TextBox">
+        <Setter Property="IsReadOnly" Value="True" />
+        <Setter Property="FontFamily" Value="{StaticResource CutOnce.MonoFont}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{StaticResource CutOnce.Text}" />
+        <Setter Property="Background" Value="{StaticResource CutOnce.Surface}" />
+        <Setter Property="BorderBrush" Value="{StaticResource CutOnce.Line}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="6,4" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <!-- Buttons: one template; hover and press darken whatever the background is -->
+    <ControlTemplate x:Key="CutOnce.ButtonTemplate" TargetType="Button">
+        <Grid>
+            <Border x:Name="Ring" Margin="-3" CornerRadius="9" BorderThickness="2" BorderBrush="Transparent" />
+            <Border x:Name="Bd" CornerRadius="6" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                    SnapsToDevicePixels="True">
+                <Grid>
+                    <Border x:Name="Overlay" CornerRadius="5" Background="Transparent" />
+                    <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center"
+                                      VerticalAlignment="Center" RecognizesAccessKey="True" />
+                </Grid>
+            </Border>
+        </Grid>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Overlay" Property="Background" Value="{StaticResource CutOnce.HoverOverlay}" />
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Overlay" Property="Background" Value="{StaticResource CutOnce.PressOverlay}" />
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Ring" Property="BorderBrush" Value="{DynamicResource CutOnce.Brand}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.45" />
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <Style x:Key="CutOnce.Button" TargetType="Button">
+        <Setter Property="Template" Value="{StaticResource CutOnce.ButtonTemplate}" />
+        <Setter Property="Background" Value="{StaticResource CutOnce.Surface}" />
+        <Setter Property="BorderBrush" Value="{StaticResource CutOnce.LineStrong}" />
+        <Setter Property="Foreground" Value="{StaticResource CutOnce.Text}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="14,6" />
+        <Setter Property="MinWidth" Value="88" />
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    </Style>
+
+    <Style x:Key="CutOnce.PrimaryButton" TargetType="Button" BasedOn="{StaticResource CutOnce.Button}">
+        <Setter Property="Background" Value="{DynamicResource CutOnce.Brand}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CutOnce.BrandDark}" />
+        <Setter Property="Foreground" Value="White" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <Style x:Key="CutOnce.DangerButton" TargetType="Button" BasedOn="{StaticResource CutOnce.Button}">
+        <Setter Property="Background" Value="{StaticResource CutOnce.Danger}" />
+        <Setter Property="BorderBrush" Value="#A11F1F" />
+        <Setter Property="Foreground" Value="White" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <Style x:Key="CutOnce.LinkButton" TargetType="Button" BasedOn="{StaticResource CutOnce.Button}">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Foreground" Value="{DynamicResource CutOnce.Brand}" />
+        <Setter Property="Padding" Value="8,4" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="MinHeight" Value="28" />
+    </Style>
+
+    <!-- Close button on the brand header -->
+    <Style x:Key="CutOnce.ChromeButton" TargetType="Button">
+        <Setter Property="Width" Value="34" />
+        <Setter Property="Height" Value="30" />
+        <Setter Property="Foreground" Value="White" />
+        <Setter Property="FontFamily" Value="{StaticResource CutOnce.IconFont}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" CornerRadius="6" Background="Transparent">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#2EFFFFFF" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#4DFFFFFF" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Small icon-only button (e.g. "copy this text") -->
+    <Style x:Key="CutOnce.IconButton" TargetType="Button" BasedOn="{StaticResource CutOnce.Button}">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Foreground" Value="{StaticResource CutOnce.Muted}" />
+        <Setter Property="FontFamily" Value="{StaticResource CutOnce.IconFont}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Padding" Value="6" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="MinHeight" Value="0" />
+    </Style>
+
+    <!-- On/off switch (CheckBox) -->
+    <Style x:Key="CutOnce.Switch" TargetType="CheckBox">
+        <Setter Property="Foreground" Value="{StaticResource CutOnce.Text}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <Grid Background="Transparent">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Border x:Name="Track" Width="36" Height="20" CornerRadius="10" VerticalAlignment="Center"
+                                Background="{StaticResource CutOnce.LineStrong}" BorderThickness="2" BorderBrush="Transparent">
+                            <Ellipse x:Name="Thumb" Width="14" Height="14" Fill="White" Margin="1,0"
+                                     HorizontalAlignment="Left" VerticalAlignment="Center" />
+                        </Border>
+                        <ContentPresenter Grid.Column="1" Margin="10,1,0,0" VerticalAlignment="Center" RecognizesAccessKey="True" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Track" Property="Background" Value="{DynamicResource CutOnce.Brand}" />
+                            <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource CutOnce.BrandDark}" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Track" Property="Opacity" Value="0.88" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Tick box (CheckBox) -->
+    <Style x:Key="CutOnce.Check" TargetType="CheckBox">
+        <Setter Property="Foreground" Value="{StaticResource CutOnce.Text}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <Grid Background="Transparent">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Border x:Name="Box" Width="18" Height="18" CornerRadius="4" VerticalAlignment="Center"
+                                Background="{StaticResource CutOnce.Surface}" BorderBrush="{StaticResource CutOnce.LineStrong}" BorderThickness="1.5">
+                            <TextBlock x:Name="Tick" Text="&#xE73E;" FontFamily="{StaticResource CutOnce.IconFont}" FontSize="11"
+                                       Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
+                        </Border>
+                        <ContentPresenter Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Box" Property="Background" Value="{DynamicResource CutOnce.Brand}" />
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource CutOnce.Brand}" />
+                            <Setter TargetName="Tick" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource CutOnce.BrandDark}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Segmented choice (RadioButton) -->
+    <Style x:Key="CutOnce.Segment" TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{StaticResource CutOnce.Text}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Border x:Name="Bd" CornerRadius="6" Padding="12,6" Background="Transparent">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource CutOnce.HoverOverlay}" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource CutOnce.Brand}" />
+                            <Setter Property="Foreground" Value="White" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- One Control Center switch: lock icon when the CAD administrator set it -->
+    <DataTemplate x:Key="CutOnce.SettingRow">
+        <DockPanel Margin="0,5" LastChildFill="True">
+            <TextBlock DockPanel.Dock="Right" Text="&#xE72E;" FontFamily="{StaticResource CutOnce.IconFont}" FontSize="12"
+                       Foreground="{StaticResource CutOnce.Muted}" VerticalAlignment="Center" Margin="8,0,0,0"
+                       ToolTip="{Binding ToolTip}"
+                       Visibility="{Binding IsLocked, Converter={StaticResource CutOnce.BoolToVis}}" />
+            <CheckBox Style="{StaticResource CutOnce.Switch}" IsChecked="{Binding IsOn}" IsEnabled="{Binding IsEditable}"
+                      ToolTip="{Binding ToolTip}">
+                <TextBlock Text="{Binding Label}" TextWrapping="Wrap" />
+            </CheckBox>
+        </DockPanel>
+    </DataTemplate>
+
+    <!-- The window frame shared by every CutOnce dialog -->
+    <Style x:Key="CutOnce.WindowStyle" TargetType="{x:Type ui:BrandedWindow}">
+        <Setter Property="WindowStyle" Value="None" />
+        <Setter Property="AllowsTransparency" Value="True" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="ResizeMode" Value="NoResize" />
+        <Setter Property="ShowInTaskbar" Value="False" />
+        <Setter Property="SizeToContent" Value="Height" />
+        <Setter Property="WindowStartupLocation" Value="CenterOwner" />
+        <Setter Property="FontFamily" Value="Segoe UI" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Foreground" Value="{StaticResource CutOnce.Text}" />
+        <Setter Property="UseLayoutRounding" Value="True" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ui:BrandedWindow}">
+                    <Border Margin="16" CornerRadius="10" Background="{StaticResource CutOnce.Surface}"
+                            BorderBrush="#26000000" BorderThickness="1">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="24" ShadowDepth="5" Direction="270" Opacity="0.30" Color="Black" />
+                        </Border.Effect>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <!-- Brand header: drag to move -->
+                            <Border x:Name="PART_Header" Grid.Row="0" CornerRadius="9,9,0,0" Padding="18,14,10,14"
+                                    Background="{DynamicResource CutOnce.BrandGradient}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Width="46" Height="46" CornerRadius="10" Background="White" VerticalAlignment="Center">
+                                        <Border.Effect>
+                                            <DropShadowEffect BlurRadius="8" ShadowDepth="1" Direction="270" Opacity="0.25" Color="Black" />
+                                        </Border.Effect>
+                                        <Grid>
+                                            <Image Source="{TemplateBinding LogoSource}" Margin="5" Stretch="Uniform"
+                                                   RenderOptions.BitmapScalingMode="HighQuality"
+                                                   Visibility="{TemplateBinding LogoVisibility}" />
+                                            <!-- Built-in mark: a check above a dashed "cut once" line -->
+                                            <Viewbox Margin="8" Visibility="{TemplateBinding MarkVisibility}">
+                                                <Canvas Width="32" Height="32">
+                                                    <Path Data="M5,15 L12.5,22.5 L27,7" Stroke="{DynamicResource CutOnce.Brand}"
+                                                          StrokeThickness="3.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                                          StrokeLineJoin="Round" />
+                                                    <Line X1="3" Y1="28.5" X2="29" Y2="28.5" Stroke="{DynamicResource CutOnce.BrandDark}"
+                                                          StrokeThickness="2.4" StrokeDashArray="1.4 1.2" StrokeDashCap="Round" />
+                                                </Canvas>
+                                            </Viewbox>
+                                        </Grid>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="14,0,8,0" VerticalAlignment="Center">
+                                        <TextBlock Text="{TemplateBinding BrandName}" Foreground="White" FontSize="19"
+                                                   FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{TemplateBinding BrandTagline}" Foreground="#E0FFFFFF" FontSize="12"
+                                                   Margin="0,1,0,0" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                    <Button x:Name="PART_Close" Grid.Column="2" Style="{StaticResource CutOnce.ChromeButton}"
+                                            Content="&#xE8BB;" VerticalAlignment="Top" ToolTip="Close (Esc)" />
+                                </Grid>
+                            </Border>
+
+                            <!-- Severity strip -->
+                            <Rectangle Grid.Row="1" Height="4" Fill="{TemplateBinding KindBrush}" />
+
+                            <!-- Badge and headline -->
+                            <Grid Grid.Row="2" Margin="22,16,22,2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border CornerRadius="11" Padding="9,3,11,3" Margin="0,1,12,0" VerticalAlignment="Top"
+                                        Background="{TemplateBinding KindSoftBrush}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{TemplateBinding KindGlyph}" FontFamily="{StaticResource CutOnce.IconFont}"
+                                                   FontSize="12" Foreground="{TemplateBinding KindBrush}" VerticalAlignment="Center" />
+                                        <TextBlock Text="{TemplateBinding KindLabel}" FontSize="11" FontWeight="Bold"
+                                                   Foreground="{TemplateBinding KindBrush}" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Grid.Column="1" Text="{TemplateBinding Headline}" FontSize="16" FontWeight="SemiBold"
+                                           TextWrapping="Wrap" VerticalAlignment="Center" />
+                            </Grid>
+
+                            <!-- The dialog's own content -->
+                            <ContentPresenter Grid.Row="3" Margin="22,12,22,18" />
+
+                            <!-- Footer -->
+                            <Border Grid.Row="4" CornerRadius="0,0,9,9" Padding="22,7"
+                                    Background="{StaticResource CutOnce.Canvas}"
+                                    BorderBrush="{StaticResource CutOnce.Line}" BorderThickness="0,1,0,0">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Right" Text="{TemplateBinding FooterRight}" FontSize="11"
+                                               Foreground="{StaticResource CutOnce.Muted}" />
+                                    <TextBlock Text="{TemplateBinding FooterLeft}" FontSize="11"
+                                               Foreground="{StaticResource CutOnce.Muted}" />
+                                </DockPanel>
+                            </Border>
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+</ResourceDictionary>

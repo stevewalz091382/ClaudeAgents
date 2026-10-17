@@ -1,0 +1,53 @@
+{
+  // Ctrl+Shift+B runs the default build. Terminal > Run Task... lists the rest.
+  // Change the Civil 3D folders in "options.env" if yours are elsewhere.
+  "version": "2.0.0",
+  "options": {
+    "env": {
+      "CUTONCE_C3D_NET48": "C:\\Program Files\\Autodesk\\AutoCAD 2024",
+      "CUTONCE_C3D_NET8": "C:\\Program Files\\Autodesk\\AutoCAD 2025"
+    }
+  },
+  "tasks": [
+    {
+      "label": "Build plugin (Debug)",
+      "type": "process",
+      "command": "dotnet",
+      "args": [
+        "build", "${workspaceFolder}/src/CutOnce.Civil3D/CutOnce.Civil3D.csproj", "-c", "Debug",
+        "-p:Civil3DDirNet48=${env:CUTONCE_C3D_NET48}", "-p:Civil3DDirNet8=${env:CUTONCE_C3D_NET8}"
+      ],
+      "problemMatcher": "$msCompile",
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "Run Core tests",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["run", "--project", "${workspaceFolder}/tests/CutOnce.Core.Tests"],
+      "problemMatcher": "$msCompile",
+      "group": "test"
+    },
+    {
+      "label": "Package (Release zip)",
+      "type": "process",
+      "command": "powershell",
+      "args": [
+        "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/build/Build-Bundle.ps1",
+        "-Civil3DDirNet48", "${env:CUTONCE_C3D_NET48}", "-Civil3DDirNet8", "${env:CUTONCE_C3D_NET8}"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "Build and install for debugging",
+      "type": "process",
+      "command": "powershell",
+      "args": [
+        "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/build/Build-Bundle.ps1",
+        "-Configuration", "Debug", "-Install",
+        "-Civil3DDirNet48", "${env:CUTONCE_C3D_NET48}", "-Civil3DDirNet8", "${env:CUTONCE_C3D_NET8}"
+      ],
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}

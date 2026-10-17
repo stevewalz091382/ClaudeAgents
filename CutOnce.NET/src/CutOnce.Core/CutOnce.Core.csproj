@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    CutOnce.Core: everything that does not need AutoCAD (config, settings, logs,
+    health and growth rules, standards report, dialog models). The Civil 3D plugin
+    compiles these same files into its own DLL (see CutOnce.Civil3D.csproj), so
+    nothing extra ships. This project exists so the logic builds and is tested on
+    any machine, without Civil 3D installed.
+
+    Keep the code net48-compatible: no records, init, ranges, KeyValuePair
+    deconstruction, Dictionary.TryAdd/GetValueOrDefault or string.Contains(char).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>10.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <RootNamespace>CutOnce.Core</RootNamespace>
+    <AssemblyName>CutOnce.Core</AssemblyName>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

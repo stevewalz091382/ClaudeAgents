@@ -1,0 +1,34 @@
+{
+  // F5 debugging. Close Civil 3D first: a loaded plugin DLL cannot be replaced.
+  // "Build and install for debugging" puts the Debug build (with .pdb) into
+  // %APPDATA%\Autodesk\ApplicationPlugins\CutOnce.bundle, which Civil 3D loads at startup.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Civil 3D 2025+ (.NET 8): launch and debug",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "Build and install for debugging",
+      "program": "C:\\Program Files\\Autodesk\\AutoCAD 2025\\acad.exe",
+      "args": ["/product", "C3D", "/language", "en-US"],
+      "cwd": "C:\\Program Files\\Autodesk\\AutoCAD 2025",
+      "console": "internalConsole",
+      "justMyCode": true,
+      "stopAtEntry": false
+    },
+    {
+      "name": "Civil 3D 2025+ (.NET 8): attach to running acad.exe",
+      "type": "coreclr",
+      "request": "attach",
+      "processId": "${command:pickProcess}",
+      "justMyCode": true
+    },
+    {
+      "name": "Civil 3D 2021-2024 (.NET Framework 4.8): attach to running acad.exe",
+      "type": "clr",
+      "request": "attach",
+      "processId": "${command:pickProcess}",
+      "justMyCode": true
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+<ui:BrandedWindow x:Class="CutOnce.UI.NoticeWindow"
+                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:ui="clr-namespace:CutOnce.UI"
+                  Width="740">
+    <DockPanel LastChildFill="True">
+
+        <!-- Buttons: Learn More links on the left, decisions on the right -->
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,16,0,0" LastChildFill="False">
+            <WrapPanel x:Name="LinksPanel" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="-8,0,0,0" />
+            <StackPanel x:Name="ButtonsPanel" DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" />
+        </DockPanel>
+
+        <!-- Small print: how often this warning appears -->
+        <TextBlock x:Name="Footnote" DockPanel.Dock="Bottom" Margin="2,10,0,0" Style="{StaticResource CutOnce.Subtle}"
+                   FontSize="11" Visibility="Collapsed" />
+
+        <!-- Save a copy -->
+        <Border x:Name="CopyCard" DockPanel.Dock="Bottom" Style="{StaticResource CutOnce.SoftCard}" Margin="0,10,0,0"
+                Visibility="Collapsed">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="CopyIcon" Text="&#xE74E;" FontFamily="{StaticResource CutOnce.IconFont}" FontSize="18"
+                           Foreground="{DynamicResource CutOnce.Brand}" VerticalAlignment="Center" Margin="2,0,12,0" />
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock x:Name="CopyIntro" Style="{StaticResource CutOnce.Subtle}" />
+                    <TextBox x:Name="CopyFolder" Style="{StaticResource CutOnce.PathBox}" Margin="0,4,0,0" />
+                </StackPanel>
+                <Button x:Name="CopyButton" Grid.Column="2" Style="{StaticResource CutOnce.Button}" Margin="12,0,0,0"
+                        VerticalAlignment="Center" Click="OnCopy">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE8C8;" FontFamily="{StaticResource CutOnce.IconFont}" Margin="0,1,8,0"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Text="Save a copy" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- What Stop / Undo does -->
+        <Border x:Name="StopCard" DockPanel.Dock="Bottom" Margin="0,10,0,0" CornerRadius="8" Padding="14,9"
+                Background="#FDF1F1" BorderBrush="#F3C9C9" BorderThickness="1" Visibility="Collapsed">
+            <DockPanel>
+                <TextBlock x:Name="StopIcon" Text="&#xE71A;" FontFamily="{StaticResource CutOnce.IconFont}" FontSize="15"
+                           Foreground="{StaticResource CutOnce.Danger}" VerticalAlignment="Center" Margin="2,0,12,0" />
+                <TextBlock x:Name="StopHint" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12" />
+            </DockPanel>
+        </Border>
+
+        <!-- The message -->
+        <Border Style="{StaticResource CutOnce.Card}" Padding="0">
+            <Grid>
+                <ScrollViewer x:Name="BodyScroll" MaxHeight="400" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled" Padding="18,12,40,14">
+                    <StackPanel x:Name="Body" />
+                </ScrollViewer>
+                <Button Style="{StaticResource CutOnce.IconButton}" HorizontalAlignment="Right" VerticalAlignment="Top"
+                        Margin="0,6,8,0" Content="&#xE8C8;" ToolTip="Copy this text" Click="OnCopyText" />
+            </Grid>
+        </Border>
+    </DockPanel>
+</ui:BrandedWindow>

@@ -27,3 +27,7 @@ Copy `.claude/agents/` and `.claude/commands/` into `~/.claude/` (all projects) 
 ## Note
 
 Keep `.claude/` out of `.gitignore`. The web session needs these files committed to load them.
+
+## CutOnce for Civil 3D (.NET edition)
+
+`CutOnce.NET/` holds the C# / WPF port of the CutOnce AutoLISP package: a Civil 3D plugin for 2021 and later that can stop risky commands from its warnings, with branded dialogs and the same one-click installer. Start with `CutOnce.NET/docs/GETTING-STARTED.md`.
