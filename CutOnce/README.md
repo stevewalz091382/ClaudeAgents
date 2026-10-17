@@ -16,7 +16,7 @@ CutOnce is one AutoLISP package that loads into every drawing. Each designer dec
 |---|---|---|
 | **Standards check** | When a drawing opens: objects not ByLayer, xrefs broken or unloaded, xrefs not at 0,0,0, coordinate system and insertion units | Only when something is wrong (or always, if the designer chooses) |
 | **Health log** | Writes a Health.csv row (and Xrefs.csv detail) on every save and open: counts, styles, ByLayer, xrefs, drawing settings, coordinate system | Never |
-| **Guard** | Warns when EXPLODE (of Civil 3D objects, blocks or hatches), BURST, XREF bind, or moving an xref destroys data. On save, shows one summary of everything found: unusual growth, xrefs off 0,0,0, coordinate system / units problems | Only when something risky happens |
+| **Guard** | Warns when EXPLODE (of Civil 3D objects, blocks or hatches), BURST, XREF bind, or moving an xref destroys data (one warning per EXPLODE or BURST, however many objects). On save, warns only about unusual growth | Only when something risky happens |
 | **Cleanup** | When the growth check fires, offers one-click cleanup of unused registered apps, scales, styles and anonymous blocks (PURGE, AUDIT), after saving a backup copy to a shared folder | Only when the designer clicks Clean up now... |
 | **Impact** | Before an alignment, surface or profile is edited, lists what depends on it | On grip edits, surface edits and MOVE/STRETCH/ROTATE/SCALE of those objects |
 | **CutOnce Control Center** | One dialog to switch every item above on or off, per designer, including logging | Only when opened |
@@ -28,7 +28,7 @@ Type `CUTONCE`.
 | Group | Switches |
 |---|---|
 | Command warnings | Master on/off, every time or once per command per session, then one row per command (below) |
-| Checks on save | Unusual growth, offer cleanup when growth is flagged, xref not at 0,0,0, coordinate system / units, backup copy before cleanup; **Open backup folder** |
+| Checks on save | Unusual growth, offer cleanup when growth is flagged, backup copy before cleanup; **Open backup folder** |
 | Standards check on open | Run on open, ByLayer, xref status (broken/unloaded), xref not at 0,0,0, coordinate system / units, always show result, include block definitions |
 | Logging | Master on/off, then Health.csv on save, Health.csv on open, Xrefs.csv, Events.csv, Opened.csv |
 
@@ -47,7 +47,7 @@ Every command CutOnce watches has its own tick box, switching that command's war
 | MOVE | Civil 3D objects with dependents, and xrefs | Civil 3D objects: at the start if pre-selected, otherwise after (type U). Xrefs: after |
 | COPY | Xrefs copied off their insertion point | After the command (type U) |
 | STRETCH, ROTATE, SCALE | Civil 3D objects with dependents | At the start if pre-selected, otherwise after (type U) |
-| EXPLODE | EXPLODE / BURST of Civil 3D objects, blocks, hatches, attributed blocks | After the command (type U) |
+| EXPLODE | EXPLODE / BURST of Civil 3D objects, blocks, hatches, attributed blocks: one warning per command, and one for a whole BURST | After the command (type U) |
 | XREF / XBIND bind | Binding an xref into the drawing | After the command |
 | REFEDIT | REFEDIT / REFCLOSE advisory | At the start |
 | Promote reference | Promoting a data shortcut reference (any command whose name contains PROMOTE) | At the start |
@@ -58,7 +58,7 @@ Every command CutOnce watches has its own tick box, switching that command's war
 
 The **How to add other watched commands...** button under the list opens step-by-step instructions for the CAD administrator (find the command name with `CUTONCE-GUARD-LOGCOMMANDS`, add it to `ImpactExtraCommands` in `CutOnce-Config.lsp`, restart). It also shows the config file's location and the commands currently added.
 
-**Frequency.** *Every time* or *Once per command per session* applies to every command warning above and to each save check (growth, xref origin, coordinate system / units, once per drawing). With *once*, a save check already shown this session is left out of later save summaries. A suppressed warning is still written to `Events.csv`. `CUTONCE-CHECK` and `CUTONCE-GUARD-CHECKNOW` always show their result.
+**Frequency.** *Every time* or *Once per command per session* applies to every command warning above and to the growth warning on save (once per drawing). A suppressed warning is still written to `Events.csv`. `CUTONCE-CHECK` and `CUTONCE-GUARD-CHECKNOW` always show their result.
 
 Command-line version, for scripts and toolbar buttons: `-CUTONCE`. Type a setting name (or enough of it to be unique) to toggle it, or `List`, `Frequency`, `Warnings` (master switch), `Defaults`, `eXit`.
 
@@ -68,7 +68,7 @@ Command-line version, for scripts and toolbar buttons: `-CUTONCE`. Type a settin
 | `^C^C-CUTONCE;StdCheckOnOpen;;` | Toggle the standards check on open |
 | `^C^C-CUTONCE;WarnEXPLODE;;` | Toggle the EXPLODE warning |
 
-Setting names: `CommandWarnings`, `WarnMOVE`, `WarnCOPY`, `WarnSTRETCH`, `WarnROTATE`, `WarnSCALE`, `WarnEXPLODE`, `WarnXREFBIND`, `WarnREFEDIT`, `WarnPROMOTE`, `WarnTEXT`, `WarnDTEXT`, `WarnMTEXT`, `WarnGRIPS`, `WarnSURFACE`, `WarnOTHER`, `GuardGrowth`, `GuardCleanup`, `GuardXrefOrigin`, `GuardCoordUnits`, `BackupBeforeCleanup`, `StdCheckOnOpen`, `StdByLayer`, `StdXrefStatus`, `StdXrefOrigin`, `StdCoordUnits`, `StdAlwaysShow`, `StdScanBlocks`, `LogEnabled`, `LogHealthOnSave`, `LogHealthOnOpen`, `LogXrefs`, `LogEvents`, `LogOpened`.
+Setting names: `CommandWarnings`, `WarnMOVE`, `WarnCOPY`, `WarnSTRETCH`, `WarnROTATE`, `WarnSCALE`, `WarnEXPLODE`, `WarnXREFBIND`, `WarnREFEDIT`, `WarnPROMOTE`, `WarnTEXT`, `WarnDTEXT`, `WarnMTEXT`, `WarnGRIPS`, `WarnSURFACE`, `WarnOTHER`, `GuardGrowth`, `GuardCleanup`, `BackupBeforeCleanup`, `StdCheckOnOpen`, `StdByLayer`, `StdXrefStatus`, `StdXrefOrigin`, `StdCoordUnits`, `StdAlwaysShow`, `StdScanBlocks`, `LogEnabled`, `LogHealthOnSave`, `LogHealthOnOpen`, `LogXrefs`, `LogEvents`, `LogOpened`.
 
 ## Logs
 
@@ -82,7 +82,7 @@ All files go to the log folder (see `CUTONCE-STATUS`), none to the drawing's fol
 | `Events.csv` | warning raised (also when frequency hides it) | Who, when, drawing, event type, detail. Includes every impact warning (`IMPACT`), guard warning and advisory, standards issues on open, and every TEXT / DTEXT / MTEXT start (`TEXT-TIP` the first time in a session, `TEXT-USED` after that) |
 | `Opened.csv` | drawing opened | Who, when, drawing |
 
-**Event codes:** `IMPACT`, `STANDARDS-OPEN`, `EXPLODE-LOSS`, `ATTRIB-LOSS`, `XREF-BIND`, `XREF-MOVED`, `XREF-BASEPOINT`, `SAVE-FLAG`, `COORD-UNITS`, `CLEANUP`, `BACKUP-COPY`, `ADVISORY-REFEDIT`, `ADVISORY-REFCLOSE`, `ADVISORY-PROMOTE`, `TEXT-TIP`, `TEXT-USED`.
+**Event codes:** `IMPACT`, `STANDARDS-OPEN`, `EXPLODE-LOSS`, `ATTRIB-LOSS`, `XREF-BIND`, `XREF-MOVED`, `SAVE-FLAG`, `CLEANUP`, `BACKUP-COPY`, `ADVISORY-REFEDIT`, `ADVISORY-REFCLOSE`, `ADVISORY-PROMOTE`, `TEXT-TIP`, `TEXT-USED`.
 
 **Health.csv columns**
 
@@ -150,13 +150,11 @@ Every CutOnce warning has a **Learn More** button that opens its own section of 
 | Guard: EXPLODE / BURST converted attributed blocks | `GUARD_ATTRIB` | `#explode-attributed-blocks` |
 | Guard: xref bound | `GUARD_XREF_BIND` | `#xref-bind` |
 | Guard: xref moved or copied | `GUARD_XREF_MOVED` | `#xref-moved` |
-| Guard (on save): xref not at 0,0,0 | `GUARD_XREF_ORIGIN` | `#xref-not-at-origin` |
 | Guard: REFEDIT / REFCLOSE | `GUARD_REFEDIT` | `#refedit` |
 | Guard: promoting a data shortcut reference | `GUARD_PROMOTE` | `#promote-reference` |
 | Guard: TEXT / DTEXT / MTEXT tip | `GUARD_TEXT` | `#text-instead-of-labels` |
 | Guard (on save): unusual growth | `GUARD_GROWTH` | `#drawing-growth` |
 | Cleanup (offered on growth, and its dialog) | `GUARD_CLEANUP` | `#drawing-cleanup` |
-| Guard (on save): coordinate system / units | `GUARD_COORD_UNITS` | `#coordinate-system-units` |
 | Standards check: coordinate system / units | `STD_COORD_UNITS` | `#coordinate-system-units` |
 | Backup copy required but failed | `BACKUP` | `#backup-copies` |
 | Control Center | `CONTROL_CENTER` | `#control-center` |
@@ -167,7 +165,7 @@ The page address and sections are set by `LearnMoreUrl` and `LearnMoreAnchors` i
 
 ## Cleanup and backup copies
 
-**One warning per save.** Everything the save checks find (unusual growth, xrefs off 0,0,0, coordinate system / units) is listed in a single numbered summary, with one **Save a copy** button and one **Learn More** button per issue. When growth is among them, the summary also has a **Clean up now...** button (switch: `GuardCleanup`). Cleanup runs as soon as that save finishes, so the file on disk is the drawing before cleanup. `CUTONCE-CLEANUP` opens the same dialog at any time.
+**On save, the only warning is unusual growth.** It has **Save a copy** and **Clean up now...** (switch: `GuardCleanup`). Xrefs off 0,0,0 and coordinate system / units problems are reported by the standards check when a drawing opens, not on every save. Cleanup runs as soon as that save finishes, so the file on disk is the drawing before cleanup. `CUTONCE-CLEANUP` opens the same dialog at any time.
 
 | Tick box (in the order they run) | What runs |
 |---|---|
@@ -184,13 +182,13 @@ The page address and sections are set by `LearnMoreUrl` and `LearnMoreAnchors` i
 - The whole cleanup is one undo step: type **U** straight afterwards to undo it. The result lists each count before and after, offers **Save now**, and is logged to Events.csv (`CLEANUP`).
 - **Backup copies.** The copy is the drawing as last saved. It goes to the shared backup folder with a name nobody else can produce: `<drawing>__<YYYYMMDD-HHMMSS-mmm>_<user>-<computer>.dwg`, plus a `-2`, `-3`... counter if that name still exists, so copies never overwrite each other. Each copy is recorded in `Backups.csv`.
 - `BackupBeforeCleanup` sets whether the backup tick box starts ticked. Lock it (`LockedSettings`) to require a backup; if the copy then fails, cleanup stops and nothing changes. Without the lock, a failed copy asks before cleaning up without one.
-- **Save a copy button** on the warnings where a way back matters: change-impact warnings (MOVE, STRETCH, ROTATE, SCALE, grip and surface edits of Civil 3D objects), EXPLODE of Civil 3D objects, XREF bind, promoting a data shortcut, other watched commands, and the one save summary. Not on the TEXT / DTEXT / MTEXT tip, MOVE / COPY of an xref, EXPLODE of only blocks and hatches, EXPLODE / BURST of attributed blocks, or REFEDIT / REFCLOSE. It copies the drawing at once, while the warning is still open, so the designer can keep a way back before going ahead. The copy is the drawing as last saved, so it never includes the change being warned about; the warning says when unsaved changes are left out. The button is greyed out for a drawing that has never been saved. The standards report on open has no button, because it changes nothing.
+- **Save a copy button** on the warnings where a way back matters: change-impact warnings (MOVE, STRETCH, ROTATE, SCALE, grip and surface edits of Civil 3D objects), EXPLODE of Civil 3D objects, XREF bind, promoting a data shortcut, other watched commands, and the growth warning on save. Not on the TEXT / DTEXT / MTEXT tip, MOVE / COPY of an xref, EXPLODE of only blocks and hatches, EXPLODE / BURST of attributed blocks, or REFEDIT / REFCLOSE. It copies the drawing at once, while the warning is still open, so the designer can keep a way back before going ahead. The copy is the drawing as last saved, so it never includes the change being warned about; the warning says when unsaved changes are left out. The button is greyed out for a drawing that has never been saved. The standards report on open has no button, because it changes nothing.
 - `CUTONCE-BACKUP` copies the drawing to the backup folder at any time (it offers to save first if there are unsaved changes). `CUTONCE-BACKUP-FOLDER` opens the folder.
 - Cleanup is not offered while a drawing is closing (the queued command would land in another drawing).
 
 ## Look and branding
 
-Every CutOnce dialog (warnings, the save summary, change-impact, cleanup, the Control Center) shares one look:
+Every CutOnce dialog (warnings, the growth warning, change-impact, cleanup, the Control Center) shares one look:
 
 - **Header band**: a logo tile, the name and tagline, and a one-line headline saying what the dialog is about.
 - **Colour strip** under the header: amber for a warning, red for a problem that stops something, green when all is clear, the brand colour for information.
@@ -262,7 +260,7 @@ Folder lookup order. Install folder: `CUTONCE_HOME`, then the bundle location. L
 
 - **One scan per check.** The standards check, ByLayer counts, xref status and object counts come from a single pass over Model Space and the layouts. Block definitions add a second pass; switch off "Include block definitions" on very large drawings.
 - **Open.** The scan runs once and feeds both the standards dialog and the Health.csv row. Turn off both "Run the standards check" and "Health.csv row when a drawing opens" to skip it.
-- **Save.** Skipped entirely when logging, the growth check and the 0,0,0 check are all off.
+- **Save.** Skipped entirely when logging and the growth check are both off.
 - **Guards** take no snapshot when switched off.
 - **Civil 3D connection** is cached across drawings and sessions.
 

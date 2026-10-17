@@ -8,9 +8,10 @@
 ;;; per session). Events.csv is written every time either way.
 ;;;
 ;;;   1. EXPLODE converting any Civil 3D object (any AECC* type), block
-;;;      reference or hatch into plain geometry. Also catches attributed blocks
-;;;      being converted to text, which covers BURST (BURST runs EXPLODE
-;;;      internally). [WarnEXPLODE]
+;;;      reference or hatch into plain geometry, and attributed blocks being
+;;;      converted to text, in ONE warning. BURST (and any LISP routine) runs
+;;;      EXPLODE once per object; those are gathered and warned about once,
+;;;      when the routine ends. [WarnEXPLODE]
 ;;;   2. XREF / XBIND binding an external reference into the drawing.
 ;;;      [WarnXREFBIND]
 ;;;   3. MOVE / COPY shifting an attached xref's insertion point.
@@ -152,50 +153,12 @@
 (setq *coguard:explode-snapshot* nil)
 (setq *coguard:explode-attrib-snapshot* nil)
 
-(defun coguard:report-civil-loss (before after / lost bv av)
-  (cond
-    ((not before) (coguard:trace "EXPLODE ended without a before-snapshot."))
-    (T
-     (setq lost nil)
-     (foreach pair before
-       (setq bv (cdr pair) av (cond ((cdr (assoc (car pair) after))) (0)))
-       (if (< av bv) (setq lost (cons (list (car pair) bv av) lost)))
-     )
-     (if lost
-       (progn
-         (coguard:log-event "EXPLODE-LOSS"
-           (apply 'strcat
-             (mapcar (function (lambda (x)
-                       (strcat (coguard:friendly-name (car x)) " " (itoa (cadr x)) "->" (itoa (caddr x)) "  ")))
-                     lost)))
-         ;; Civil 3D objects lost: GUARD_EXPLODE (offers Save a copy);
-         ;; only blocks and hatches: GUARD_EXPLODE_BLOCKS (no copy button)
-         (cutonce:notice-once
-           (if (vl-some (function (lambda (x) (wcmatch (strcase (car x)) "AECC*"))) lost)
-             "GUARD_EXPLODE" "GUARD_EXPLODE_BLOCKS")
-           (strcat
-             "CutOnce Guard: EXPLODE just removed or converted an object.\n\n"
-             (apply 'strcat
-               (mapcar (function (lambda (x)
-                         (strcat "  " (coguard:friendly-name (car x)) ": " (itoa (cadr x)) " -> "
-                                 (itoa (caddr x)) " (down " (itoa (- (cadr x) (caddr x))) ")\n")))
-                       lost))
-             "\nThe exploded object is now plain geometry and has lost its design intent.\n\n"
-             (if (assoc "AcDbHatch" lost)
-               (strcat "An exploded hatch becomes many separate lines: it loses its boundary\n"
-                       "association and area, can no longer be edited as a pattern, and\n"
-                       "adds to file size.\n\n")
-               "")
-             "If this wasn't intentional, type U now to undo."
-           )
-           "GUARD_EXPLODE"
-         )
-       )
-       (coguard:trace "EXPLODE ended - no object-type count decreased.")
-     )
-    )
-  )
-)
+;; BURST (Express Tools) and other LISP routines run EXPLODE once per object,
+;; so EXPLODEs that run inside a LISP routine are gathered into one batch: the
+;; snapshot is taken at the first EXPLODE and the single warning is shown when
+;; the routine ends (see coguard:lisp-ended). A plain EXPLODE reports at once.
+(setq *coguard:in-lisp* nil)
+(setq *coguard:explode-pending* nil)
 
 (defun coguard:attrib-block-count (doc / n)
   (setq n 0)
@@ -212,23 +175,69 @@
   n
 )
 
-(defun coguard:report-attrib-loss (before after)
-  (if (and before after (< after before))
-    (progn
-      (coguard:log-event "ATTRIB-LOSS" (strcat "attributed blocks " (itoa before) "->" (itoa after)))
-      (cutonce:notice-once "GUARD_ATTRIB"
-        (strcat
-          "CutOnce Guard: EXPLODE just converted " (itoa (- before after)) " attributed block(s)\n"
-          "into plain text and geometry (BURST does this too).\n\n"
-          "The attribute data used for tags, schedules and data extraction is gone;\n"
-          "only the displayed text remains.\n\n"
-          "If this wasn't intentional, type U now to undo."
-        )
-        "GUARD_ATTRIB"
-      )
-    )
-    (coguard:trace "EXPLODE ended - attributed-block count did not decrease.")
+;; One warning for everything an EXPLODE (or a batch of them) destroyed:
+;; Civil 3D objects, blocks, hatches and attributed blocks together.
+;; Civil 3D objects lost: key GUARD_EXPLODE (offers Save a copy); otherwise
+;; GUARD_EXPLODE_BLOCKS (no copy button).
+(defun coguard:report-explode (before after abefore aafter / lost bv av attribs civil)
+  (setq lost nil)
+  (foreach pair before
+    (setq bv (cdr pair) av (cond ((cdr (assoc (car pair) after))) (0)))
+    (if (< av bv) (setq lost (cons (list (car pair) bv av) lost)))
   )
+  (setq lost (reverse lost)
+        attribs (if (and (numberp abefore) (numberp aafter) (< aafter abefore)) (- abefore aafter) 0)
+        civil (vl-some (function (lambda (x) (wcmatch (strcase (car x)) "AECC*"))) lost))
+  (if lost
+    (coguard:log-event "EXPLODE-LOSS"
+      (apply 'strcat
+        (mapcar (function (lambda (x)
+                  (strcat (coguard:friendly-name (car x)) " " (itoa (cadr x)) "->" (itoa (caddr x)) "  ")))
+                lost))))
+  (if (> attribs 0)
+    (coguard:log-event "ATTRIB-LOSS" (strcat "attributed blocks " (itoa abefore) "->" (itoa aafter))))
+  (if (or lost (> attribs 0))
+    (cutonce:notice-once-actions
+      (if civil "GUARD_EXPLODE" "GUARD_EXPLODE_BLOCKS")
+      (strcat
+        "CutOnce Guard: EXPLODE just removed or converted objects.\n\n"
+        (apply 'strcat
+          (mapcar (function (lambda (x)
+                    (strcat "  " (coguard:friendly-name (car x)) ": " (itoa (cadr x)) " -> "
+                            (itoa (caddr x)) " (down " (itoa (- (cadr x) (caddr x))) ")\n")))
+                  lost))
+        (if (> attribs 0)
+          (strcat "  Attributed blocks: " (itoa attribs) " converted to plain text\n")
+          "")
+        "\n"
+        (if lost "Exploded objects are now plain geometry and have lost their design intent.\n\n" "")
+        (if (assoc "AcDbHatch" lost)
+          (strcat "An exploded hatch becomes many separate lines: it loses its boundary\n"
+                  "association and area, can no longer be edited as a pattern, and\n"
+                  "adds to file size.\n\n")
+          "")
+        (if (> attribs 0)
+          (strcat "The attribute data used for tags, schedules and data extraction is gone;\n"
+                  "only the displayed text remains.\n\n")
+          "")
+        "If this wasn't intentional, type U now to undo."
+      )
+      (append
+        (if lost (list (cons "Learn More..." "GUARD_EXPLODE")))
+        (if (> attribs 0) (list (cons (if lost "Attributes..." "Learn More...") "GUARD_ATTRIB"))))
+      nil)
+    (coguard:trace "EXPLODE ended - nothing was converted.")
+  )
+)
+
+;; Reports the gathered EXPLODE batch (if any) and clears it.
+(defun coguard:explode-flush ( / doc)
+  (if *coguard:explode-snapshot*
+    (progn
+      (setq doc (cutonce:active-doc))
+      (coguard:report-explode *coguard:explode-snapshot* (coguard:object-snapshot doc)
+                              *coguard:explode-attrib-snapshot* (coguard:attrib-block-count doc))))
+  (setq *coguard:explode-snapshot* nil *coguard:explode-attrib-snapshot* nil *coguard:explode-pending* nil)
 )
 
 ;; ---------------------------------------------------------------------------
@@ -437,7 +446,8 @@
   (setq doc (cutonce:active-doc))
   (cond
     ((= cmd "EXPLODE")
-     (if (cutonce:cmd-warn-p "WarnEXPLODE")
+     ;; inside a batch (BURST, a LISP loop) keep the first EXPLODE's snapshot
+     (if (and (cutonce:cmd-warn-p "WarnEXPLODE") (not *coguard:explode-pending*))
        (setq *coguard:explode-snapshot* (coguard:object-snapshot doc)
              *coguard:explode-attrib-snapshot* (coguard:attrib-block-count doc)))
     )
@@ -480,11 +490,9 @@
   (setq doc (cutonce:active-doc))
   (cond
     ((= cmd "EXPLODE")
-     (if *coguard:explode-snapshot*
-       (coguard:report-civil-loss *coguard:explode-snapshot* (coguard:object-snapshot doc)))
-     (if *coguard:explode-attrib-snapshot*
-       (coguard:report-attrib-loss *coguard:explode-attrib-snapshot* (coguard:attrib-block-count doc)))
-     (setq *coguard:explode-snapshot* nil *coguard:explode-attrib-snapshot* nil)
+     (if *coguard:in-lisp*
+       (if *coguard:explode-snapshot* (setq *coguard:explode-pending* T))
+       (coguard:explode-flush))
     )
     ((member cmd '("XREF" "-XREF" "XBIND" "-XBIND"))
      (if *coguard:xref-snapshot*
@@ -500,9 +508,11 @@
 )
 
 (defun coguard:cmd-clear (reactor arglist)
-  (setq *coguard:explode-snapshot* nil
-        *coguard:explode-attrib-snapshot* nil
-        *coguard:xref-snapshot* nil
+  ;; a cancelled step inside an EXPLODE batch keeps the batch's snapshot
+  (if (not *coguard:explode-pending*)
+    (setq *coguard:explode-snapshot* nil
+          *coguard:explode-attrib-snapshot* nil))
+  (setq *coguard:xref-snapshot* nil
         *coguard:xrefpts-snapshot* nil
         *coguard:check-xref-move* nil)
   (princ)
@@ -529,6 +539,20 @@
 ;; ---------------------------------------------------------------------------
 
 (if (not (boundp '*coguard:cmd-reactor*)) (setq *coguard:cmd-reactor* nil))
+(if (not (boundp '*coguard:lisp-reactor*)) (setq *coguard:lisp-reactor* nil))
+
+;; A LISP routine (BURST, a script) is running: EXPLODEs it runs are batched.
+(defun coguard:lisp-started (reactor arglist)
+  (setq *coguard:in-lisp* T)
+  (princ)
+)
+
+;; The routine has finished (or was cancelled): one warning for the batch.
+(defun coguard:lisp-ended (reactor arglist)
+  (setq *coguard:in-lisp* nil)
+  (if *coguard:explode-pending* (vl-catch-all-apply 'coguard:explode-flush nil))
+  (princ)
+)
 
 (defun coguard:init ( )
   (if (not *coguard:cmd-reactor*)
@@ -539,6 +563,13 @@
               (cons :vlr-commandCancelled 'coguard:cmd-clear)
               (cons :vlr-commandFailed    'coguard:cmd-clear))))
   )
+  (if (not *coguard:lisp-reactor*)
+    (setq *coguard:lisp-reactor*
+      (vlr-lisp-reactor nil
+        (list (cons :vlr-lispWillStart 'coguard:lisp-started)
+              (cons :vlr-lispEnded     'coguard:lisp-ended)
+              (cons :vlr-lispCancelled 'coguard:lisp-ended))))
+  )
   (vl-catch-all-apply 'coguard:log-opened nil)
 )
 
@@ -548,8 +579,8 @@
 
 (setq *coguard:switches*
   '("CommandWarnings" "WarnMOVE" "WarnCOPY" "WarnEXPLODE" "WarnXREFBIND" "WarnREFEDIT"
-    "WarnPROMOTE" "WarnTEXT" "WarnDTEXT" "WarnMTEXT" "GuardGrowth" "GuardCleanup" "GuardXrefOrigin"
-    "GuardCoordUnits" "BackupBeforeCleanup"))
+    "WarnPROMOTE" "WarnTEXT" "WarnDTEXT" "WarnMTEXT" "GuardGrowth" "GuardCleanup"
+    "BackupBeforeCleanup"))
 
 (defun c:CUTONCE-GUARD-STATUS ( )
   (coguard:log (strcat "Command reactor:  " (if *coguard:cmd-reactor* "active" "not loaded")))

@@ -15,7 +15,6 @@
 ;;;                            other watched commands (with instructions
 ;;;                            for the CAD administrator on adding them)
 ;;;   Save checks              unusual growth (and the cleanup it offers),
-;;;                            xrefs not at 0,0,0, coordinate system / units,
 ;;;                            backup copy before cleanup, backup folder
 ;;;   Standards check on open  ByLayer, xref status (broken / unloaded),
 ;;;                            xrefs not at 0,0,0, coordinate system /
@@ -102,7 +101,7 @@
       "   }"
       "   : column {")
     (cocc:group-lines "Checks on save"
-      '("GuardGrowth" "GuardCleanup" "GuardXrefOrigin" "GuardCoordUnits" "BackupBeforeCleanup")
+      '("GuardGrowth" "GuardCleanup" "BackupBeforeCleanup")
       (list
         "      : text { key = \"backupdir\"; width = 60; }"
         "      : button { key = \"openbackups\"; label = \"Open backup folder\"; fixed_width = true; }"))

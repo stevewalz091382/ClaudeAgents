@@ -23,9 +23,9 @@
 ;;;           so Styles and the settings columns read n/a on those rows)
 ;;;   Audit   CUTONCE-AUDIT / CUTONCE-AUDIT-FOLDER
 ;;;   Manual  CUTONCE-GUARD-CHECKNOW
-;;; On save, everything the growth, xref-origin and coordinate system / units
-;;; checks find is shown in ONE summary warning, with one Save a copy button
-;;; and, when growth was found, Clean up now... (see CutOnce-Cleanup.lsp).
+;;; On save, the only warning is unusual growth, with Save a copy and Clean
+;;; up now... (see CutOnce-Cleanup.lsp). Xrefs off 0,0,0 and the coordinate
+;;; system / units are reported by the standards check when a drawing opens.
 ;;; Each designer switches these on or off in CUTONCE.
 ;;;
 ;;; Commands:
@@ -347,29 +347,10 @@
                     (strcat (car x) ": " (itoa (cadr x)) " -> " (itoa (caddr x)) "  (" (nth 3 x) ")")))
                   flags)
           (list (strcat "Full history: " (cohealth:path))))
-        (cons "Growth..." "GUARD_GROWTH"))
+        (cons "Learn More..." "GUARD_GROWTH")
+        "Unusual growth since the last check of")
 )
 
-(defun cohealth:origin-section (drawname badpts)
-  (cutonce:log-event "XREF-BASEPOINT" (apply 'strcat (mapcar (function (lambda (p) (strcat (car p) "  "))) badpts)))
-  (list (strcat "GUARD_XREF_ORIGIN|" drawname)
-        "XREFS NOT INSERTED AT 0,0,0"
-        (append
-          (mapcar (function (lambda (p) (strcat (car p) ": " (costd:pt-text (cadr p))))) badpts)
-          (list "A non-zero insertion point misaligns the xref against shared coordinates and data shortcuts."))
-        (cons "Xref origin..." "GUARD_XREF_ORIGIN"))
-)
-
-(defun cohealth:coord-section (drawname issues)
-  (cutonce:log-event "COORD-UNITS" (cutonce:join issues "  "))
-  (list (strcat "GUARD_COORD_UNITS|" drawname)
-        "COORDINATE SYSTEM OR UNITS"
-        (append
-          issues
-          (list "Set it in Toolspace > Settings > Edit Drawing Settings (Units and Zone);"
-                "INSUNITS sets the insertion units."))
-        (cons "Coordinates..." "GUARD_COORD_UNITS"))
-)
 
 ;; sections: list of cohealth:*-section results. manual = CUTONCE-GUARD-CHECKNOW
 ;; (every section shown, whatever the frequency choice).
@@ -382,14 +363,19 @@
       (setq growth (vl-some (function (lambda (sc) (wcmatch (car sc) "GUARD_GROWTH|*"))) due)
             offer (and growth (cohealth:cleanup-offer-p))
             n (length due) i 0)
-      (setq lines (list (strcat "CutOnce found " (itoa n) (if (= n 1) " thing" " things")
-                                " to check in " drawname ":")))
-      (foreach sc due
-        (setq i (1+ i))
-        (setq lines (append lines
-                            (list "" (strcat (itoa i) ". " (cadr sc)))
-                            (mapcar (function (lambda (ln) (strcat "   " ln))) (caddr sc))))
-      )
+      (if (and (= n 1) (nth 4 (car due)))
+        ;; one finding: it is the headline, no numbering
+        (setq lines (cons (strcat (nth 4 (car due)) " " drawname ":")
+                          (cons "" (caddr (car due)))))
+        (progn
+          (setq lines (list (strcat "CutOnce found " (itoa n) (if (= n 1) " thing" " things")
+                                    " to check in " drawname ":")))
+          (foreach sc due
+            (setq i (1+ i))
+            (setq lines (append lines
+                                (list "" (strcat (itoa i) ". " (cadr sc)))
+                                (mapcar (function (lambda (ln) (strcat "   " ln))) (caddr sc))))
+          )))
       (setq lines (append lines
         (list "")
         (if offer
@@ -413,18 +399,15 @@
 
 ;; trigger: "Save" (reactor) or "Manual" (CUTONCE-GUARD-CHECKNOW).
 ;; Manual runs both alerts and writes the row whatever the settings say.
-(defun cohealth:check (trigger / manual doc drawpath drawname wantLog wantGrowth wantOrigin wantCoord
-                                 facts prev flags badpts issues sections)
+(defun cohealth:check (trigger / manual doc drawpath drawname wantLog wantGrowth facts prev flags sections)
   (setq manual (= trigger "Manual"))
   (setq wantLog    (or manual (cutonce:log-on-p "LogHealthOnSave"))
-        wantGrowth (or manual (cutonce:on-p "GuardGrowth"))
-        wantOrigin (or manual (cutonce:on-p "GuardXrefOrigin"))
-        wantCoord  (or manual (cutonce:on-p "GuardCoordUnits")))
+        wantGrowth (or manual (cutonce:on-p "GuardGrowth")))
   (setq doc (cutonce:active-doc))
   (setq drawpath (cutonce:nonblank (cutonce:str-prop doc 'FullName))
         drawname (cond ((cutonce:str-prop doc 'Name)) ("")))
   (cond
-    ((not (or wantLog wantGrowth wantOrigin wantCoord)) nil)
+    ((not (or wantLog wantGrowth)) nil)
     ((or (not drawpath) (/= (getvar "DWGTITLED") 1))
      (cohealth:log "This drawing has not been saved yet - health check skipped."))
     (T
@@ -437,14 +420,11 @@
      )
      (if wantLog (vl-catch-all-apply 'cohealth:write (list doc facts trigger manual)))
      (cohealth:remember drawpath facts)
-     ;; every check that finds something adds a section to one summary
+     ;; the only warning on save is unusual growth; xrefs off 0,0,0 and the
+     ;; coordinate system / units are reported by the standards check on open
      (if (and wantGrowth (setq flags (cohealth:growth-flags prev facts)))
-       (setq sections (cons (cohealth:growth-section drawname flags) sections)))
-     (if (and wantOrigin (setq badpts (costd:fact facts "offorigin")))
-       (setq sections (cons (cohealth:origin-section drawname badpts) sections)))
-     (if (and wantCoord (setq issues (costd:fact facts "coordissues")))
-       (setq sections (cons (cohealth:coord-section drawname issues) sections)))
-     (if sections (cohealth:show-summary drawname (reverse sections) manual))
+       (setq sections (list (cohealth:growth-section drawname flags))))
+     (if sections (cohealth:show-summary drawname sections manual))
     )
   )
 )

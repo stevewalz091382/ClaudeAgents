@@ -83,8 +83,6 @@
     ;; Save checks
     ("GuardGrowth"      "Save"     "Unusual growth since the last check"                  T)
     ("GuardCleanup"     "Save"     "Offer one-click cleanup when growth is flagged"       T)
-    ("GuardXrefOrigin"  "Save"     "Xref not inserted at 0,0,0"                           T)
-    ("GuardCoordUnits"  "Save"     "Coordinate system or insertion units mismatch"        T)
     ("BackupBeforeCleanup" "Save"  "Save a backup copy to the shared folder before cleanup" T)
     ;; Standards check when a drawing opens
     ("StdCheckOnOpen"   "Open"     "Run the standards check when a drawing opens"         T)
@@ -868,7 +866,6 @@
     ("GUARD_TEXT"        . "text-instead-of-labels")
     ("GUARD_GROWTH"      . "drawing-growth")
     ("GUARD_CLEANUP"     . "drawing-cleanup")
-    ("GUARD_COORD_UNITS" . "coordinate-system-units")
     ("STD_COORD_UNITS"   . "coordinate-system-units")
     ("BACKUP"            . "backup-copies")
     ;; control center

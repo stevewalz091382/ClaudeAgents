@@ -79,8 +79,6 @@
     ;; Checks on save
     ("GuardGrowth"      . T)    ; unusual growth since the last check
     ("GuardCleanup"     . T)    ; the growth warning offers one-click cleanup
-    ("GuardXrefOrigin"  . T)    ; xref not inserted at 0,0,0
-    ("GuardCoordUnits"  . T)    ; coordinate system or insertion units missing / mismatched
     ("BackupBeforeCleanup" . T) ; cleanup copies the drawing to BackupDir first
                                 ; (lock it to require a backup before every cleanup)
 
@@ -213,13 +211,12 @@
     ;;      ("GUARD_ATTRIB"      . "explode-attributed-blocks")
     ;;      ("GUARD_XREF_BIND"   . "xref-bind")
     ;;      ("GUARD_XREF_MOVED"  . "xref-moved")
-    ;;      ("GUARD_XREF_ORIGIN" . "xref-not-at-origin")        ; save check
+    ;;      ("GUARD_XREF_ORIGIN" . "xref-not-at-origin")
     ;;      ("GUARD_REFEDIT"     . "refedit")                   ; REFEDIT and REFCLOSE
     ;;      ("GUARD_PROMOTE"     . "promote-reference")
     ;;      ("GUARD_TEXT"        . "text-instead-of-labels")
     ;;      ("GUARD_GROWTH"      . "drawing-growth")
     ;;      ("GUARD_CLEANUP"     . "drawing-cleanup")           ; cleanup offered on save
-    ;;      ("GUARD_COORD_UNITS" . "coordinate-system-units")   ; save check
     ;;      ("STD_COORD_UNITS"   . "coordinate-system-units")
     ;;      ("BACKUP"            . "backup-copies")
     ;;      ;; Control Center

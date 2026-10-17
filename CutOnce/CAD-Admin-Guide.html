@@ -183,7 +183,7 @@
 </ul>
 
 <h2 id="backups">4. Set up the shared backup folder</h2>
-<p>On save, CutOnce shows one summary of everything its save checks found. When unusual growth is among them, the summary offers <strong>Clean up now...</strong>. Before cleanup changes anything, CutOnce can copy the drawing (as last saved) into one shared "master" backup folder, so any earlier version can be recovered. Every CutOnce warning (command warnings and save checks) also has a <strong>Save a copy</strong> button that copies the drawing there before the designer goes ahead, and <code>CUTONCE-BACKUP</code> makes a copy at any time.</p>
+<p>On save, the only CutOnce warning is unusual growth, and it offers <strong>Clean up now...</strong>. Before cleanup changes anything, CutOnce can copy the drawing (as last saved) into one shared "master" backup folder, so any earlier version can be recovered. The growth warning and the warnings for risky edits also have a <strong>Save a copy</strong> button that copies the drawing there before the designer goes ahead, and <code>CUTONCE-BACKUP</code> makes a copy at any time.</p>
 <ol class="steps">
   <li>Create the folder on a share everyone can reach, e.g. <code>\\server\cad\CutOnce\Backups</code>. Everyone needs permission to create files there (Modify). Nobody needs to delete anything.</li>
   <li>Point CutOnce at it, the same three ways as the log folder:
@@ -205,7 +205,7 @@
 </table>
 
 <h2 id="coords">5. Set each project's coordinate system and units</h2>
-<p>The coordinate system and units check flags a drawing with no coordinate system, one that differs from its project or from an xref, Unitless insertion units, and insertion units that differ from the project or an xref. It runs when a drawing opens (standards check) and on save.</p>
+<p>The coordinate system and units check flags a drawing with no coordinate system, one that differs from its project or from an xref, Unitless insertion units, and insertion units that differ from the project or an xref. It runs when a drawing opens (standards check) and with <code>CUTONCE-CHECK</code>.</p>
 <p>Tell CutOnce what each project uses. Easiest: put a text file named <code>CutOnce-Project.ini</code> in the project's top folder. CutOnce looks in the drawing's folder and each folder above it, and the nearest file wins.</p>
 <pre><code>; CutOnce project standard
 CoordinateSystem=CA83-VIF
